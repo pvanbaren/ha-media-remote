@@ -23,6 +23,7 @@ constexpr char kPrefsNamespace[] = "hamedia";
 constexpr char kPrefsUrlKey[] = "url";
 constexpr char kPrefsTokenKey[] = "tok";
 constexpr char kPrefsSelectedKey[] = "sel";
+constexpr char kPrefsMaEntryKey[] = "maid";
 constexpr char kPrefsControlKey[] = "ctl";
 
 // Records come back from the template API delimited by ASCII unit (\037) and
@@ -85,6 +86,7 @@ constexpr char kStateTemplateFmt[] =
 char s_base_url[config::kHaBaseUrlMaxLen + 1] = {};
 char s_token[config::kHaTokenMaxLen + 1] = {};
 char s_selected[config::kEntityIdMaxLen] = {};
+char s_ma_entry[config::kMaConfigEntryIdMaxLen + 1] = {};
 /** Empty means "whatever is playing also carries the volume and the power",
  *  which is the ordinary case; controlEntity() resolves that. */
 char s_control[config::kEntityIdMaxLen] = {};
@@ -114,13 +116,236 @@ void setError(const char* fmt, ...) {
   LOG_WARN("HA: %s", s_last_error);
 }
 
+/** Read the JSON string literal starting at `p` (which must be its opening
+ *  quote) into `out`, and return the character after the closing quote.
+ *
+ *  The counterpart to appendJsonString below, and hand-rolled for the same
+ *  reason the writer is: what is needed here is three fields from a flat array
+ *  of objects, and a JSON library would cost flash and a working buffer to do
+ *  it. Escapes are handled because a station name may well contain a quote or
+ *  an apostrophe; \uXXXX is decoded to UTF-8 so that an accented name arrives
+ *  as the font expects rather than as a literal backslash-u.
+ *
+ *  nullptr when the string is unterminated, which is the only malformed case
+ *  that matters -- a truncated response is the realistic failure, not invalid
+ *  JSON from Home Assistant. */
+const char* readJsonString(const char* p, char* out, size_t out_len) {
+  if (p == nullptr || *p != '"') {
+    return nullptr;
+  }
+  ++p;
+  size_t filled = 0;
+  const size_t limit = out_len > 0 ? out_len - 1 : 0;
+
+  auto put = [&](char c) {
+    if (filled < limit) {
+      out[filled++] = c;
+    }
+  };
+
+  while (*p != '\0') {
+    if (*p == '"') {
+      if (out_len > 0) {
+        out[filled] = '\0';
+      }
+      return p + 1;
+    }
+    if (*p != '\\') {
+      put(*p++);
+      continue;
+    }
+    ++p;
+    switch (*p) {
+      case 'n': put('\n'); ++p; break;
+      case 't': put('\t'); ++p; break;
+      case 'r': put('\r'); ++p; break;
+      case 'b': put('\b'); ++p; break;
+      case 'f': put('\f'); ++p; break;
+      case '"': put('"'); ++p; break;
+      case '\\': put('\\'); ++p; break;
+      case '/': put('/'); ++p; break;
+      case 'u': {
+        ++p;
+        uint32_t code = 0;
+        int digits = 0;
+        for (; digits < 4 && isxdigit(static_cast<unsigned char>(*p));
+             ++digits, ++p) {
+          const char c = *p;
+          code = (code << 4) |
+                 static_cast<uint32_t>(c <= '9' ? c - '0'
+                                                : (c | 0x20) - 'a' + 10);
+        }
+        if (digits < 4) {
+          return nullptr;
+        }
+        // Surrogate halves are dropped rather than paired: they only appear
+        // outside the BMP, and the embedded font has nothing there anyway.
+        if (code >= 0xD800 && code <= 0xDFFF) {
+          break;
+        }
+        if (code < 0x80) {
+          put(static_cast<char>(code));
+        } else if (code < 0x800) {
+          put(static_cast<char>(0xC0 | (code >> 6)));
+          put(static_cast<char>(0x80 | (code & 0x3F)));
+        } else {
+          put(static_cast<char>(0xE0 | (code >> 12)));
+          put(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+          put(static_cast<char>(0x80 | (code & 0x3F)));
+        }
+        break;
+      }
+      case '\0':
+        return nullptr;
+      default:
+        put(*p++);
+        break;
+    }
+  }
+  return nullptr;
+}
+
+/** Step over one JSON value, whatever it is, and return what follows it.
+ *  nullptr if it never terminates. */
+const char* skipJsonValue(const char* p) {
+  if (p == nullptr) {
+    return nullptr;
+  }
+  while (*p == ' ') {
+    ++p;
+  }
+  if (*p == '"') {
+    // Walk the string properly rather than looking for the next quote: an
+    // escaped quote inside it is not the end.
+    for (++p; *p != '\0'; ++p) {
+      if (*p == '\\') {
+        if (*++p == '\0') {
+          return nullptr;
+        }
+        continue;
+      }
+      if (*p == '"') {
+        return p + 1;
+      }
+    }
+    return nullptr;
+  }
+  if (*p == '{' || *p == '[') {
+    const char open = *p;
+    const char close = open == '{' ? '}' : ']';
+    int depth = 0;
+    for (; *p != '\0'; ++p) {
+      if (*p == '"') {
+        p = skipJsonValue(p);
+        if (p == nullptr) {
+          return nullptr;
+        }
+        --p;  // the loop's ++p
+        continue;
+      }
+      if (*p == open) {
+        ++depth;
+      } else if (*p == close) {
+        if (--depth == 0) {
+          return p + 1;
+        }
+      }
+    }
+    return nullptr;
+  }
+  // A bare literal: number, true, false, null.
+  while (*p != '\0' && *p != ',' && *p != '}' && *p != ']') {
+    ++p;
+  }
+  return p;
+}
+
+/** Fields pulled out of one library item. */
+struct ItemFields {
+  char* uri;
+  size_t uri_len;
+  char* name;
+  size_t name_len;
+  char* image;
+  size_t image_len;
+};
+
+/** Read one object of the items array into `fields`, and return what follows
+ *  it. `p` must point at its opening brace.
+ *
+ *  Walks the object's own members rather than searching the text for keys,
+ *  because the text is not flat: an album carries a nested "artists" array
+ *  whose objects have their own "name" and "image", and a scan that stopped at
+ *  the first '}' would end inside one of them -- reading the artist's fields
+ *  for some items and treating the remaining artists as further albums. Only
+ *  members at this object's own depth are taken, and every other value is
+ *  stepped over whole. */
+const char* readLibraryItem(const char* p, const ItemFields& fields) {
+  if (p == nullptr || *p != '{') {
+    return nullptr;
+  }
+  ++p;
+
+  while (*p != '\0') {
+    while (*p == ' ' || *p == ',') {
+      ++p;
+    }
+    if (*p == '}') {
+      return p + 1;
+    }
+    if (*p != '"') {
+      return nullptr;
+    }
+
+    char key[24];
+    const char* after_key = readJsonString(p, key, sizeof(key));
+    if (after_key == nullptr) {
+      return nullptr;
+    }
+    while (*after_key == ' ') {
+      ++after_key;
+    }
+    if (*after_key != ':') {
+      return nullptr;
+    }
+    const char* value = after_key + 1;
+    while (*value == ' ') {
+      ++value;
+    }
+
+    // Only strings are wanted; "image": null is how an item with no artwork
+    // arrives, and leaving the field empty is exactly right for it.
+    char* dest = nullptr;
+    size_t dest_len = 0;
+    if (strcmp(key, "uri") == 0) {
+      dest = fields.uri;
+      dest_len = fields.uri_len;
+    } else if (strcmp(key, "name") == 0) {
+      dest = fields.name;
+      dest_len = fields.name_len;
+    } else if (strcmp(key, "image") == 0) {
+      dest = fields.image;
+      dest_len = fields.image_len;
+    }
+    if (dest != nullptr && *value == '"') {
+      readJsonString(value, dest, dest_len);
+    }
+
+    p = skipJsonValue(value);
+    if (p == nullptr) {
+      return nullptr;
+    }
+  }
+  return nullptr;
+}
+
 /** Append `value` to `out` as a JSON string literal, quotes included.
  *
  *  Hand-rolled rather than ArduinoJson because ArduinoJson only emits the
  *  named escape sequences and writes every other control character raw. That
  *  is invalid JSON -- RFC 8259 requires \u00XX for the whole 0x00-0x1F range
- *  -- and the state template below is delimited by 0x1F/0x1E, so serialising
- *  it with ArduinoJson produced a body Home Assistant rejected with a 400. */
+ *  -- and the templates below are delimited by 0x1F/0x1E, so serialising them
+ *  with ArduinoJson produced a body Home Assistant rejected with a 400. */
 void appendJsonString(String& out, const char* value) {
   out += '"';
   for (const char* p = value; *p != '\0'; ++p) {
@@ -431,6 +656,7 @@ void init() {
   prefs.getString(kPrefsUrlKey, s_base_url, sizeof(s_base_url));
   prefs.getString(kPrefsTokenKey, s_token, sizeof(s_token));
   prefs.getString(kPrefsSelectedKey, s_selected, sizeof(s_selected));
+  prefs.getString(kPrefsMaEntryKey, s_ma_entry, sizeof(s_ma_entry));
   prefs.getString(kPrefsControlKey, s_control, sizeof(s_control));
   prefs.end();
 
@@ -738,6 +964,128 @@ void selectControlEntity(const char* entity_id) {
   prefs.end();
   LOG_INFO("HA: volume/power entity %s",
                 s_control[0] != '\0' ? s_control : "follows the player");
+}
+
+const char* maConfigEntry() { return s_ma_entry; }
+
+void saveMaConfigEntry(const char* entry_id) {
+  if (entry_id == nullptr) {
+    return;
+  }
+  snprintf(s_ma_entry, sizeof(s_ma_entry), "%s", entry_id);
+
+  Preferences prefs;
+  if (!prefs.begin(kPrefsNamespace, false)) {
+    return;
+  }
+  prefs.putString(kPrefsMaEntryKey, s_ma_entry);
+  prefs.end();
+  LOG_INFO("HA: music assistant entry %s",
+                s_ma_entry[0] != '\0' ? s_ma_entry : "cleared");
+}
+
+int fetchLibrary(const char* media_type, const char* order_by, int limit,
+                 LibraryItem* out, size_t capacity) {
+  if (out == nullptr || capacity == 0 || media_type == nullptr) {
+    return -1;
+  }
+  if (s_ma_entry[0] == '\0') {
+    setError("no music assistant entry id");
+    return -1;
+  }
+  if (limit <= 0 || limit > static_cast<int>(capacity)) {
+    limit = static_cast<int>(capacity);
+  }
+
+  String body("{\"config_entry_id\":");
+  appendJsonString(body, s_ma_entry);
+  body += ",\"media_type\":";
+  appendJsonString(body, media_type);
+  if (order_by != nullptr && order_by[0] != '\0') {
+    body += ",\"order_by\":";
+    appendJsonString(body, order_by);
+  }
+  body += ",\"limit\":";
+  body += limit;
+  body += '}';
+
+  String response;
+  if (!httpPost("/api/services/music_assistant/get_library?return_response",
+                body, response)) {
+    return -1;
+  }
+
+  const char* p = strstr(response.c_str(), "\"items\":[");
+  if (p == nullptr) {
+    setError("no items in library response");
+    LOG_WARN("HA: response body: %s", response.c_str());
+    return -1;
+  }
+  p += 9;
+
+  int count = 0;
+  while (count < limit) {
+    while (*p == ' ' || *p == ',') {
+      ++p;
+    }
+    if (*p != '{') {
+      break;  // ']' or anything else ends the array
+    }
+
+    LibraryItem& item = out[count];
+    item = LibraryItem{};
+    snprintf(item.media_type, sizeof(item.media_type), "%s", media_type);
+
+    const ItemFields fields{item.uri,   sizeof(item.uri),
+                            item.name,  sizeof(item.name),
+                            item.image, sizeof(item.image)};
+    const char* next = readLibraryItem(p, fields);
+    if (next == nullptr) {
+      break;
+    }
+    p = next;
+
+    if (item.uri[0] != '\0' && item.name[0] != '\0') {
+      ++count;
+    }
+  }
+
+  LOG_DEBUG("HA: %d %s%s from the library%s%s", count, media_type,
+                count == 1 ? "" : "s", order_by != nullptr ? " by " : "",
+                order_by != nullptr ? order_by : "");
+  return count;
+}
+
+bool playMedia(const char* entity_id, const char* uri, const char* media_type,
+               bool radio_mode) {
+  if (!validEntityId(entity_id) || uri == nullptr || uri[0] == '\0') {
+    setError("bad media id");
+    return false;
+  }
+
+  String body("{\"entity_id\":");
+  appendJsonString(body, entity_id);
+  body += ",\"media_id\":";
+  appendJsonString(body, uri);
+  if (media_type != nullptr && media_type[0] != '\0') {
+    // The URI already encodes the type, but saying it outright means an
+    // artist is played as an artist rather than resolved to something else.
+    body += ",\"media_type\":";
+    appendJsonString(body, media_type);
+  }
+  if (radio_mode) {
+    body += ",\"radio_mode\":true";
+  }
+  body += '}';
+
+  String response;
+  const bool ok =
+      httpPost("/api/services/music_assistant/play_media", body, response,
+               config::kHaServiceTimeoutMs);
+  LOG_INFO("HA: play_media%s %s on %s -> %s",
+                radio_mode ? " (radio)" : "", uri, entity_id,
+                ok ? "ok" : s_last_error);
+  return ok;
 }
 
 float interpolatedPosition(const PlayerState& state) {

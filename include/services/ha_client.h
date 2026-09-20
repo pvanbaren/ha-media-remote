@@ -14,6 +14,17 @@ struct PlayerEntry {
   bool available = false;
 };
 
+/** One Music Assistant library item, as shown in the swipe-up list. */
+struct LibraryItem {
+  /** Music Assistant URI, e.g. "library://artist/79". What play_media takes. */
+  char uri[96] = {};
+  char name[config::kFriendlyNameMaxLen] = {};
+  /** Absolute image URL, on whatever CDN the provider uses. May be empty. */
+  char image[160] = {};
+  /** "artist", "album", "playlist", "radio", "track". */
+  char media_type[12] = {};
+};
+
 enum class PlaybackState : uint8_t {
   kUnknown,
   kPlaying,
@@ -87,6 +98,10 @@ bool usesTls();
 /** Persist portal input. Either may be empty to leave that field untouched. */
 void saveCredentials(const char* base_url, const char* token);
 
+/** Music Assistant config entry id, for the library calls. Empty when none is
+ *  stored, which simply means no station list. */
+const char* maConfigEntry();
+void saveMaConfigEntry(const char* entry_id);
 /** Long-lived token, for callers that have to set their own
  *  Authorization header (cover art fetches the image URL directly).
  *  Empty string when none is stored. */
@@ -138,6 +153,33 @@ int fetchPlayers(PlayerEntry* out, size_t capacity);
 
 /** Fetch the selected player's now-playing snapshot. False on failure. */
 bool fetchState(const char* entity_id, PlayerState& out);
+
+/** Fetch one slice of the Music Assistant library, via
+ *  `music_assistant.get_library?return_response`.
+ *
+ *  `media_type` is "artist", "album", "playlist", "radio" or "track";
+ *  `order_by` is one of the integration's sort keys ("last_played_desc",
+ *  "random", "play_count_desc", "name", ...) or nullptr for its default.
+ *  Writes at most `capacity` entries; returns the count, or -1 on failure
+ *  (including "no config entry id stored", which is the ordinary un-set-up
+ *  case rather than an error).
+ *
+ *  Unlike everything else here this parses JSON, because a service response is
+ *  JSON and there is no template that can call a service. It is parsed by hand
+ *  rather than with a library, by walking each item's own members and stepping
+ *  over every value whole -- see readLibraryItem in the implementation. The
+ *  walk is not optional: an album nests an "artists" array whose objects carry
+ *  their own "name" and "image", so a flat scan reads the wrong ones. */
+int fetchLibrary(const char* media_type, const char* order_by, int limit,
+                 LibraryItem* out, size_t capacity);
+
+/** Play a library item on `entity_id`, via `music_assistant.play_media`.
+ *  `uri` and `media_type` come from a LibraryItem.
+ *
+ *  `radio_mode` asks Music Assistant to seed an endless queue from the item
+ *  rather than play just it -- an artist becomes artist radio. */
+bool playMedia(const char* entity_id, const char* uri, const char* media_type,
+               bool radio_mode = false);
 
 /** POST /api/services/media_player/<service> for one entity. */
 bool callService(const char* service, const char* entity_id);

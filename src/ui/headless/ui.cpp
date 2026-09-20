@@ -70,6 +70,8 @@ void showNowPlaying(const services::ha::PlayerState& state) {
       state.subtitle, state.title, state.volume);
 }
 
+void showBrowse() { say("browse list"); }
+void showLoadingList() { say("loading library"); }
 void showLoading(const char* what) { say("loading %s", what); }
 
 void showCommandPending(Intent, bool) {}
@@ -106,5 +108,7 @@ void wake() {
 // track change, which costs nothing here and keeps the call sites honest.
 void prepareArtwork(const char*) {}
 void clearArtwork() {}
+
+bool idleWork(Screen) { return false; }
 
 }  // namespace ui

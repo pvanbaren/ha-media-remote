@@ -104,6 +104,41 @@ They meet at one `PlayerState` behind a mutex and at a few `std::atomic`
 flags. Polling is 2 s while playing, 8 s otherwise, and a transport press cuts
 the wait short.
 
+## The library list
+
+A swipe up opens a list of Music Assistant library sections, defined by
+`config::kBrowseSections` and flattened into one scrollable run of rows with a
+heading above each. One tap plays an item.
+
+Sections cost one request each, so that table is the network cost as well as
+the layout. `get_library` is addressed by **config entry** rather than by
+entity -- it asks the server what is in the library, not a player what it is
+doing -- which is why the portal wants a Music Assistant config entry id.
+
+A note on "Recommended", since the name is a promise this cannot quite keep.
+Music Assistant does have real recommendations, the rows on its own Home page,
+but they live behind its websocket API on port 8095 and are not exposed as a
+Home Assistant service. What `get_library` offers is `order_by`, and a random
+draw from the albums is a decent stand-in: it surfaces things the library has
+and the last few weeks did not.
+
+The list is **loaded in the background** by the poll task, so a swipe up lands
+on a list rather than on a loading card. That means two tasks touch it, so
+every entry point takes a mutex and returns by value -- `Row` carries a copy
+of its title rather than a pointer into the item array, which would dangle the
+moment the lock was released. The lock is recursive so a whole frame can be
+drawn under one `ReadGuard`, rather than the list changing between
+`rowCount()` and the last `rowAt()`.
+
+Artwork is named here and drawn elsewhere: this layer deals in image URLs, and
+turning one into a sprite at the right size is a display decision.
+
+This is also the one place the firmware parses JSON. A service response *is*
+JSON and no Jinja template can call a service, so there is no way to get it as
+delimited text like everything else -- and it still does not link a JSON
+library, because albums nest an `artists` array and a depth-aware walk is
+about forty lines.
+
 ### Power and volume
 
 `turn_on` goes to the control entity and `volume_set` to the player, in that

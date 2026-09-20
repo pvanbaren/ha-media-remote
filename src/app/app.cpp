@@ -3,7 +3,8 @@
  *
  * Nothing in this file draws, and nothing in it knows the panel is round. It
  * asks ui/ui.h to put a screen up and hands it back intents -- "play/pause",
- * "set the volume to 0.4" -- without ever learning where the finger landed.
+ * "set the volume to 0.4", "play item 3" -- without ever learning where the
+ * finger landed.
  *
  * Network work all happens on haPollTask; setup() and loop() own everything
  * else. The two meet at g_state (behind g_state_mutex) and at the artwork
@@ -24,6 +25,7 @@
 #include "app/app.h"
 #include "config.h"
 #include "log.h"
+#include "services/browse.h"
 #include "services/ha_client.h"
 #include "services/wifi_setup.h"
 #include "ui/ui.h"
@@ -48,7 +50,9 @@ using ui::Screen;
  *  consistent load or store is a plain load or store plus a memw. Nothing
  *  here is 64-bit, which is the size that would fall back to a lock.
  *
- *  Which screen is up: written by the Arduino loop, read by the poll task. */
+ *  Which screen is up: written by the Arduino loop, read by the poll task to
+ *  decide whether refreshing the browse list would pull the rug out from
+ *  under someone reading it. */
 std::atomic<Screen> g_screen{Screen::kMessage};
 
 SemaphoreHandle_t g_state_mutex = nullptr;
@@ -468,8 +472,8 @@ void handleIdleBlanking() {
   PlayerState snapshot;
   const bool have_state = snapshotState(snapshot);
 
-  // Only the now-playing screen blanks. A status card is there to be read,
-  // and is only ever up because something needs attention.
+  // Only the now-playing screen blanks. The browse list and the status cards
+  // are there to be read, and are only ever up because someone is looking.
   if (!have_state || g_screen != Screen::kNowPlaying ||
       !playerIsIdle(snapshot)) {
     g_idle_since = 0;
@@ -499,6 +503,28 @@ void handleIdleBlanking() {
 }
 
 
+
+/** Open the browse list.
+ *
+ *  Usually instant, because the poll task has already loaded it in the
+ *  background -- see the preload in haPollTask. The loading card is for the
+ *  two cases that are left: the first swipe after a boot that beat the
+ *  preload, and a swipe that lands while a background load is mid-flight, in
+ *  which case ensureLoaded() waits for that one rather than starting another.
+ */
+void openBrowse() {
+  if (!services::ha::configured() ||
+      services::ha::selectedEntity()[0] == '\0') {
+    return;
+  }
+
+  if (services::browse::busy() || services::browse::stale()) {
+    ui::showLoadingList();
+  }
+  services::browse::ensureLoaded();
+  g_screen = Screen::kBrowse;
+  ui::showBrowse();
+}
 
 /** No player is selected, and the device cannot choose one: the picker lives
  *  in the setup portal now. Say where to go and keep rechecking -- the portal
@@ -624,6 +650,16 @@ void handleMessageRecheck() {
   g_poll_now = true;
 }
 
+/** Start whatever the finger picked out of a list, and acknowledge it the
+ *  same way in both cases: the display has already put a "Starting..." frame
+ *  up, and no card is drawn here on purpose so the screen carries straight on
+ *  from the tap to the track with nothing flashing in between. */
+void startPlaying(bool started) {
+  showMessageScreen();
+  g_poll_now = true;
+  (void)started;
+}
+
 /** One pass of the input loop: ask the display what the finger asked for, and
  *  do it. Everything arriving here is an intent -- never a coordinate, never
  *  a pixel -- which is what lets a different panel answer the same calls. */
@@ -654,6 +690,24 @@ void handleInput() {
       g_poll_now = true;
       break;
 
+    case Intent::kOpenBrowse:
+      openBrowse();
+      break;
+
+    case Intent::kBackToNowPlaying:
+      showNowPlaying();
+      break;
+
+    case Intent::kPlayBrowseRow:
+      // The item has its own art and title, and Music Assistant takes a
+      // moment to switch; drop the cached cover so the old one cannot sit
+      // behind the new name. Power first, so the amplifier has the length of
+      // the play_media round trip -- seconds, for an artist -- to wake up.
+      ui::clearArtwork();
+      powerOnControl();
+      startPlaying(services::browse::play(in.index));
+      break;
+
   }
 }
 
@@ -681,6 +735,19 @@ void haPollTask(void*) {
       if (g_turn_off_control) {
         g_turn_off_control = false;
         powerOffControl();
+      }
+
+      // Load the browse list ahead of anyone asking for it, so a swipe up
+      // lands on a list rather than on a loading card. Cheap to call: it only
+      // does work when the list is missing or past its TTL, which is once
+      // every few minutes at most.
+      //
+      // Skipped while the list is actually on screen. ensureLoaded() holds a
+      // lock that the drawing side also takes, so doing it anyway would be
+      // correct -- but it would mean scrolling stuttering against a load, and
+      // there is no reason to refresh a list someone is reading.
+      if (g_screen != Screen::kBrowse) {
+        services::browse::preload();
       }
 
       PlayerState fresh;
@@ -744,6 +811,7 @@ void setup() {
   ui::init();
   // Claimed before Wi-Fi, while the heap is still unfragmented, and never
   // freed -- so it cannot fail later and cannot leave a hole.
+  services::browse::init();
 
   if (wifiShowsSetupScreenOnBoot()) {
     ui::showPortal();
@@ -780,11 +848,19 @@ void loop() {
   // else, so the same press cannot also press a button.
   handleInput();
 
+  // Artwork arrives one image per pass rather than in a batch, so names are
+  // on screen immediately and the panel still answers taps between fetches.
+  ui::idleWork(g_screen);
+
   handleMessageRecheck();
 
   if (g_state_dirty && !ui::isBlanked()) {
     g_state_dirty = false;
-    showNowPlaying();
+    // The list may not be replaced by a poll landing underneath someone who
+    // is reading it.
+    if (g_screen != Screen::kBrowse) {
+      showNowPlaying();
+    }
   }
 
   // The untitled label's delay has run out with the title still missing:

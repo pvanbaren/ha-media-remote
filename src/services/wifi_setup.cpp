@@ -55,6 +55,11 @@ constexpr char kUrlInputAttrs[] =
     " type=\"url\" placeholder=\"http://homeassistant.local:8123\"";
 
 constexpr int kPlayerParamLen = static_cast<int>(config::kEntityIdMaxLen) - 1;
+constexpr int kMaEntryParamLen =
+    static_cast<int>(config::kMaConfigEntryIdMaxLen);
+
+constexpr char kMaEntryAttrs[] =
+    " placeholder=\"blank = no station list\"";
 
 char s_token_attrs[96] = " type=\"password\"";
 
@@ -96,6 +101,16 @@ WiFiManagerParameter s_param_ha_url("ha_url", "Home Assistant URL", "",
                                     kUrlParamLen, kUrlInputAttrs);
 WiFiManagerParameter s_param_ha_token("ha_token", "Long-lived access token", "",
                                       kTokenParamLen, s_token_attrs);
+/** Music Assistant config entry id. Only the station list needs it, and only
+ *  because get_library is addressed by config entry rather than by entity --
+ *  it asks the server what is in the library, not a player what it is doing.
+ *  Settings -> Devices & Services -> Music Assistant; it is the long id in
+ *  the browser's URL. Typed rather than picked: there is no REST endpoint
+ *  that lists config entries for a long-lived token. */
+WiFiManagerParameter s_param_ma_entry("ma_entry",
+                                      "Music Assistant config entry id", "",
+                                      kMaEntryParamLen, kMaEntryAttrs);
+
 /** What the device is called on the network -- its hostname, so DHCP and
  *  mDNS both carry it, and the portal is at http://<name>.local. A text field
  *  the name is cleaned from on save (see services::device::cleanName()). */
@@ -268,6 +283,7 @@ void refreshPortalParamDefaults() {
            services::ha::hasStoredToken() ? "stored - leave blank to keep"
                                           : "paste token here");
   s_param_ha_token.setValue("", kTokenParamLen);
+  s_param_ma_entry.setValue(services::ha::maConfigEntry(), kMaEntryParamLen);
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
            config::kPortalHostname);
@@ -333,6 +349,12 @@ void onPortalParamsSaved() {
                                      kPlayerParamLen);
   }
 
+  const char* ma_entry = s_param_ma_entry.getValue();
+  if (ma_entry != nullptr &&
+      strcmp(ma_entry, services::ha::maConfigEntry()) != 0) {
+    services::ha::saveMaConfigEntry(ma_entry);
+  }
+
   // Blank keeps the current name rather than clearing it; the placeholder
   // shows the one it would fall back to.
   const char* requested = s_param_device_name.getValue();
@@ -368,6 +390,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_device_name);
   wm.addParameter(&s_param_ha_url);
   wm.addParameter(&s_param_ha_token);
+  wm.addParameter(&s_param_ma_entry);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 

@@ -50,6 +50,65 @@ constexpr size_t kEntityIdMaxLen = 64;
 constexpr unsigned long kUntitledLabelDelayMs = 3000;
 constexpr size_t kFriendlyNameMaxLen = 40;
 
+/** Music Assistant config entry id, entered in the portal. `get_library` is
+ *  addressed by config entry rather than by entity -- it asks the *server*
+ *  what is in the library, not a player what it is doing -- so without this
+ *  there are no stations to show. Settings -> Devices & Services -> Music
+ *  Assistant; it is the long id in the URL. */
+constexpr size_t kMaConfigEntryIdMaxLen = 40;
+
+// =====================================================================
+// The swipe-up list
+// =====================================================================
+/** One section of the list: a heading and the Music Assistant library query
+ *  that fills it. */
+struct BrowseSection {
+  const char* title;
+  /** artist, album, playlist, radio or track. */
+  const char* media_type;
+  /** An integration sort key: last_played_desc, play_count_desc, random,
+   *  timestamp_added_desc, name... or nullptr for its default. */
+  const char* order_by;
+  int limit;
+};
+
+/** What the swipe-up list shows, top to bottom.
+ *
+ *  A note on "Recommended", since the name is a promise this cannot quite
+ *  keep. Music Assistant does have real recommendations -- the rows on its own
+ *  Home page -- but they live behind its websocket API on port 8095 and are
+ *  not exposed as a Home Assistant service, so nothing reachable over the REST
+ *  API can ask for them. What `get_library` does offer is `order_by`, and a
+ *  random draw from the albums is a decent stand-in: it surfaces things the
+ *  library has and the last few weeks did not. `play_count_desc` is the other
+ *  honest option, if "what we actually play" suits better than "something
+ *  else for a change".
+ *
+ *  "Recent artists" needs no such apology: last_played_desc over artists is
+ *  exactly what it says.
+ *
+ *  Sections cost one request each when the list is opened, so this table is
+ *  the network cost as well as the layout. */
+constexpr BrowseSection kBrowseSections[] = {
+    {"Recent artists", "artist", "last_played_desc", 5},
+    {"Recommended", "album", "random", 5},
+};
+constexpr int kBrowseSectionCount =
+    static_cast<int>(sizeof(kBrowseSections) / sizeof(kBrowseSections[0]));
+
+/** Items held across all sections. Each costs a name, a URI, an image URL and
+ *  a decoded thumbnail, so this is the real cost knob here. It caps the total,
+ *  not the per-section limits above. */
+constexpr int kMaxBrowseItems = 10;
+
+
+
+
+/** How long the list stays fresh before a reopen refetches it. Short enough
+ *  that "recent artists" means it, and that a random "Recommended" draw is
+ *  actually a different draw next time. */
+constexpr unsigned long kBrowseTtlMs = 300000;
+
 /** Most media_player entities a picker will hold. Entities past this are
  *  dropped from the list and become unselectable, so it has to clear the real
  *  count: a house with Chromecasts, a receiver's zones and a Music Assistant

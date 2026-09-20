@@ -30,6 +30,7 @@ namespace ui {
 enum class Screen : uint8_t {
   kMessage,  // a status card: needs setup, no player, HA unreachable
   kNowPlaying,
+  kBrowse,   // the library list
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -38,13 +39,17 @@ enum class Intent : uint8_t {
   kPrevious,
   kPlayPause,
   kNext,
-  kSetVolume,      // `level` carries it, 0.0-1.0
-  kWokeFromTouch,  // a tap landed on a blanked panel and only woke it
+  kSetVolume,        // `level` carries it, 0.0-1.0
+  kOpenBrowse,
+  kBackToNowPlaying,
+  kPlayBrowseRow,    // `index` is a services::browse item
+  kWokeFromTouch,    // a tap landed on a blanked panel and only woke it
 };
 
 struct Input {
   Intent intent = Intent::kNone;
   float level = 0.0f;
+  int index = -1;
 };
 
 /** Bring the panel up. Call once in setup(), before Wi-Fi, while the heap is
@@ -61,6 +66,9 @@ Input poll(Screen screen, const services::ha::PlayerState* state);
 // --- What to show ----------------------------------------------------------
 
 void showNowPlaying(const services::ha::PlayerState& state);
+/** The library list. The app has already made sure it is loaded. */
+void showBrowse();
+void showLoadingList();
 /** The boot card, naming whatever is being waited on. */
 void showLoading(const char* what);
 
@@ -96,5 +104,10 @@ void wake();
 void prepareArtwork(const char* picture);
 /** Drop it, when what is playing is about to change. */
 void clearArtwork();
+
+/** Work the display would like to do when nothing else is happening: one
+ *  thumbnail fetch per call. True when it did something, so the caller knows
+ *  there may be more. Never called while a finger is down. */
+bool idleWork(Screen screen);
 
 }  // namespace ui
