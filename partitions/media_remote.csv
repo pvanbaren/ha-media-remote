@@ -1,0 +1,17 @@
+# 16 MB flash, shared by every board. Two 4 MB app slots, so an update sent
+# over the network -- the setup portal's /u page -- is written into the slot
+# that is not running and switched to on the next boot; with one slot the
+# updater refuses, since it would be erasing the code it is running from.
+# A build is 1.5 to 2 MB, so either slot holds one with room to spare. The
+# rest of the flash is spiffs, which nothing uses yet.
+#
+# A PlatformIO upload writes each image at its own offset and leaves nvs,
+# and the settings in it, alone; firmware-merged.bin is one image from
+# address 0 and pads over nvs.
+# Name,   Type, SubType, Offset,   Size, Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x400000,
+app1,     app,  ota_1,   0x410000, 0x400000,
+spiffs,   data, spiffs,  0x810000, 0x7E0000,
+coredump, data, coredump,0xFF0000, 0x10000,
