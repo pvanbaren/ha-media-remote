@@ -30,6 +30,42 @@ stanza rather than an `#if`.
 `[env:headless]` is the default for now, and stays useful afterwards: if it
 stops linking, something above the seam has grown a pixel.
 
+## Fonts
+
+Text is anti-aliased VLW, with **one embedded face per on-screen pixel height
+the UI uses** -- 15, 17, 20 and 24 px -- each rendered natively at that size.
+Nothing is scaled at runtime, because LovyanGFX's VLW scaler is
+nearest-neighbour with no interpolation: a 15 px label taken from a 24 px
+master is visibly chunkier than one rendered at 15 px.
+
+Regenerate with:
+
+```bash
+python scripts/build_ui_font.py assets/fonts/NotoSans-Bold.ttf     --out-dir data --heights 15,17,20,24
+```
+
+The generator solves the EM size per target so the face's reported height --
+`ascent + descent`, which is what `fontHeight()` returns and what a layout is
+written against -- lands exactly on the requested pixel height.
+
+175 glyphs: ASCII, the whole Latin-1 Supplement letter block, the Latin-1
+punctuation those languages need, the OE ligature and capital sharp s, and
+eight general-punctuation marks, because track titles arrive full of curly
+quotes and en dashes. That sets Spanish, Portuguese, German and French
+completely.
+
+**U+0178 is deliberately excluded**, and the generator aborts if anything like
+it is added back. LovyanGFX computes the line height from glyph extents but
+skips U+00A0-U+00FF while doing it, precisely so accented capitals cannot
+inflate it. Capital Y-diaeresis sits outside that range and is 4 px taller
+than any ASCII letter, so including it solves every face one size smaller and
+shrinks every label to leave room for an accent that is on essentially
+nothing. See `check_metric_drivers()`.
+
+The four faces are about 110 KB of flash. A panel embeds them with
+`board_build.embed_files`; porting to a larger one means regenerating at the
+sizes that panel asks for.
+
 ## Setup
 
 On first boot the device brings up a captive portal on AP
