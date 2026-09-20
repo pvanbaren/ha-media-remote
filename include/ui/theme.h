@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <LovyanGFX.hpp>
+
 #include "board/board.h"
 #include "config.h"
 
@@ -16,7 +18,7 @@ constexpr int px(int px240) {
                           (px240 < 0 ? -0.5f : 0.5f));
 }
 
-constexpr int kSize = board::kDisplayDiameter;
+constexpr int kSize = board::kDisplayWidth;
 constexpr int kCenterX = kSize / 2;
 constexpr int kCenterY = kSize / 2;
 constexpr int kRadius = kSize / 2;
@@ -178,5 +180,19 @@ int chordHalfWidth(int y);
 
 /** Widest run of pixels usable at row `y`, inset from the bezel. */
 int usableWidthAt(int y, int inset);
+
+/**
+ * Paint the list's background over `height` rows starting at `top`.
+ *
+ * Shape-specific, because rows are laid out to chordHalfWidth(), which on a
+ * square panel is the full half-width. So a square list's rows run edge to
+ * edge, and a circular backdrop would not cover the pixels they occupy -- a
+ * partial repaint that painted a circle would leave the old rows behind in
+ * the corners. The square build fills the band; the round build fills the
+ * circle inside it, where the corners are off the glass anyway.
+ *
+ * Leaves no clip set.
+ */
+void fillListBackdrop(lgfx::LovyanGFX& gfx, int top, int height);
 
 }  // namespace ui::theme

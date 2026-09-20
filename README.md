@@ -19,7 +19,8 @@ src/
   app/        what the remote decides and does   <- no display
   services/   Home Assistant and the network     <- no display
   ui/
-    round/    both panels: 240 px GC9A01, 360 px ST77916 circles
+    common/   every screen that does not care what shape the panel is
+    round/    theme.cpp, now_playing.cpp         <- 240 px GC9A01 circle
     headless/ draws nothing, narrates to serial
   hardware/
     waveshare/  round360/  headless/             <- one directory per board

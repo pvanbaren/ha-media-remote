@@ -19,4 +19,14 @@ int usableWidthAt(int y, int inset) {
   return half > 0 ? half * 2 : 0;
 }
 
+void fillListBackdrop(lgfx::LovyanGFX& gfx, int top, int height) {
+  // Black first, then the circle over it. Rows are clipped to the chord
+  // here, so nothing ever draws in the corners -- but they are part of the
+  // sprite and something has to be in them.
+  gfx.setClipRect(0, top, kSize, height);
+  gfx.fillRect(0, top, kSize, height, kBackground);
+  gfx.fillCircle(kCenterX, kCenterY, kRadius, kListBackdrop);
+  gfx.clearClipRect();
+}
+
 }  // namespace ui::theme

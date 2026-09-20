@@ -237,9 +237,9 @@ void compose(lgfx::LovyanGFX& gfx) {
   services::browse::ReadGuard guard;
   displayFontEnsureLoaded(gfx);
 
-  gfx.fillScreen(theme::kBackground);
-  gfx.fillCircle(theme::kCenterX, theme::kCenterY, theme::kRadius,
-                 theme::kListBackdrop);
+  // What the backdrop looks like is the shape's business: a square panel's
+  // rows run edge to edge and need a backdrop that does too.
+  theme::fillListBackdrop(gfx, 0, theme::kSize);
 
   const int count = services::browse::rowCount();
   if (count == 0) {
@@ -321,9 +321,7 @@ void showStarting(int row_index) {
 
   lgfx::LovyanGFX& gfx = ui::canvas();
   displayFontEnsureLoaded(gfx);
-  gfx.fillScreen(theme::kBackground);
-  gfx.fillCircle(theme::kCenterX, theme::kCenterY, theme::kRadius,
-                 theme::kListBackdrop);
+  theme::fillListBackdrop(gfx, 0, theme::kSize);
   // The same card the list drew, in the same shape, so it reads as the row
   // that was touched rather than as a new screen.
   drawItem(gfx, card_top, row);
