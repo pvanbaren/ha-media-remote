@@ -31,6 +31,7 @@ enum class Screen : uint8_t {
   kMessage,  // a status card: needs setup, no player, HA unreachable
   kNowPlaying,
   kBrowse,   // the library list
+  kSearch,   // artist search, reached from the list
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -41,9 +42,12 @@ enum class Intent : uint8_t {
   kNext,
   kSetVolume,        // `level` carries it, 0.0-1.0
   kOpenBrowse,
+  kOpenSearch,
   kBackToNowPlaying,
-  kPlayBrowseRow,    // `index` is a services::browse item
-  kWokeFromTouch,    // a tap landed on a blanked panel and only woke it
+  kPlayBrowseRow,     // `index` is a services::browse item
+  kRunSearch,         // the typed query is in services::search
+  kPlaySearchResult,  // `index` is a result
+  kWokeFromTouch,     // a tap landed on a blanked panel and only woke it
 };
 
 struct Input {
@@ -68,6 +72,12 @@ Input poll(Screen screen, const services::ha::PlayerState* state);
 void showNowPlaying(const services::ha::PlayerState& state);
 /** The library list. The app has already made sure it is loaded. */
 void showBrowse();
+/** The artist search, on an empty query. */
+void showSearch();
+/** Results for whatever services::search now holds. */
+void showSearchResults();
+/** A frame before a blocking call, so the panel does not simply stop. */
+void showSearching();
 void showLoadingList();
 /** The boot card, naming whatever is being waited on. */
 void showLoading(const char* what);

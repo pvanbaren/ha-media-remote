@@ -101,8 +101,22 @@ constexpr int kBrowseSectionCount =
  *  not the per-section limits above. */
 constexpr int kMaxBrowseItems = 10;
 
+// =====================================================================
+// Artist search — the swipe-left screen
+// =====================================================================
+/** Longest name that can be typed. Music Assistant's search is forgiving
+ *  about partial names -- "radioh" finds Radiohead -- so this is generous
+ *  rather than load-bearing. */
+constexpr size_t kSearchQueryMaxLen = 24;
 
+/** Results held. More than fits on screen at once, so the list scrolls. */
+constexpr int kMaxSearchResults = 8;
 
+/** Play the chosen artist as *radio* -- an endless queue seeded from them --
+ *  rather than playing their tracks straight through. Artist radio is the
+ *  reason to search for an artist from a wall remote; playing a discography
+ *  in order is something you would reach for a phone to do. */
+constexpr bool kSearchPlaysRadio = true;
 
 /** How long the list stays fresh before a reopen refetches it. Short enough
  *  that "recent artists" means it, and that a random "Recommended" draw is

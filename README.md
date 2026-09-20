@@ -139,6 +139,27 @@ delimited text like everything else -- and it still does not link a JSON
 library, because albums nest an `artists` array and a depth-aware walk is
 about forty lines.
 
+## Artist search
+
+A swipe left from the library list opens a keyboard. Type part of a name and
+Music Assistant's `search` finds the artist; selecting one starts **artist
+radio** -- an endless queue seeded from them -- rather than playing their
+discography in order. Radio is the reason to search for an artist from a wall
+remote; playing an album through is something you would reach for a phone to
+do.
+
+Search is single-threaded by construction: every part of it runs on the
+Arduino loop, because a search is a response to a keypress and there is
+nothing to preload. That is why it has no mutex where `services::browse`
+needs one.
+
+Two things are acknowledged before they block, because both take seconds.
+Pressing SEARCH puts a "Searching..." frame on the panel before the request
+goes out, and selecting a result draws that result alone before `play_media`
+is called -- in radio mode Music Assistant also has to build a queue, which
+makes it the longest wait anywhere in the firmware. A screen that simply stops
+for that long reads as a device that missed the tap.
+
 ### Power and volume
 
 `turn_on` goes to the control entity and `volume_set` to the player, in that

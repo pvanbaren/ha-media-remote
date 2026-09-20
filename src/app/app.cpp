@@ -3,8 +3,8 @@
  *
  * Nothing in this file draws, and nothing in it knows the panel is round. It
  * asks ui/ui.h to put a screen up and hands it back intents -- "play/pause",
- * "set the volume to 0.4", "play item 3" -- without ever learning where the
- * finger landed.
+ * "set the volume to 0.4", "play browse row 3" -- without ever learning where
+ * the finger landed.
  *
  * Network work all happens on haPollTask; setup() and loop() own everything
  * else. The two meet at g_state (behind g_state_mutex) and at the artwork
@@ -27,6 +27,7 @@
 #include "log.h"
 #include "services/browse.h"
 #include "services/ha_client.h"
+#include "services/search.h"
 #include "services/wifi_setup.h"
 #include "ui/ui.h"
 
@@ -504,6 +505,20 @@ void handleIdleBlanking() {
 
 
 
+/** Open the artist search, a swipe left from the browse list.
+ *
+ *  Starts on an empty query every time rather than keeping the last one. A
+ *  search is a thing you do once and then forget; coming back to somebody
+ *  else's half-typed name is only ever an obstacle. */
+void openSearch() {
+  if (!services::ha::configured() ||
+      services::ha::selectedEntity()[0] == '\0') {
+    return;
+  }
+  g_screen = Screen::kSearch;
+  ui::showSearch();
+}
+
 /** Open the browse list.
  *
  *  Usually instant, because the poll task has already loaded it in the
@@ -694,6 +709,10 @@ void handleInput() {
       openBrowse();
       break;
 
+    case Intent::kOpenSearch:
+      openSearch();
+      break;
+
     case Intent::kBackToNowPlaying:
       showNowPlaying();
       break;
@@ -708,6 +727,16 @@ void handleInput() {
       startPlaying(services::browse::play(in.index));
       break;
 
+    case Intent::kRunSearch:
+      services::search::run();
+      ui::showSearchResults();
+      break;
+
+    case Intent::kPlaySearchResult:
+      ui::clearArtwork();
+      powerOnControl();
+      startPlaying(services::search::play(in.index));
+      break;
   }
 }
 
@@ -746,7 +775,7 @@ void haPollTask(void*) {
       // lock that the drawing side also takes, so doing it anyway would be
       // correct -- but it would mean scrolling stuttering against a load, and
       // there is no reason to refresh a list someone is reading.
-      if (g_screen != Screen::kBrowse) {
+      if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch) {
         services::browse::preload();
       }
 
@@ -856,9 +885,9 @@ void loop() {
 
   if (g_state_dirty && !ui::isBlanked()) {
     g_state_dirty = false;
-    // The list may not be replaced by a poll landing underneath someone who
-    // is reading it.
-    if (g_screen != Screen::kBrowse) {
+    // Neither the list nor the search screen may be replaced by a poll
+    // landing underneath someone who is reading or typing.
+    if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch) {
       showNowPlaying();
     }
   }

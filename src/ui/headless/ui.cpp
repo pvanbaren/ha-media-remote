@@ -71,6 +71,9 @@ void showNowPlaying(const services::ha::PlayerState& state) {
 }
 
 void showBrowse() { say("browse list"); }
+void showSearch() { say("search"); }
+void showSearchResults() { say("search results"); }
+void showSearching() { say("searching..."); }
 void showLoadingList() { say("loading library"); }
 void showLoading(const char* what) { say("loading %s", what); }
 

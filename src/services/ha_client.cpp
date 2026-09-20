@@ -1056,6 +1056,71 @@ int fetchLibrary(const char* media_type, const char* order_by, int limit,
   return count;
 }
 
+int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
+  if (out == nullptr || capacity == 0 || name == nullptr || name[0] == '\0') {
+    return -1;
+  }
+  if (s_ma_entry[0] == '\0') {
+    setError("no music assistant entry id");
+    return -1;
+  }
+
+  String body("{\"config_entry_id\":");
+  appendJsonString(body, s_ma_entry);
+  body += ",\"name\":";
+  appendJsonString(body, name);
+  body += ",\"media_type\":[\"artist\"],\"limit\":";
+  body += static_cast<int>(capacity);
+  body += '}';
+
+  String response;
+  if (!httpPost("/api/services/music_assistant/search?return_response", body,
+                response, config::kHaServiceTimeoutMs)) {
+    return -1;
+  }
+
+  // {"artists":[...],"albums":[],...} -- the same item objects fetchLibrary
+  // parses, so readLibraryItem does the work here too.
+  const char* p = strstr(response.c_str(), "\"artists\":[");
+  if (p == nullptr) {
+    setError("no artists in search response");
+    LOG_WARN("HA: response body: %s", response.c_str());
+    return -1;
+  }
+  p += 11;
+
+  int count = 0;
+  while (count < static_cast<int>(capacity)) {
+    while (*p == ' ' || *p == ',') {
+      ++p;
+    }
+    if (*p != '{') {
+      break;
+    }
+
+    LibraryItem& item = out[count];
+    item = LibraryItem{};
+    snprintf(item.media_type, sizeof(item.media_type), "%s", "artist");
+
+    const ItemFields fields{item.uri,   sizeof(item.uri),
+                            item.name,  sizeof(item.name),
+                            item.image, sizeof(item.image)};
+    const char* next = readLibraryItem(p, fields);
+    if (next == nullptr) {
+      break;
+    }
+    p = next;
+
+    if (item.uri[0] != '\0' && item.name[0] != '\0') {
+      ++count;
+    }
+  }
+
+  LOG_DEBUG("HA: %d artist%s matching \"%s\"", count,
+                count == 1 ? "" : "s", name);
+  return count;
+}
+
 bool playMedia(const char* entity_id, const char* uri, const char* media_type,
                bool radio_mode) {
   if (!validEntityId(entity_id) || uri == nullptr || uri[0] == '\0') {

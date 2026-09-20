@@ -173,6 +173,17 @@ bool fetchState(const char* entity_id, PlayerState& out);
 int fetchLibrary(const char* media_type, const char* order_by, int limit,
                  LibraryItem* out, size_t capacity);
 
+/** Search Music Assistant for artists by name, via `music_assistant.search`.
+ *
+ *  Reaches past the local library into whatever providers are configured, and
+ *  is forgiving about partial names -- "radioh" finds Radiohead -- which is
+ *  what makes typing on a 240 px circle worth doing at all. Returns the count,
+ *  or -1 on failure.
+ *
+ *  Same flat item shape as fetchLibrary(), under an "artists" key rather than
+ *  "items", so it shares the parser. */
+int searchArtists(const char* name, LibraryItem* out, size_t capacity);
+
 /** Play a library item on `entity_id`, via `music_assistant.play_media`.
  *  `uri` and `media_type` come from a LibraryItem.
  *
