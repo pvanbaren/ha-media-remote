@@ -238,6 +238,17 @@ constexpr unsigned long kHaPollAfterCommandMs = 400;
 /** Slowest rate volume_set is sent while the finger is dragging. The arc
  *  follows the finger locally regardless, so this only paces the audio. */
 constexpr unsigned long kVolumeSendIntervalMs = 250;
+
+/** A tap on a scrolling list is refused if it began while the list was
+ *  moving, or this soon after it stopped. Flicking again to keep a list going
+ *  is a press that lands mid-glide, and taking it as a tap started whatever
+ *  row happened to be under the finger. */
+constexpr unsigned long kListTapGuardMs = 250;
+/** ...and refused, too, if the finger went unread for longer than this at any
+ *  point while it was down. Where touch is read from the loop, a flick can
+ *  fall between two reads of a busy pass -- down, then gone, never seen to
+ *  move -- and a press nobody watched cannot be told from a tap. */
+constexpr unsigned long kTouchWatchGapMs = 60;
 /** How long the entity list stays fresh before the picker refetches it. */
 constexpr unsigned long kHaPlayerListTtlMs = 300000;
 
@@ -271,5 +282,44 @@ constexpr bool kBlankWhenPaused = true;
  *  Only sent once per blanking, and only to an entity whose supported_features
  *  claim TURN_OFF. */
 constexpr bool kTurnOffControlOnBlank = true;
+
+
+/** Cover art is cached compressed, not decoded, so one buffer serves every
+ *  repaint. Art that does not fit still displays -- it is streamed and decoded
+ *  off the socket on each repaint instead of being held.
+ *
+ *  Claimed ONCE, at boot, and reused for every cover for the life of the
+ *  device: never freed, never resized. Sizing it to each image instead meant a
+ *  free and a differently-sized malloc on every track change, which is how a
+ *  long-running heap fragments. Taking it at boot, before Wi-Fi, also means it
+ *  comes out of a pristine heap and cannot fail later.
+ *
+ *  128 KB in PSRAM. The panel is 240 px and so asks the proxy for 256 px art,
+ *  which measures tens of KB; this swallows that with room for a 512 px cover
+ *  from a server that ignored the request. Zero disables caching entirely. */
+constexpr size_t kCoverArtBufferBytes = 128u * 1024u;
+/** Give up on art beyond this size outright; something is wrong upstream. */
+constexpr size_t kCoverArtMaxBytes = 2u * 1024u * 1024u;
+
+/** Rewrite an existing `size=` query parameter down towards kDisplayDiameter,
+ *  to fetch art near the panel's size instead of the integration's default.
+ *
+ *  Servers offer a ladder of sizes rather than any value -- Music Assistant's
+ *  image proxy accepts 0, 80, 160, 256, 512, 1024 and answers 400 otherwise --
+ *  so the request rounds up to a power of two, which lands on that ladder
+ *  without upscaling. A 240 px panel asks for 256: on one album that took the
+ *  JPEG from 88 KB to 28 KB, the difference between caching it and re-fetching
+ *  it on every compose pass.
+ *
+ *  Safe to leave on: a refusal is retried with the untouched URL, and
+ *  rewriting is then dropped for the session. */
+constexpr bool kCoverArtRequestPanelSize = true;
+
+// --- UI colours (RGB565) ---
+constexpr uint16_t kColorBlack = 0x0000;
+constexpr uint16_t kColorWhite = 0xFFFF;
+constexpr uint16_t kColorYellow = 0xFFE0;
+constexpr uint16_t kTextOnYellow = kColorBlack;
+constexpr uint16_t kTextOnBlack = kColorWhite;
 
 }  // namespace config

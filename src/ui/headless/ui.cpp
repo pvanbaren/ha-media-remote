@@ -114,4 +114,6 @@ void clearArtwork() {}
 
 bool idleWork(Screen) { return false; }
 
+bool volumeDragging() { return false; }
+
 }  // namespace ui

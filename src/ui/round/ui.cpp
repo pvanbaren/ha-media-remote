@@ -1,0 +1,590 @@
+#include "ui/ui.h"
+
+#include <Arduino.h>
+
+#include <cmath>
+#include <cstdlib>
+
+#include "board/waveshare_s3.h"
+#include "config.h"
+#include "log.h"
+#include "hardware/display.h"
+#include "hardware/touch.h"
+#include "services/browse.h"
+#include "services/search.h"
+#include "ui/artwork.h"
+#include "ui/browse_list.h"
+#include "ui/canvas.h"
+#include "ui/cover_art.h"
+#include "ui/now_playing.h"
+#include "ui/search.h"
+#include "ui/status_screens.h"
+#include "ui/theme.h"
+
+/**
+ * The round panel's half of ui/ui.h.
+ *
+ * Everything here is about a circle: where the transport buttons sit, that a
+ * volume swipe runs sideways across the top because the arc follows the
+ * bezel, that a list is clipped to the chord at its own y. A square panel
+ * would answer the same calls differently and src/app/ would not notice.
+ */
+namespace ui {
+namespace {
+
+using services::ha::PlayerState;
+using Action = now_playing::Action;
+
+// --- Volume drag -----------------------------------------------------------
+/** The finger owns the level while it is down. */
+bool s_vol_dragging = false;
+float s_vol_level = 0.0f;
+float s_vol_drawn = -1.0f;
+int s_vol_last_x = 0;
+unsigned long s_vol_sent_ms = 0;
+/** Snapshot taken when the slider was grabbed, reused for the whole drag:
+ *  mute and the feature bits cannot change under a finger. */
+PlayerState s_drag_state;
+
+/** Smallest level change worth a repaint: one step of the 252 degree arc that
+ *  moves the knob about a pixel at the 240 px baseline. */
+constexpr float kVolumeRedrawEpsilon = 0.004f;
+
+// --- List scrolling --------------------------------------------------------
+/** One set of state: the browse list and the search results are never on
+ *  screen at the same time. */
+bool s_list_dragging = false;
+int s_list_last_y = 0;
+/** Display px per millisecond, signed with the finger. */
+float s_list_velocity = 0.0f;
+unsigned long s_list_move_ms = 0;
+unsigned long s_list_glide_ms = 0;
+/** When the list last moved, by drag or by glide, for kListTapGuardMs. */
+unsigned long s_list_moved_ms = 0;
+
+/** What a scrollable screen offers the drag handler. Function pointers rather
+ *  than virtuals: there are two, both known at compile time, and neither
+ *  wants a vtable. */
+struct ScrollableList {
+  bool (*scrollByPx)(int delta);
+  bool (*atScrollLimit)(int direction);
+  void (*redraw)();
+};
+
+constexpr ScrollableList kBrowseList{browse_list::scrollByPx,
+                                     browse_list::atScrollLimit,
+                                     browse_list::draw};
+constexpr ScrollableList kSearchResults{search::scrollByPx,
+                                        search::atScrollLimit, search::draw};
+
+constexpr int kDragSlopPx =
+    static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
+
+/** Drive the volume arc from a horizontal swipe across the top of the panel.
+ *
+ *  The touch driver only reports gestures once a press completes, which is no
+ *  use to a slider, so this tracks the live position itself and cancels the
+ *  press so its release is not also read as a swipe.
+ *
+ *  The press may start anywhere in the top half rather than on the 7 px
+ *  track, because landing a fingertip on that track is a precision task on a
+ *  1.28" circle and this is the control most used without looking. And the
+ *  movement is *relative*: the level shifts by however far the finger went,
+ *  so a swipe adjusts from wherever the volume already was instead of jumping
+ *  it to whatever angle the finger points at.
+ *
+ *  Only a predominantly horizontal press is claimed. A vertical one is left
+ *  alone so swipe-up still opens the browse list.
+ *
+ *  Returns true when the caller should be told the level changed. */
+bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
+  if (screen != Screen::kNowPlaying) {
+    s_vol_dragging = false;
+    return false;
+  }
+
+  if (!hw::touchIsDown()) {
+    if (!s_vol_dragging) {
+      return false;
+    }
+    // Always close with an authoritative set: the throttle below may have
+    // skipped the last position the finger actually rested on. The app is
+    // told before the flag drops, because between the two there is no guard
+    // on the volume at all and a poll landing in that window is exactly the
+    // one carrying the pre-change level.
+    s_vol_dragging = false;
+    out.intent = Intent::kSetVolume;
+    out.level = s_vol_level;
+    return true;
+  }
+
+  int x = 0;
+  int y = 0;
+  hw::touchPosition(x, y);
+
+  if (!s_vol_dragging) {
+    const int travel_x = hw::touchDragDx();
+    const int travel_y = hw::touchDragDy();
+    if (abs(travel_x) < kDragSlopPx || abs(travel_x) <= abs(travel_y)) {
+      return false;  // not committed sideways yet, or it is a vertical swipe
+    }
+    // Where the finger landed, not where it is now: a swipe that began in the
+    // top half stays a volume swipe even once it has wandered below centre.
+    if (!now_playing::volumeSwipeRegion(x - travel_x, y - travel_y)) {
+      return false;
+    }
+    if (state == nullptr || !now_playing::volumeAvailable(*state)) {
+      return false;
+    }
+
+    s_drag_state = *state;
+    hw::touchCancel();
+    s_vol_dragging = true;
+    s_vol_sent_ms = 0;
+    // Start from where the volume actually is. The slop travelled getting
+    // here is deliberately not applied, so the arc does not jump on grab.
+    s_vol_level = state->volume;
+    s_vol_drawn = -1.0f;
+    s_vol_last_x = x;
+  } else {
+    const int moved = x - s_vol_last_x;
+    s_vol_last_x = x;
+    s_vol_level += moved * now_playing::volumeLevelPerPx();
+    if (s_vol_level < 0.0f) {
+      s_vol_level = 0.0f;
+    } else if (s_vol_level > 1.0f) {
+      s_vol_level = 1.0f;
+    }
+  }
+
+  // This runs on every loop pass, far faster than the panel or the eye needs.
+  // Repaint only when the knob would actually move by a pixel's worth.
+  if (fabsf(s_vol_level - s_vol_drawn) >= kVolumeRedrawEpsilon) {
+    s_vol_drawn = s_vol_level;
+    s_drag_state.volume = s_vol_level;
+    now_playing::refreshVolume(s_drag_state, s_vol_level);
+  }
+
+  if (millis() - s_vol_sent_ms >= config::kVolumeSendIntervalMs) {
+    s_vol_sent_ms = millis();
+    out.intent = Intent::kSetVolume;
+    out.level = s_vol_level;
+    return true;
+  }
+  return false;
+}
+
+/** Scroll a list under the finger, and let it glide when released.
+ *
+ *  Only a predominantly *vertical* press is taken. A horizontal one is left
+ *  alone so it can still resolve as the swipe-right that leaves the list. */
+void driveList(const ScrollableList& list, bool active) {
+  /** Below this the glide is over; above it, a flick keeps going. px/ms. */
+  constexpr float kGlideStopSpeed = 0.02f;
+  /** Fraction of speed kept per frame. Lower stops sooner. */
+  constexpr float kGlideDecay = 0.88f;
+  constexpr unsigned long kGlideFrameMs = 16;
+
+  if (!active) {
+    s_list_dragging = false;
+    s_list_velocity = 0.0f;
+    return;
+  }
+
+  if (hw::touchIsDown()) {
+    int x = 0;
+    int y = 0;
+    hw::touchPosition(x, y);
+
+    if (!s_list_dragging) {
+      // A finger on a gliding list catches it. Only stops it: the press that
+      // did so is refused as a tap (see listTapAllowed()), and leaving the
+      // velocity set would let the glide carry on once it lifts.
+      if (s_list_velocity != 0.0f) {
+        s_list_velocity = 0.0f;
+        s_list_moved_ms = millis();
+      }
+      const int travel_x = hw::touchDragDx();
+      const int travel_y = hw::touchDragDy();
+      if (abs(travel_y) < kDragSlopPx || abs(travel_y) <= abs(travel_x)) {
+        return;  // not committed vertically yet, or it is a sideways swipe
+      }
+      hw::touchCancel();
+      s_list_dragging = true;
+      s_list_velocity = 0.0f;
+      s_list_last_y = y;
+      s_list_move_ms = millis();
+      return;
+    }
+
+    const int dy = y - s_list_last_y;
+    if (dy == 0) {
+      return;
+    }
+    const unsigned long now = millis();
+    const unsigned long dt = now - s_list_move_ms;
+    if (dt > 0) {
+      // Smoothed, so one jittery sample cannot fling the list.
+      const float sample = static_cast<float>(dy) / static_cast<float>(dt);
+      s_list_velocity = s_list_velocity * 0.6f + sample * 0.4f;
+    }
+    s_list_last_y = y;
+    s_list_move_ms = now;
+
+    // Dragging down moves the content down, which is scrolling *up* the list.
+    if (list.scrollByPx(-dy)) {
+      s_list_moved_ms = now;
+      list.redraw();
+    }
+    return;
+  }
+
+  if (s_list_dragging) {
+    s_list_dragging = false;
+    s_list_glide_ms = millis();
+    // A finger that stopped before lifting meant to stop.
+    if (millis() - s_list_move_ms > 120) {
+      s_list_velocity = 0.0f;
+    }
+  }
+
+  if (s_list_velocity == 0.0f) {
+    return;
+  }
+  const unsigned long now = millis();
+  if (now - s_list_glide_ms < kGlideFrameMs) {
+    return;
+  }
+  s_list_glide_ms = now;
+
+  const int step = static_cast<int>(-s_list_velocity * kGlideFrameMs);
+  if (step != 0 && list.scrollByPx(step)) {
+    s_list_moved_ms = now;
+    list.redraw();
+  } else if (list.atScrollLimit(step)) {
+    s_list_velocity = 0.0f;
+    return;
+  }
+
+  s_list_velocity *= kGlideDecay;
+  if (fabsf(s_list_velocity) < kGlideStopSpeed) {
+    s_list_velocity = 0.0f;
+  }
+}
+
+void driveListScrolling(Screen screen) {
+  if (screen == Screen::kBrowse) {
+    driveList(kBrowseList, true);
+  } else if (screen == Screen::kSearch) {
+    // Only the results scroll; the keyboard has nothing to move, and
+    // scrollByPx() says so.
+    driveList(kSearchResults, search::showingResults());
+  } else {
+    driveList(kBrowseList, false);
+  }
+}
+
+/** Whether a tap on a scrolling list is a tap, rather than a press that
+ *  caught a moving list or a swipe that was never seen to move. */
+bool listTapAllowed(const hw::TouchReport& report) {
+  if (report.unwatched_ms > config::kTouchWatchGapMs) {
+    LOG_DEBUG("UI: list tap ignored, unwatched for %lu ms",
+                  report.unwatched_ms);
+    return false;
+  }
+  if (s_list_moved_ms != 0 &&
+      static_cast<long>(report.down_ms -
+                        (s_list_moved_ms + config::kListTapGuardMs)) < 0) {
+    LOG_DEBUG("UI: list tap ignored, the list was moving");
+    return false;
+  }
+  return true;
+}
+
+Input browseTouch(const hw::TouchReport& report) {
+  Input out;
+  if (report.event == hw::TouchEvent::kTap && !listTapAllowed(report)) {
+    return out;
+  }
+  switch (report.event) {
+    case hw::TouchEvent::kTap: {
+      int row = -1;
+      const auto result = browse_list::handleTap(report.x, report.y, row);
+      if (result == browse_list::Result::kSelected) {
+        // Acknowledge first. play_media on an artist has taken four seconds
+        // and more on a live instance, and a screen that simply stops for
+        // that long reads as a device that missed the tap.
+        browse_list::showStarting(row);
+        out.intent = Intent::kPlayBrowseRow;
+        // Resolved here: a row is a layout idea, an item is not.
+        out.index = browse_list::itemForRow(row);
+      } else if (result == browse_list::Result::kDismissed) {
+        out.intent = Intent::kBackToNowPlaying;
+      }
+      break;
+    }
+    case hw::TouchEvent::kSwipeLeft:
+      out.intent = Intent::kOpenSearch;
+      break;
+    // Vertical swipes never arrive here: driveList() claims the press as soon
+    // as it commits to an axis and cancels the gesture, so the list has
+    // already moved with the finger.
+    case hw::TouchEvent::kSwipeRight:
+      out.intent = Intent::kBackToNowPlaying;
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
+Input searchTouch(const hw::TouchReport& report) {
+  Input out;
+  // Only the results scroll. The keyboard is typed on, and a key press must
+  // not be second-guessed.
+  if (report.event == hw::TouchEvent::kTap && search::showingResults() &&
+      !listTapAllowed(report)) {
+    return out;
+  }
+  switch (report.event) {
+    case hw::TouchEvent::kTap: {
+      int index = -1;
+      switch (search::handleTap(report.x, report.y, index)) {
+        case search::Result::kChanged:
+          search::draw();
+          break;
+        case search::Result::kSearch:
+          // This frame has to reach the panel before the blocking call, not
+          // after, or the screen simply stops for the length of the request.
+          search::showSearching();
+          out.intent = Intent::kRunSearch;
+          break;
+        case search::Result::kSelected:
+          // Acknowledge before blocking. play_media on an artist takes
+          // seconds, and in radio mode Music Assistant also has to build a
+          // queue, so this is the longest wait anywhere in the firmware.
+          search::showStarting(index);
+          out.intent = Intent::kPlaySearchResult;
+          out.index = index;
+          break;
+        case search::Result::kBack:
+          if (search::backToKeyboard()) {
+            search::draw();
+          }
+          break;
+        default:
+          break;
+      }
+      break;
+    }
+    case hw::TouchEvent::kSwipeRight:
+      // Back out one step at a time: results to keyboard, keyboard to list.
+      if (search::backToKeyboard()) {
+        search::draw();
+      } else {
+        out.intent = Intent::kOpenBrowse;
+      }
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
+}  // namespace
+
+bool init() {
+  LOG_INFO("Board: %s, panel %d px round", board::kName,
+                board::kDisplayDiameter);
+  displayInit();
+  canvasInit();
+  artwork::init();
+  hw::touchInit();
+  return true;
+}
+
+Input poll(Screen screen, const PlayerState* state) {
+  Input out;
+
+  // A touch on a blanked panel only wakes it. Handled before anything else
+  // reads the touch state, so the same press cannot also press a button.
+  if (displayIsBlanked()) {
+    if (hw::touchIsDown()) {
+      wake();
+      out.intent = Intent::kWokeFromTouch;
+    } else {
+      hw::TouchReport discard;
+      hw::touchPoll(discard);
+    }
+    return out;
+  }
+
+  if (driveVolume(screen, state, out)) {
+    return out;
+  }
+  driveListScrolling(screen);
+
+  hw::TouchReport report;
+  if (!hw::touchPoll(report)) {
+    return out;
+  }
+
+  if (screen == Screen::kSearch) {
+    return searchTouch(report);
+  }
+  if (screen == Screen::kBrowse) {
+    return browseTouch(report);
+  }
+  if (screen == Screen::kMessage) {
+    // The cards are not interactive: everything they complain about is fixed
+    // in the portal, and the app notices the fix on its own. A touch is still
+    // worth taking as "someone is here", which waking above already did.
+    return out;
+  }
+
+  if (report.event == hw::TouchEvent::kSwipeUp) {
+    out.intent = Intent::kOpenBrowse;
+    return out;
+  }
+  if (report.event != hw::TouchEvent::kTap) {
+    return out;
+  }
+
+  switch (now_playing::hitTest(report.x, report.y)) {
+    case Action::kPrevious:
+      out.intent = Intent::kPrevious;
+      break;
+    case Action::kPlayPause:
+      out.intent = Intent::kPlayPause;
+      break;
+    case Action::kNext:
+      out.intent = Intent::kNext;
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
+// --- What to show ----------------------------------------------------------
+
+void showNowPlaying(const PlayerState& state) { now_playing::draw(state); }
+
+void showBrowse() {
+  hw::touchCancel();
+  browse_list::opened();
+  s_list_dragging = false;
+  s_list_velocity = 0.0f;
+  browse_list::draw();
+}
+
+void showSearch() {
+  hw::touchCancel();
+  search::reset();
+  s_list_dragging = false;
+  s_list_velocity = 0.0f;
+  search::draw();
+}
+
+void showSearchResults() { search::draw(); }
+
+void showSearching() { search::showSearching(); }
+
+void showLoading(const char* what) {
+  statusScreenMessage("Loading", what, "", theme::kStatusPlain,
+                      theme::kStatusPlainText);
+}
+
+void showCommandPending(Intent intent, bool pending) {
+  switch (intent) {
+    case Intent::kPrevious:
+      now_playing::showButtonPressed(Action::kPrevious, pending);
+      break;
+    case Intent::kPlayPause:
+      now_playing::showButtonPressed(Action::kPlayPause, pending);
+      break;
+    case Intent::kNext:
+      now_playing::showButtonPressed(Action::kNext, pending);
+      break;
+    default:
+      break;
+  }
+}
+
+void showLoadingList() {
+  statusScreenMessage("Loading", "music", "", theme::kStatusPlain,
+                      theme::kStatusPlainText);
+}
+
+void showNeedsHaSetup() {
+  hw::touchCancel();
+  statusScreenNeedsHaSetup();
+}
+
+void showNoPlayer() {
+  hw::touchCancel();
+  statusScreenNoPlayer();
+}
+
+void showHaUnreachable(const char* detail) { statusScreenHaUnreachable(detail); }
+
+void showPortal() { statusScreenPortal(); }
+
+void showConnecting(const char* ssid) { statusScreenConnectingBegin(ssid); }
+
+void tickConnecting() { statusScreenConnectingTick(); }
+
+void showConnectFailed() { statusScreenConnectFailed(); }
+
+void showSettingsCleared() { statusScreenWifiReset(); }
+
+void refreshElapsed(const PlayerState& state) {
+  now_playing::refreshElapsed(state);
+}
+
+// --- Panel power -----------------------------------------------------------
+
+bool isBlanked() { return displayIsBlanked(); }
+
+void blank() { displayBlank(); }
+
+void wake() {
+  if (!displayIsBlanked()) {
+    return;
+  }
+  displayWake();
+  // The touch that woke the screen must not also land on a control.
+  hw::touchCancel();
+}
+
+// --- Artwork ---------------------------------------------------------------
+
+void prepareArtwork(const char* picture) { cover::prepare(picture); }
+
+void clearArtwork() { cover::clear(); }
+
+bool idleWork(Screen screen) {
+  if (hw::touchIsDown()) {
+    return false;  // responsiveness matters more than a picture
+  }
+  if (screen == Screen::kSearch) {
+    if (search::showingResults() && search::loadNextThumb()) {
+      search::draw();
+      return true;
+    }
+    return false;
+  }
+  // The list's own artwork is filled in from wherever the user happens to be,
+  // so a swipe up lands on a finished list rather than on one still loading.
+  if (browse_list::loadNextThumb()) {
+    if (screen == Screen::kBrowse) {
+      browse_list::draw();
+    }
+    return true;
+  }
+  return false;
+}
+
+bool volumeDragging() { return s_vol_dragging; }
+
+}  // namespace ui

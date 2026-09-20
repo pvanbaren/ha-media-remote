@@ -74,10 +74,14 @@ std::atomic<bool> g_turn_off_control{false};
 unsigned long g_last_elapsed_ms = 0;
 
 /** A volume gesture is in progress somewhere on the panel, so a poll must not
- *  contradict it. The display owns the gesture; this is only the flag it
- *  raises, set on the Arduino loop and read by the poll task in
- *  publishState(). */
+ *  contradict it. The display owns the gesture; this is a copy of
+ *  ui::volumeDragging() taken after every input pass on the Arduino loop, for
+ *  publishState() on the poll task to read. */
 std::atomic<bool> g_volume_dragging{false};
+/** A state change arrived during a drag and its repaint was held back, so it
+ *  is owed once the finger lifts. Without this a new title that landed
+ *  mid-drag stayed off the screen until something else changed. */
+std::atomic<bool> g_repaint_after_drag{false};
 
 /** The level last commanded on the control entity, and when -- or -1 when
  *  nothing is outstanding. Held behind g_state_mutex with g_state.
@@ -121,6 +125,15 @@ void commandVolume(const char* entity, float level) {
       xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
     g_volume_commanded = level;
     g_volume_commanded_ms = millis();
+    // And the level on record is this one from now on, not the server's
+    // last word. That is what the screen shows, what an update arriving
+    // mid-drag is held to, and where the next swipe starts. Left at the
+    // server's level, a second swipe started from the pre-drag volume, and the
+    // screen only caught up when some later update happened to differ from
+    // that stale number -- which with the stream could be a minute away.
+    if (g_state_valid) {
+      g_state.volume = level;
+    }
     xSemaphoreGive(g_state_mutex);
   }
   services::ha::setVolume(entity, level);
@@ -208,8 +221,12 @@ void publishState(const PlayerState& incoming) {
                   fresh.muted ? 1 : 0, fresh.position_s, fresh.duration_s,
                   static_cast<unsigned>(fresh.supported_features), fresh.title);
   }
-  if (changed && !g_volume_dragging) {
-    g_state_dirty = true;
+  if (changed) {
+    if (g_volume_dragging) {
+      g_repaint_after_drag = true;
+    } else {
+      g_state_dirty = true;
+    }
   }
 }
 
@@ -737,6 +754,16 @@ void handleInput() {
       powerOnControl();
       startPlaying(services::search::play(in.index));
       break;
+  }
+
+  // After the intent, not before: the release of a drag comes back as its
+  // final kSetVolume, and commandVolume() has to have recorded that level
+  // before the flag drops, or a state update landing in between carries the
+  // old level and nothing holds it back.
+  const bool dragging = ui::volumeDragging();
+  g_volume_dragging = dragging;
+  if (!dragging && g_repaint_after_drag.exchange(false)) {
+    g_state_dirty = true;
   }
 }
 
