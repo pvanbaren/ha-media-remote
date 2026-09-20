@@ -6,7 +6,27 @@
 #include "board/board.h"
 #include "config.h"
 
-#if defined(BOARD_PANEL_QSPI)
+#if defined(BOARD_PANEL_RGB)
+
+/**
+ * An RGB panel is not a LovyanGFX device at all.
+ *
+ * The S3's LCD peripheral streams a framebuffer continuously and offers no
+ * command channel, so there is nothing for LovyanGFX to talk to. esp_lcd owns
+ * the output (hardware/qualia_rgb.h) and LovyanGFX is used purely as a
+ * rasteriser into ui::canvas's sprite.
+ *
+ * `tft` still exists because the shared UI code names it, but it is never
+ * created and never drawn to: board::kPanelWritesDirect is false, so
+ * ui::panel() hands back the canvas instead. A sprite is the cheapest type
+ * that satisfies the symbol without pretending to be a panel.
+ */
+class LGFX : public lgfx::LGFX_Sprite {
+ public:
+  LGFX() { setColorDepth(16); }
+};
+
+#elif defined(BOARD_PANEL_QSPI)
 
 /**
  * LovyanGFX device: ST77916 on quad SPI.
@@ -175,4 +195,4 @@ public:
   }
 };
 
-#endif  // BOARD_PANEL_QSPI
+#endif  // BOARD_PANEL_RGB

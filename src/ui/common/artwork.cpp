@@ -37,7 +37,9 @@ Kind s_kind = Kind::kBrowse;
 int s_next = 0;
 
 int scaledPx() {
-  const int px = static_cast<int>(board::kThumbPx * board::kUiScale + 0.5f);
+  // Thumbnails live in list rows, so they follow the list's scale.
+  const int px = static_cast<int>(
+      board::kThumbPx * board::kUiScale * board::kListScale + 0.5f);
   return px < 8 ? 8 : px;
 }
 

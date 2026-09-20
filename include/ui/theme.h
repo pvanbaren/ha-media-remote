@@ -18,6 +18,26 @@ constexpr int px(int px240) {
                           (px240 < 0 ? -0.5f : 0.5f));
 }
 
+/** As px(), for text: also scaled by board::kTextScale, which lets a board
+ *  whose pixels are denser than the 240 px design's set its type smaller
+ *  without moving any of the layout. Every *TextPx below goes through here,
+ *  and each board embeds exactly the faces these come out at. */
+constexpr int textPx(int px240) {
+  return static_cast<int>(px240 * board::kUiScale * board::kTextScale + 0.5f);
+}
+
+/** As px() and textPx(), for the browse and search lists: also scaled by
+ *  board::kListScale, so a panel with room to spare can show more rows at once
+ *  without shrinking anything else on screen. */
+constexpr int listPx(int px240) {
+  return static_cast<int>(px240 * board::kUiScale * board::kListScale + 0.5f);
+}
+constexpr int listTextPx(int px240) {
+  return static_cast<int>(px240 * board::kUiScale * board::kTextScale *
+                              board::kListScale +
+                          0.5f);
+}
+
 constexpr int kSize = board::kDisplayWidth;
 constexpr int kCenterX = kSize / 2;
 constexpr int kCenterY = kSize / 2;
@@ -72,7 +92,7 @@ constexpr int kVolumeKnobRadius = px(6);
 // Drawn on an opaque pill so the once-a-second update can be painted straight
 // to the panel, without recomposing the cover art underneath it.
 constexpr int kElapsedY = px(222);
-constexpr int kElapsedTextPx = px(15);
+constexpr int kElapsedTextPx = textPx(15);
 constexpr int kElapsedPillPadX = px(7);
 constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);
@@ -83,12 +103,12 @@ constexpr int kElapsedPillRadius = px(8);
 // a title that wraps grows downwards, into the gap above the transport row,
 // rather than shoving the artist up into the curve of the bezel.
 constexpr int kSubtitleY = px(70);
-constexpr int kSubtitleTextPx = px(20);
+constexpr int kSubtitleTextPx = textPx(20);
 constexpr int kTitleBlockCenterY = px(112);
 /** 1.2x the title's own height, so two lines sit close without touching. */
-constexpr int kTitleLineHeight = px(29);
+constexpr int kTitleLineHeight = textPx(29);
 constexpr int kTitleMaxLines = 2;
-constexpr int kTitleTextPx = px(24);
+constexpr int kTitleTextPx = textPx(24);
 /** Text is clipped to the chord of the circle at its own y, less this inset. */
 constexpr int kTextEdgeInset = px(16);
 
@@ -117,25 +137,25 @@ constexpr int kGlyphSkipBarGap = px(2);
 // whichever of their edges sits further from the centre, so the geometry --
 // not a fixed row count -- decides how many fit.
 constexpr uint16_t kListBackdrop = 0x0841;  // just off black
-constexpr int kListTitleTextPx = px(17);
+constexpr int kListTitleTextPx = listTextPx(17);
 /** Everything above this is the strip that dismisses the list on a tap. */
 constexpr int kListTopY = px(32);
 /** Section headings are a line of text, not a card, so they take far less
  *  room than a row -- which is what makes two sections fit on a 240 px
  *  circle at all. */
-constexpr int kListHeaderHeight = px(20);
-constexpr int kListHeaderTextPx = px(15);
+constexpr int kListHeaderHeight = listPx(20);
+constexpr int kListHeaderTextPx = listTextPx(15);
 /** Tall enough for an item thumbnail plus a little air either side; the
  *  thumbnail (board::kThumbPx) is sized to match. */
-constexpr int kListRowHeight = px(46);
-constexpr int kListRowGap = px(4);
+constexpr int kListRowHeight = listPx(46);
+constexpr int kListRowGap = listPx(4);
 /** Gap between the thumbnail and the name. */
-constexpr int kListThumbGap = px(10);
-constexpr int kListRowRadius = px(10);
-constexpr int kListRowTextPx = px(20);
+constexpr int kListThumbGap = listPx(10);
+constexpr int kListRowRadius = listPx(10);
+constexpr int kListRowTextPx = listTextPx(20);
 /** Rows are inset from the circle edge at their own y by this much. */
-constexpr int kListRowInset = px(10);
-constexpr int kListTextInset = px(12);
+constexpr int kListRowInset = listPx(10);
+constexpr int kListTextInset = listPx(12);
 /** Scroll indicator arc on the right bezel. */
 constexpr int kListScrollOuterRadius = px(118);
 constexpr int kListScrollInnerRadius = px(114);
@@ -150,14 +170,14 @@ constexpr int kListScrollInnerRadius = px(114);
 // against it first, so any overlap would take the row's lowest taps as well
 // as covering its keys.
 constexpr int kSearchQueryY = px(34);
-constexpr int kSearchQueryTextPx = px(20);
+constexpr int kSearchQueryTextPx = textPx(20);
 constexpr int kKeyRow0Y = px(72);
 constexpr int kKeyRowPitch = px(28);
 constexpr int kKeyWidth = px(27);
 constexpr int kKeyHeight = px(26);
 constexpr int kKeyGap = px(2);
 constexpr int kKeyRadius = px(5);
-constexpr int kKeyTextPx = px(17);
+constexpr int kKeyTextPx = textPx(17);
 constexpr int kKeyRows = 4;
 constexpr int kKeyCols = 7;
 constexpr int kSearchGoY = px(200);
@@ -171,8 +191,8 @@ constexpr int kSearchResultTopY = px(38);
 
 // --- Status / message screens ---
 constexpr int kStatusLineGap = px(6);
-constexpr int kStatusTitleTextPx = px(24);
-constexpr int kStatusBodyTextPx = px(20);
+constexpr int kStatusTitleTextPx = textPx(24);
+constexpr int kStatusBodyTextPx = textPx(20);
 
 /** Half-width of the circle at a given y -- how much horizontal room a row of
  *  text actually has on a round panel. Returns 0 outside the circle. */

@@ -7,8 +7,8 @@
  * Which VLW faces this board carries.
  *
  * The faces are embedded by the linker, so their symbol names are spelled out
- * per board -- a 240 px panel wants 15/17/20/24 px and a 720 px one wants
- * 45/51/60/72, and nothing can choose between those at run time. Everything
+ * per board -- a 240 px panel wants 15/17/20/24 px and the 720 px Qualia
+ * 34/38/45/54, and nothing can choose between those at run time. Everything
  * that *uses* a face is shared; this is only the list.
  */
 namespace hw {

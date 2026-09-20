@@ -21,10 +21,19 @@ src/
   ui/
     common/   every screen that does not care what shape the panel is
     round/    theme.cpp, now_playing.cpp         <- 240 px GC9A01 circle
+    square/   theme.cpp, now_playing.cpp         <- 720 px Qualia square
     headless/ draws nothing, narrates to serial
   hardware/
-    waveshare/  round360/  headless/             <- one directory per board
+    waveshare/  qualia/  round360/  headless/    <- one directory per board
 ```
+
+Three panels, and the square one needed **two files**; the second round
+one needed none of them. Of the ten under
+`src/ui/`, eight never ask what shape the panel is: `browse_list`, `search`,
+`status_screens` and `ui.cpp` lay out by calling `chordHalfWidth()`, and
+`artwork`/`canvas`/`cover_art`/`text` deal in pixels and URLs. Only `theme.cpp`
+(which answers the chord question) and `now_playing.cpp` (the one screen with
+a circular idea in it) are per-shape.
 
 `include/ui/ui.h` is the seam, and the input half is what earns it. A display
 does its own hit testing -- only it knows where it drew the buttons -- and
@@ -39,6 +48,7 @@ stanza rather than an `#if`.
 
 ```bash
 pio run -e waveshare-s3      # 1.28" round GC9A01 (default)
+pio run -e qualia-720        # 4" square 720x720 on an Adafruit Qualia
 pio run -e round360-s3       # 1.85" round 360x360 ST77916, quad SPI
 pio run -e headless          # no panel at all
 ```
@@ -54,6 +64,161 @@ of drawing. It is useful while a new panel is being brought up, and a standing
 check that nothing has leaked back across the seam: if it stops linking,
 something in `src/app/` or `src/services/` has grown a pixel.
 
+## The Qualia square panel
+
+`env:qualia-720` drives an **Adafruit Qualia ESP32-S3 for RGB-666**
+([5800](https://www.adafruit.com/product/5800)) carrying the **4" square
+720x720 capacitive panel** ([5794](https://www.adafruit.com/product/5794),
+TL040HDS20). 16 MB flash, 8 MB octal PSRAM.
+
+**Build this env from PowerShell or cmd, not git-bash.** pioarduino's
+`idf_tools.py` aborts with "MSys/Mingw is not supported" whenever `MSYSTEM` is
+set.
+
+### It is a different kind of panel, not just a bigger one
+
+The GC9A01 is an SPI display with a command channel. This one is
+RGB-parallel -- the S3's LCD peripheral streams a framebuffer continuously over
+16 data lines plus PCLK/HSYNC/VSYNC/DE, and there is **no command channel at
+all**. Three consequences run through `src/hardware/qualia/`:
+
+- **The panel's own config lines are not GPIOs.** Reset, the backlight and two
+  user buttons hang off a TCA9554 I2C expander at `0x3F` (SDA 8 / SCL 18).
+- **There is no controller to program.** The TL040HDS20 wants a reset pulse and
+  nothing else; Adafruit's CircuitPython driver for it ships an empty init
+  sequence, where the round 720x720 NV3052C needs about a hundred register
+  writes.
+- **There is no BOOT button.** GPIO 0 is an RGB data line here, carrying blue
+  bit 3. The expander's DOWN button stands in for it, so `wifi_setup.cpp` needs
+  no notion of which board it is on.
+
+### One framebuffer, scrolled in place
+
+`hardware/qualia/rgb.cpp` configures esp_lcd with **one framebuffer** and no
+bounce buffer, so GDMA reads straight out of PSRAM and every repaint writes
+the buffer being scanned. Screens compose into a separate 1 MB canvas and
+`rgbPresent()` copies the rectangle that changed across.
+
+**Why one.** The binding constraint is memory bandwidth. An RGB panel has
+no frame memory, so the scan-out reads continuously: at 12 MHz that is
+24 MB/s of PSRAM the panel cannot be starved of a byte of. A second buffer
+would always be a flip behind, so it would never hold the frame on the glass
+-- and a scrolling list could only ever be recomposed and copied, 624 rows a
+step. One buffer does hold it, which is what makes the scroll below
+possible.
+
+**A scroll moves the rows already on the glass.** Every row a list scroll
+keeps is on the panel already, pixel for pixel, only somewhere else -- on a
+square panel a row does not change shape with its height. So
+`browse_list::redrawRows()` moves the band in place (`rgbScroll()`, through
+`canvasScrollPanel()`), then composes and presents only what the move cannot
+supply: the strip it uncovers, and the narrow column the scroll bar runs
+down. That column is left out of the move -- the thumb travels the opposite
+way to the rows, so moving it with them showed it jumping backwards first --
+and repainted once the rows are in place. The bar sits flush with the right
+edge for this reason: its columns are then the end of every row, and each
+row moves as one run rather than two either side of it. The search results do the same
+through `search::redrawResults()`, less the column, having no scroll bar;
+their background is the list's flat one on the square panel for the same
+reason -- a circle behind full-width rows is a background that changes with
+height, which no row can be moved across.
+
+The canvas is left behind while this happens -- outside the two strips it
+still holds the rows where they were -- which is safe for as long as nothing
+else presents over the band. `canvasPanelWrites()` is how the list knows:
+it counts every write to the panel, and a count that moved since the list's
+own last write means someone else drew there, so the next repaint is a
+whole one. So is anything that changes what rows *show* rather than where
+they are -- a thumbnail arriving goes through `repaintRows()` -- and a jump
+of more than half the view, which is mostly new rows anyway. The round
+boards never take this path: their panels hold the frame behind an SPI bus
+that only writes, and their rows change width with height.
+
+What keeps the single buffer from breaking up the picture:
+
+- `rgbPresent()` copies **only the rectangle that changed**, so the elapsed
+  chip costs ~84 rows, not a megabyte.
+- `copyRegion()` and `rgbScroll()` stand off the bus once per
+  `kCopySlabRows` full-width rows' worth of bytes, letting GDMA refill the
+  FIFO while the CPU waits -- bytes, not rows, so a narrow column does not
+  sleep as often as a full-width band. Composing does the same every
+  `kComposeSlabRows`.
+- `board::kListRedrawMinMs` stops a scrolling list asking for repaints faster
+  than one can finish.
+- The every-VSYNC restart pulls the picture back if a burst still gets
+  through, so an underrun costs a frame rather than the session. Arduino's
+  prebuilt libraries already turn it on, so the Qualia builds against them
+  like every other board. Their handler lives in flash, which lets a flash
+  write -- a portal save -- delay it by a frame; moving it to IRAM would need
+  the IDF built from source, and that one frame is all it would buy.
+
+### Things that will bite
+
+| Symptom | Fix |
+|---|---|
+| All colours look inverted / byte-swapped | `board::kFrameNativeByteOrder`. esp_lcd reads the framebuffer as native little-endian; LovyanGFX's default RGB565 is byte-swapped for SPI |
+| Touch does nothing | The FT6336 is at **`0x48`**, not the usual `0x38`. The boot log prints an I2C scan |
+| Image offset sideways | Swap `kRgbHsyncBackPorch` / `kRgbHsyncFrontPorch`. Adafruit and the panel datasheet disagree about which is which; blanking totals match, so only the offset differs |
+| Image torn or shimmering | `kRgbPclkActiveNeg`. This panel latches on the falling edge; the round one does not |
+| Image shifted vertically after a reboot, fine after a power cycle | Already handled by the `periph_module_reset` in `rgbInit()` |
+| Picture breaks up or jumps sideways while a list scrolls | PSRAM bandwidth: the copy or the in-place move is starving the scan-out. Lower `kCopySlabRows` or raise `board::kListRedrawMinMs` to spread it out. Dropping `kRgbPclkHz` is how to confirm it, not how to fix it. If the shift *persists* rather than lasting a frame, the VSYNC restart is off |
+| Rows in a scrolled list show stale content, or the scroll bar leaves a trail | The in-place scroll built on a panel that no longer held the list. Something presented over the band without going through `ui::canvasPresentRegion()` or `canvasScrollPanel()`, so `canvasPanelWrites()` did not see it |
+| Home Assistant requests take tens of seconds, though the Wi-Fi is fine on every other device | The panel bus is desensing the radio. `kRgbPclkHz` and the drive strength in `quietenBus()` -- see below |
+
+### The panel bus talks over the Wi-Fi
+
+Nineteen pins switch at the pixel clock a few centimetres from a 2.4 GHz
+front end, and on this board that is not a theoretical concern. At the
+default GPIO drive strength every Home Assistant request took tens of
+seconds -- one succeeded in 72 -- while a PC on the same network completed
+the TLS handshake to the same server in 4 ms.
+
+It presents as anything but a radio problem. DNS resolves to the right
+address, the heap is healthy, the server is fast, and **RSSI reads -54 dBm**
+throughout. RSSI is the strength of frames that *did* arrive, so it cannot
+show the noise they arrived over and says nothing about whether this end is
+being heard at all. A strong RSSI beside a request that timed out is the
+ordinary look of a lossy link, not a contradiction.
+
+Two measurements isolate it. Dropping `kRgbPclkHz` to 12 MHz cut that 72 s
+request to 4.3 s -- and sped up no PSRAM copy at all, so the MSPI was never
+the bottleneck and the CPU was never starved of it. Only the radio changed.
+
+Radiated emission follows edge rate as well as clock, so there are two
+levers and they add rather than substitute. Measured at 16 MHz, on the
+first request after boot and then in steady state once keep-alive holds the
+connection open:
+
+| Drive | First request | Steady state |
+|---|---|---|
+| `GPIO_DRIVE_CAP_2` (~20 mA, the default) | 72 s | connects timing out at 6 s |
+| `GPIO_DRIVE_CAP_1` (~10 mA) | 11.4 s | 26.7 / 9.4 / 2.7 s |
+| `GPIO_DRIVE_CAP_0` (~5 mA) | 0.5 s | 28 / 16 / 16 ms |
+
+For scale, 12 MHz at the *default* drive reached 77 ms in steady state, so
+either lever pushed far enough is sufficient on its own.
+
+It ships at **12 MHz and `CAP_0`**. The drive alone carries the radio; the
+clock is down for PSRAM bandwidth instead, because at 16 MHz a scrolling list
+left the frame shifted sideways (see the framebuffer section above). The cost
+is 19.5 Hz on the glass instead of 26.1. 5 mA into a ribbon is thin for
+signal integrity: it works, and it is the first thing to doubt if the panel
+shows speckle or dropped columns.
+
+`quietenBus()` in `src/hardware/qualia/rgb.cpp` is called after
+`esp_lcd_new_rgb_panel()`, which configures those pins itself and would
+otherwise overwrite the capability. HSYNC and VSYNC are left alone: they
+switch at a thousandth of the data rate, so they would buy nothing for the
+risk of a weakened sync edge.
+
+**If the glass speckles, drops columns or shifts, the drive strength is the
+first thing to put back** -- `GPIO_DRIVE_CAP_2` is the default.
+
+The cost lands almost entirely on the TLS handshake, which is the exchange
+needing several round trips in a row. That is why one boot could show both
+72 s and 77 ms, and why the number to watch when changing any of this is
+**the first request after boot**, not the steady state.
+
 ### Adding a panel
 
 1. `include/board/<board>.h` -- pins, panel size, touch raster.
@@ -65,10 +230,14 @@ something in `src/app/` or `src/services/` has grown a pixel.
    directories -- and remember to exclude the new one from the existing envs,
    which is the easy half to forget.
 
-Regenerate the fonts at the sizes the new panel asks for; `theme::px()` scales
-every dimension by `kUiScale`, so a 360 px round panel wants 23/26/30/36 px
-faces rather than rescaled 24 px glyphs. LovyanGFX's VLW scaler is
-nearest-neighbour, which is why each size is its own face:
+Regenerate the fonts at the sizes the new panel asks for; `theme::textPx()`
+scales every text size by `kUiScale` and then by the board's `kTextScale`, so
+a 360 px round panel (1.5, 1.0) wants 23/26/30/36 px faces and the 720 px
+Qualia (3.0, 0.75) 34/38/45/54, rather than rescaled 24 px glyphs.
+`kTextScale` is for a panel whose pixels are denser than the 240 px design's,
+where scaling by pixel count alone makes the type too big; layout ignores it.
+LovyanGFX's VLW scaler is nearest-neighbour, which is why each size is its own
+face:
 
 ```bash
 python scripts/build_ui_font.py assets/fonts/NotoSans-Bold.ttf \

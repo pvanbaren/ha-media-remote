@@ -67,8 +67,10 @@ void statusScreenMessage(const char* title, const char* line1,
   // Stack the lines around the centre so a one-, two- or three-line card all
   // sit in the same optical place.
   const int gap = ui::theme::kStatusLineGap;
-  const int title_h = ui::theme::px(30);
-  const int body_h = ui::theme::px(20);
+  // Slots for the text, so they shrink with it on a board that sets its type
+  // smaller than its layout.
+  const int title_h = ui::theme::textPx(30);
+  const int body_h = ui::theme::textPx(20);
 
   int total = title_h;
   if (line1 != nullptr && line1[0] != '\0') {

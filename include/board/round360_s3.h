@@ -31,8 +31,8 @@
  * panel unrotated, which is why the touch transform below is the identity --
  * see the note there.
  */
-/** Counterpart to BOARD_PANEL_SPI. Quad SPI carries the command/data
- *  distinction inside the transaction rather than on a DC wire,
+/** Counterpart to BOARD_PANEL_SPI and BOARD_PANEL_RGB. Quad SPI carries the
+ *  command/data distinction inside the transaction rather than on a DC wire,
  *  which is a different LovyanGFX bus setup rather than a variation on the
  *  three-wire one, so lgfx_config.hpp gives it its own branch. */
 #define BOARD_PANEL_QSPI 1
@@ -55,6 +55,10 @@ constexpr int kUiBaseSize = 240;
  *  26, 20 to 30 and 24 to 36. Keep those three lists in step -- the heights
  *  here, platformio.ini's board_build.embed_files, and font_table.cpp. */
 constexpr float kUiScale = static_cast<float>(kDisplayDiameter) / kUiBaseSize;
+/** Text scales with the layout here: no extra factor. */
+constexpr float kTextScale = 1.0f;
+/** Lists scale with the layout too. */
+constexpr float kListScale = 1.0f;
 
 /** How far the transport row sits above the 240 px design's, in design
  *  pixels. Scaled by 1.5 the play button's lower edge and the elapsed chip's

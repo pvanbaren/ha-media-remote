@@ -20,8 +20,8 @@
  * src/hardware/ includes this file: the services and the app layer are
  * written against no display at all.
  */
-/** Counterpart to BOARD_PANEL_QSPI: three-wire SPI with a DC pin, which is
- *  the branch of hardware/lgfx_config.hpp that builds the GC9A01. */
+/** Counterpart to BOARD_PANEL_RGB: this panel has a command channel, so
+ *  hardware/lgfx_config.hpp builds a real LovyanGFX device for it. */
 #define BOARD_PANEL_SPI 1
 
 namespace board {
@@ -45,6 +45,10 @@ constexpr int kDisplayHeight = kDisplayDiameter;
 /** Layout baseline. All ui/theme.h values are px at this size. */
 constexpr int kUiBaseSize = 240;
 constexpr float kUiScale = static_cast<float>(kDisplayDiameter) / kUiBaseSize;
+/** The panel the text sizes were designed on, so no extra factor. */
+constexpr float kTextScale = 1.0f;
+/** Nor for the lists. */
+constexpr float kListScale = 1.0f;
 
 /** How far the transport row sits above the 240 px design's, in design
  *  pixels. None: this is the panel it was designed on. */
