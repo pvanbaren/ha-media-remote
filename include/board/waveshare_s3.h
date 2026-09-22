@@ -20,6 +20,10 @@
  * src/hardware/ includes this file: the services and the app layer are
  * written against no display at all.
  */
+/** Counterpart to BOARD_PANEL_QSPI: three-wire SPI with a DC pin, which is
+ *  the branch of hardware/lgfx_config.hpp that builds the GC9A01. */
+#define BOARD_PANEL_SPI 1
+
 namespace board {
 
 constexpr char kName[] = "Waveshare ESP32-S3-Touch-LCD-1.28";
@@ -42,10 +46,22 @@ constexpr int kDisplayHeight = kDisplayDiameter;
 constexpr int kUiBaseSize = 240;
 constexpr float kUiScale = static_cast<float>(kDisplayDiameter) / kUiBaseSize;
 
+/** How far the transport row sits above the 240 px design's, in design
+ *  pixels. None: this is the panel it was designed on. */
+constexpr int kTransportRowLiftPx240 = 0;
+
 /** True when the panel is a circle, so the UI clips text to the chord at its
  *  own y rather than to a bounding box. A square panel sets this false and
  *  ui::theme's chord helpers become the full width. */
 constexpr bool kDisplayIsRound = true;
+
+/** The controller has a command channel, so a small repaint can go straight
+ *  over SPI without touching the composed frame. */
+constexpr bool kPanelWritesDirect = true;
+
+/** LovyanGFX's default RGB565 is byte-swapped, which is what an SPI panel
+ *  wants on the wire, and pushImage converts on the way out regardless. */
+constexpr bool kFrameNativeByteOrder = false;
 
 // --- Display: GC9A01 on SPI ------------------------------------------------
 constexpr gpio_num_t kDisplayPinRst = GPIO_NUM_14;
@@ -114,5 +130,15 @@ constexpr int kThumbPx = 38;
  *  no upscaling. A board whose panel is large enough that matching it would be
  *  costly can ask for less and upscale instead. */
 constexpr int kCoverArtRequestPx = kDisplayDiameter;
+
+/** Cover art is cached compressed, not decoded, so one buffer serves every
+ *  repaint. Claimed once at boot and never resized: sizing it per image meant
+ *  a free and a differently-sized malloc on every track change, which is how a
+ *  long-running heap fragments.
+ *
+ *  128 KB. This panel is 240 px and so asks the image proxy for 256 px art,
+ *  which measures tens of KB; this swallows that with room for a 512 px cover
+ *  from a server that ignored the request. Zero disables caching entirely. */
+constexpr size_t kCoverArtBufferBytes = 128u * 1024u;
 
 }  // namespace board

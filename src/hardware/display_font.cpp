@@ -1,5 +1,7 @@
 #include "hardware/display_font.h"
 
+#include "hardware/font_table.h"
+
 #include <cmath>
 
 #include "hardware/display.h"
@@ -7,16 +9,12 @@
 
 // One embedded VLW per on-screen height. The symbol names come from the paths
 // in platformio.ini's board_build.embed_files.
-extern "C" {
-#define VLW_SYM(name) extern const uint8_t name[] asm(#name)
-VLW_SYM(_binary_data_ui_font_15_vlw_start);
-VLW_SYM(_binary_data_ui_font_17_vlw_start);
-VLW_SYM(_binary_data_ui_font_20_vlw_start);
-VLW_SYM(_binary_data_ui_font_24_vlw_start);
-#undef VLW_SYM
-}
 
 namespace {
+
+/** More than any board is likely to embed; the real count comes from
+ *  hw::fontTable(). */
+constexpr size_t kMaxFonts = 8;
 
 struct FontEntry {
   const uint8_t* data;
@@ -26,13 +24,11 @@ struct FontEntry {
   float native_h;
 };
 
-FontEntry s_fonts[] = {
-    {_binary_data_ui_font_15_vlw_start, 0.0f},
-    {_binary_data_ui_font_17_vlw_start, 0.0f},
-    {_binary_data_ui_font_20_vlw_start, 0.0f},
-    {_binary_data_ui_font_24_vlw_start, 0.0f},
-};
-constexpr size_t kFontCount = sizeof(s_fonts) / sizeof(s_fonts[0]);
+/** Filled from hw::fontTable() at init, which is where the per-board list of
+ *  embedded faces lives. */
+FontEntry s_fonts[kMaxFonts];
+size_t s_font_count = 0;
+
 /** Body text, and what displayFontEnsureLoaded() selects: the 20 px face. */
 constexpr size_t kDefaultFont = 2;
 
@@ -59,6 +55,20 @@ bool useFont(lgfx::LGFXBase& gfx, const uint8_t* data) {
 }  // namespace
 
 bool displayFontInit() {
+  size_t count = 0;
+  const uint8_t* const* blobs = hw::fontTable(count);
+  if (count > kMaxFonts) {
+    count = kMaxFonts;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    s_fonts[i] = FontEntry{blobs[i], 0.0f};
+  }
+  s_font_count = count;
+  if (s_font_count == 0) {
+    LOG_WARN("Fonts: board embedded none - using bitmap fallback");
+    return false;
+  }
+
   s_vlw_loaded = useFont(tft, s_fonts[kDefaultFont].data);
   if (!s_vlw_loaded) {
     LOG_ERROR("Smooth font load failed - using bitmap fallback");
@@ -66,7 +76,7 @@ bool displayFontInit() {
   }
 
   // Measure each font once. displayFontApplyHeight() matches against these.
-  for (size_t i = 0; i < kFontCount; ++i) {
+  for (size_t i = 0; i < s_font_count; ++i) {
     if (useFont(tft, s_fonts[i].data)) {
       tft.setTextSize(1.0f);
       s_fonts[i].native_h = static_cast<float>(tft.fontHeight());
@@ -79,13 +89,13 @@ bool displayFontInit() {
   // One line, built first: the log writes whole lines.
   char sizes[96] = {};
   size_t used = 0;
-  for (size_t i = 0; i < kFontCount && used < sizeof(sizes); ++i) {
+  for (size_t i = 0; i < s_font_count && used < sizeof(sizes); ++i) {
     const int n = snprintf(sizes + used, sizeof(sizes) - used, "%s%.0f",
                            i ? ", " : "", s_fonts[i].native_h);
     used += n > 0 ? static_cast<size_t>(n) : 0;
   }
   LOG_INFO("Fonts: %u native sizes (%s px)",
-           static_cast<unsigned>(kFontCount), sizes);
+           static_cast<unsigned>(s_font_count), sizes);
 
   useFont(tft, s_fonts[kDefaultFont].data);
   return true;
@@ -107,7 +117,7 @@ void displayFontApplyHeight(lgfx::LGFXBase& gfx, float target_px) {
 
   size_t best = 0;
   float best_err = -1.0f;
-  for (size_t i = 0; i < kFontCount; ++i) {
+  for (size_t i = 0; i < s_font_count; ++i) {
     const float err = std::fabs(s_fonts[i].native_h - target_px);
     if (best_err < 0.0f || err < best_err) {
       best_err = err;

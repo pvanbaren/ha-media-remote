@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 
 namespace ui::theme {
@@ -91,7 +91,9 @@ constexpr int kTitleTextPx = px(24);
 constexpr int kTextEdgeInset = px(16);
 
 // --- Transport row: previous / play-pause / next ---
-constexpr int kTransportRowY = px(181);
+/** Raised on a board whose scaling brings the play button down onto the
+ *  elapsed chip below it (board::kTransportRowLiftPx240). */
+constexpr int kTransportRowY = px(181 - board::kTransportRowLiftPx240);
 constexpr int kTransportSpacing = px(58);
 constexpr int kTransportRadius = px(25);
 constexpr int kTransportPlayRadius = px(30);

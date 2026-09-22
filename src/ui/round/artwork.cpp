@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 #include "log.h"
 #include "services/ha_client.h"

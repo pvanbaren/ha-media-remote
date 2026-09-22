@@ -26,6 +26,10 @@ lgfx::LovyanGFX& canvas();
 /** Push the composed frame to the panel. */
 void canvasPresent();
 
+/** Push just the rectangle a partial repaint touched. Cheap where a full
+ *  present is not: at 720x720 the whole frame is a megabyte. */
+void canvasPresentRegion(int x, int y, int w, int h);
+
 /** The panel itself, for the small direct repaints that skip compositing --
  *  a pressed transport button, the elapsed chip. Both draw over an opaque
  *  shape, so they need nothing from the frame underneath. */

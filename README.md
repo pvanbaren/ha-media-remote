@@ -19,9 +19,10 @@ src/
   app/        what the remote decides and does   <- no display
   services/   Home Assistant and the network     <- no display
   ui/
-    round/    this panel: 240 px GC9A01 circle
+    round/    both panels: 240 px GC9A01, 360 px ST77916 circles
     headless/ draws nothing, narrates to serial
-  hardware/   pins and peripherals
+  hardware/
+    waveshare/  round360/  headless/             <- one directory per board
 ```
 
 `include/ui/ui.h` is the seam, and the input half is what earns it. A display
@@ -36,9 +37,15 @@ implementation with `build_src_filter`, so a new display is a directory and a
 stanza rather than an `#if`.
 
 ```bash
-pio run -e waveshare-s3      # the round panel (default)
+pio run -e waveshare-s3      # 1.28" round GC9A01 (default)
+pio run -e round360-s3       # 1.85" round 360x360 ST77916, quad SPI
 pio run -e headless          # no panel at all
 ```
+
+`round360-s3` is a **DFRobot DFR1221** round display board. It is easily
+mistaken for a Waveshare ESP32-S3-Touch-LCD-1.85 -- same size, shape and
+controller, different wiring -- which is why the header is named for the panel
+and carries its provenance.
 
 `[env:headless]` is not a toy. It builds and runs the whole remote -- polling,
 the idle timer, every service call -- narrating to the serial console instead
@@ -50,11 +57,25 @@ something in `src/app/` or `src/services/` has grown a pixel.
 
 1. `include/board/<board>.h` -- pins, panel size, touch raster.
 2. `src/ui/<shape>/` -- the drawing, and `poll()` turning touches into intents.
-3. An env in `platformio.ini` that excludes the other `ui/` directories.
+   Only if the shape is new: `round360-s3` reuses `ui/round/` unchanged.
+3. `src/hardware/<board>/` -- `display.cpp`, `touch_raw.cpp`, `font_table.cpp`,
+   `boot_button.cpp`.
+4. An env in `platformio.ini` that excludes the other `ui/` and `hardware/`
+   directories -- and remember to exclude the new one from the existing envs,
+   which is the easy half to forget.
 
 Regenerate the fonts at the sizes the new panel asks for; `theme::px()` scales
-every dimension by `kUiScale`, so a 720 px panel wants 45/51/60/72 px faces
-rather than rescaled 24 px glyphs.
+every dimension by `kUiScale`, so a 360 px round panel wants 23/26/30/36 px
+faces rather than rescaled 24 px glyphs. LovyanGFX's VLW scaler is
+nearest-neighbour, which is why each size is its own face:
+
+```bash
+python scripts/build_ui_font.py assets/fonts/NotoSans-Bold.ttf \
+    --out-dir data --heights 23,26,30,36
+```
+
+Three lists have to agree: `--heights` here, `board_build.embed_files` in the
+env, and `kFonts[]` in that board's `font_table.cpp`.
 
 Hardware and project layout follow
 [ESP32-Plane-Radar](../ESP32-Plane-Radar); the Home Assistant integration

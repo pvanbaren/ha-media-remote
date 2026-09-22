@@ -11,7 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 #include "log.h"
 #include "services/ha_client.h"
@@ -479,7 +479,7 @@ void init() {
     s_mutex = xSemaphoreCreateMutex();
   }
 
-  const size_t wanted = config::kCoverArtBufferBytes;
+  const size_t wanted = board::kCoverArtBufferBytes;
   if (wanted == 0) {
     LOG_INFO("Cover art: caching disabled, art will stream");
     return;

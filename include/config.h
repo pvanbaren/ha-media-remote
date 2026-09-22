@@ -284,21 +284,9 @@ constexpr bool kBlankWhenPaused = true;
 constexpr bool kTurnOffControlOnBlank = true;
 
 
-/** Cover art is cached compressed, not decoded, so one buffer serves every
- *  repaint. Art that does not fit still displays -- it is streamed and decoded
- *  off the socket on each repaint instead of being held.
- *
- *  Claimed ONCE, at boot, and reused for every cover for the life of the
- *  device: never freed, never resized. Sizing it to each image instead meant a
- *  free and a differently-sized malloc on every track change, which is how a
- *  long-running heap fragments. Taking it at boot, before Wi-Fi, also means it
- *  comes out of a pristine heap and cannot fail later.
- *
- *  128 KB in PSRAM. The panel is 240 px and so asks the proxy for 256 px art,
- *  which measures tens of KB; this swallows that with room for a 512 px cover
- *  from a server that ignored the request. Zero disables caching entirely. */
-constexpr size_t kCoverArtBufferBytes = 128u * 1024u;
-/** Give up on art beyond this size outright; something is wrong upstream. */
+/** Give up on art beyond this size outright; something is wrong upstream.
+ *  The cache size itself is board::kCoverArtBufferBytes -- how much art is
+ *  worth holding depends on how many pixels the panel asked for. */
 constexpr size_t kCoverArtMaxBytes = 2u * 1024u * 1024u;
 
 /** Rewrite an existing `size=` query parameter down towards kDisplayDiameter,

@@ -1,13 +1,15 @@
 #include "hardware/touch.h"
 
+// Gesture resolution, shared by every panel. What the board supplies is in
+// hardware/touch_raw.h and is exactly two functions.
+
 #include <Arduino.h>
 
 #include <cstdlib>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
-#include "log.h"
-#include "hardware/display.h"
+#include "hardware/touch_raw.h"
 
 namespace hw {
 namespace {
@@ -86,74 +88,13 @@ TouchEvent classifyRelease() {
 // owns this port now, and bringing Wire up on the same pins would install a
 // second driver over the top of it.
 
-/** Report every address that answers, so a silent controller separates
- *  "wired to the wrong pins" from "wired, but not what we expect". */
-void scanI2cBus() {
-  int found = 0;
-  for (int address = 1; address < 127; ++address) {
-    if (lgfx::i2c::transactionWrite(board::kTouchI2cPort, address, nullptr, 0,
-                                    board::kTouchI2cHz)
-            .has_value()) {
-      LOG_INFO("Touch: a device answers at 0x%02X", address);
-      ++found;
-    }
-  }
-  if (found == 0) {
-    LOG_ERROR(
-        "Touch: nothing answers on SDA %d / SCL %d - check the wiring, the "
-        "3.3V and GND rails, and that RST (%d) is not held low",
-        static_cast<int>(board::kTouchPinSda),
-        static_cast<int>(board::kTouchPinScl),
-        static_cast<int>(board::kTouchPinRst));
-  }
-}
 
-/** Read the chip id, for the log only.
- *
- *  A miss is not a failure. The CST816S does not answer I2C at all while it is
- *  in its power-saving state, which is most of the time nobody is touching it,
- *  so LovyanGFX deliberately treats its own init as unconditionally successful
- *  and probes again on the first read. The reset pulse below is an attempt to
- *  catch it awake; when it works the id is worth having, and when it does not
- *  the bus scan says whether anything is out there at all. */
-void logController() {
-  if (board::kTouchPinRst != GPIO_NUM_NC) {
-    pinMode(board::kTouchPinRst, OUTPUT);
-    digitalWrite(board::kTouchPinRst, LOW);
-    delay(10);
-    digitalWrite(board::kTouchPinRst, HIGH);
-    // It NAKs for ~50 ms after reset while it loads firmware.
-    delay(60);
-  }
-
-  constexpr uint8_t kRegChipId = 0xA7;
-  const auto id = lgfx::i2c::readRegister8(board::kTouchI2cPort,
-                                           board::kTouchI2cAddress,
-                                           kRegChipId, board::kTouchI2cHz);
-  if (id.has_value()) {
-    // 0xB5 CST816S, 0xB6 CST816T, 0xB7 CST820 -- the register map is shared,
-    // so an unlisted variant is reported and then used anyway.
-    LOG_INFO("Touch: CST816S id 0x%02X at 0x%02X (SDA %d, SCL %d)",
-                  id.value(), board::kTouchI2cAddress,
-                  static_cast<int>(board::kTouchPinSda),
-                  static_cast<int>(board::kTouchPinScl));
-    return;
-  }
-
-  LOG_WARN(
-      "Touch: no answer at 0x%02X - asleep, or not wired. Scanning:",
-      board::kTouchI2cAddress);
-  scanI2cBus();
-}
 
 }  // namespace
 
 bool touchInit() {
-  // displayInit() already ran, and with it the controller's own init: it is
-  // the panel's touch device, so tft.init() brought up I2C and reset it.
-  logController();
-  s_available = true;
-  return true;
+  s_available = touchRawInit();
+  return s_available;
 }
 
 bool touchAvailable() { return s_available; }
@@ -185,12 +126,11 @@ bool touchPoll(TouchReport& out) {
   }
   const unsigned long gap = s_last_poll_ms == 0 ? 0 : now - s_last_poll_ms;
   s_last_poll_ms = now;
-
-  int32_t raw_x = 0;
-  int32_t raw_y = 0;
-  if (tft.getTouch(&raw_x, &raw_y)) {
-    int x = static_cast<int>(raw_x);
-    int y = static_cast<int>(raw_y);
+  int raw_x = 0;
+  int raw_y = 0;
+  if (touchReadRaw(raw_x, raw_y)) {
+    int x = raw_x;
+    int y = raw_y;
     mapPoint(x, y);
 
     if (!s_down) {

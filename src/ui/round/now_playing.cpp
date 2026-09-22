@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cstring>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 #include "hardware/display.h"
 #include "hardware/display_font.h"
@@ -523,8 +523,7 @@ void refreshVolume(const PlayerState& state, float level) {
                         enabledFor(action, s_last_drawn));
   }
   gfx.clearClipRect();
-  // The whole frame: this canvas has no way yet to present part of one.
-  ui::canvasPresent();
+  ui::canvasPresentRegion(x0, y0, w, h);
   s_arc_drawn_level = level;
 }
 

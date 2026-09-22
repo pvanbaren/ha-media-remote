@@ -4,7 +4,7 @@
 
 #include <esp_heap_caps.h>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 #include "log.h"
 #include "hardware/display.h"
@@ -90,7 +90,13 @@ bool canvasInit() {
   const int width = board::kDisplayWidth;
   const int height = board::kDisplayHeight;
 
-  s_frame.setColorDepth(16);
+  // Byte order is the board's call, not a default: where the frame is copied
+  // straight into a scan-out buffer there is nothing left to convert it.
+  if constexpr (board::kFrameNativeByteOrder) {
+    s_frame.setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
+  } else {
+    s_frame.setColorDepth(lgfx::color_depth_t::rgb565_2Byte);
+  }
   s_frame.setPsram(true);
 
   if (s_frame.createSprite(width, height) == nullptr) {
@@ -121,12 +127,27 @@ lgfx::LovyanGFX& canvas() {
 }
 
 void canvasPresent() {
-  if (s_ready) {
-    s_frame.pushSprite(0, 0);
-  }
+  canvasPresentRegion(0, 0, board::kDisplayWidth, board::kDisplayHeight);
 }
 
-lgfx::LovyanGFX& panel() { return tft; }
+void canvasPresentRegion(int x, int y, int w, int h) {
+  if (!s_ready) {
+    return;  // drawing went straight to the panel; there is nothing to push
+  }
+  displayPresentFrame(static_cast<const uint16_t*>(s_frame.getBuffer()), x, y,
+                      w, h);
+}
+
+lgfx::LovyanGFX& panel() {
+  // Where a small repaint goes. On a panel with a command channel that is the
+  // panel itself, and the frame is left alone. On an RGB panel there is no
+  // such channel, so it is the frame -- and the caller follows the draw with
+  // canvasPresentRegion() to push just what it touched.
+  if (board::kPanelWritesDirect) {
+    return tft;
+  }
+  return canvas();
+}
 
 void dim(int x, int y, int w, int h, uint8_t alpha) {
   if (!s_ready || alpha == 0 || !clipX(x, w)) {

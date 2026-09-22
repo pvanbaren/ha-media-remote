@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 #include "log.h"
 #include "hardware/display.h"
@@ -394,8 +394,6 @@ Input searchTouch(const hw::TouchReport& report) {
 }  // namespace
 
 bool init() {
-  LOG_INFO("Board: %s, panel %d px round", board::kName,
-                board::kDisplayDiameter);
   displayInit();
   canvasInit();
   artwork::init();

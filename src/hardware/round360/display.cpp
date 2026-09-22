@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#include "board/waveshare_s3.h"
+#include "board/board.h"
 #include "config.h"
 #include "log.h"
 #include "hardware/display_font.h"
@@ -14,6 +14,8 @@ bool s_blanked = false;
 }  // namespace
 
 void displayInit() {
+  LOG_INFO("Board: %s, %d px round", board::kName,
+                board::kDisplayDiameter);
   tft.init();
   tft.setRotation(0);
   tft.setBrightness(board::kDisplayBrightness);
@@ -45,3 +47,19 @@ void displayWake() {
 }
 
 bool displayIsBlanked() { return s_blanked; }
+
+void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h) {
+  if (frame == nullptr || w <= 0 || h <= 0) {
+    return;
+  }
+  // Row at a time, because `frame` is the whole screen and pushImage wants the
+  // rectangle packed. One startWrite around the lot keeps it to a single SPI
+  // transaction rather than one per row.
+  tft.startWrite();
+  for (int row = 0; row < h; ++row) {
+    tft.pushImage(x, y + row, w, 1,
+                  frame + static_cast<size_t>(y + row) * board::kDisplayWidth +
+                      x);
+  }
+  tft.endWrite();
+}
