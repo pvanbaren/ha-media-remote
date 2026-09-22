@@ -135,6 +135,13 @@ constexpr int kThumbPx = 38;
  *  costly can ask for less and upscale instead. */
 constexpr int kCoverArtRequestPx = kDisplayDiameter;
 
+/** Shortest gap between full repaints of a scrolling list. 240x240 is 115 KB
+ *  over SPI and this panel has kept up with the touch report rate since the
+ *  beginning, so the ration is the report rate and nothing is rationed. A
+ *  panel large enough for a repaint to cost more than a frame needs a real
+ *  number here -- see the Qualia. */
+constexpr unsigned long kListRedrawMinMs = 16;
+
 /** Cover art is cached compressed, not decoded, so one buffer serves every
  *  repaint. Claimed once at boot and never resized: sizing it per image meant
  *  a free and a differently-sized malloc on every track change, which is how a

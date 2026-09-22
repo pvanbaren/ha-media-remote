@@ -177,6 +177,13 @@ constexpr int kCoverArtRequestPx = kDisplayWidth;
  *  socket instead, at the cost of a re-fetch on every repaint. */
 constexpr size_t kCoverArtBufferBytes = 256u * 1024u;
 
+/** Shortest gap between full repaints of a scrolling list. A 360x360 frame is
+ *  259,200 bytes, which is about 13 ms to push at 40 MHz across four lanes --
+ *  quicker than the 240 px panel manages over its single lane, and well inside
+ *  the touch report rate, so nothing needs rationing here. Contrast the
+ *  Qualia, where a repaint costs more than a frame. */
+constexpr unsigned long kListRedrawMinMs = 16;
+
 // --- Not used here ---------------------------------------------------------
 // The module also carries an SD slot on GPIO 1..6, I2S audio out on 16/17/18
 // with mute on 48, and an I2S microphone on 42/45/46. None of it is wired up

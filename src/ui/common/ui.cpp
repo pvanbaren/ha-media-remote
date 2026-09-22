@@ -61,6 +61,12 @@ unsigned long s_list_move_ms = 0;
 unsigned long s_list_glide_ms = 0;
 /** When the list last moved, by drag or by glide, for kListTapGuardMs. */
 unsigned long s_list_moved_ms = 0;
+/** When the list was last actually repainted, for board::kListRedrawMinMs. */
+unsigned long s_list_draw_ms = 0;
+/** The finger has moved the list somewhere the glass has not caught up with
+ *  yet. Held until the ration allows a repaint, and flushed on release so the
+ *  list never settles a few pixels from where it was left. */
+bool s_list_redraw_pending = false;
 
 /** What a scrollable screen offers the drag handler. Function pointers rather
  *  than virtuals: there are two, both known at compile time, and neither
@@ -232,8 +238,19 @@ void driveList(const ScrollableList& list, bool active) {
     s_list_move_ms = now;
 
     // Dragging down moves the content down, which is scrolling *up* the list.
+    // Scrolled on every sample so the position follows the finger exactly;
+    // repainted only as often as the board can finish one, because asking for
+    // repaints faster than that does not make the list smoother -- it queues
+    // them, and on a panel scanned continuously out of PSRAM it starves the
+    // scan-out of the bus and breaks up the picture instead.
     if (list.scrollByPx(-dy)) {
       s_list_moved_ms = now;
+      s_list_redraw_pending = true;
+    }
+    if (s_list_redraw_pending &&
+        now - s_list_draw_ms >= board::kListRedrawMinMs) {
+      s_list_draw_ms = now;
+      s_list_redraw_pending = false;
       list.redraw();
     }
     return;
@@ -242,6 +259,14 @@ void driveList(const ScrollableList& list, bool active) {
   if (s_list_dragging) {
     s_list_dragging = false;
     s_list_glide_ms = millis();
+    // Whatever the ration held back, now that there is no finger to keep up
+    // with -- otherwise the list rests wherever the last repaint happened to
+    // land rather than where it was released.
+    if (s_list_redraw_pending) {
+      s_list_redraw_pending = false;
+      s_list_draw_ms = millis();
+      list.redraw();
+    }
     // A finger that stopped before lifting meant to stop.
     if (millis() - s_list_move_ms > 120) {
       s_list_velocity = 0.0f;
@@ -251,22 +276,34 @@ void driveList(const ScrollableList& list, bool active) {
   if (s_list_velocity == 0.0f) {
     return;
   }
+  // The glide is rationed by the same ceiling as the drag: it repaints the
+  // whole list per step, so on a board where that costs more than a frame it
+  // would starve the scan-out exactly as a drag does.
+  constexpr unsigned long kFrameMs = board::kListRedrawMinMs > kGlideFrameMs
+                                         ? board::kListRedrawMinMs
+                                         : kGlideFrameMs;
   const unsigned long now = millis();
-  if (now - s_list_glide_ms < kGlideFrameMs) {
+  const unsigned long elapsed = now - s_list_glide_ms;
+  if (elapsed < kFrameMs) {
     return;
   }
   s_list_glide_ms = now;
 
-  const int step = static_cast<int>(-s_list_velocity * kGlideFrameMs);
+  // Distance and decay both taken from the time that actually passed rather
+  // than from a nominal frame, so a slower repaint makes the glide coarser
+  // without also making it travel further or last longer.
+  const int step = static_cast<int>(-s_list_velocity * elapsed);
   if (step != 0 && list.scrollByPx(step)) {
     s_list_moved_ms = now;
+    s_list_draw_ms = now;
     list.redraw();
   } else if (list.atScrollLimit(step)) {
     s_list_velocity = 0.0f;
     return;
   }
 
-  s_list_velocity *= kGlideDecay;
+  s_list_velocity *=
+      powf(kGlideDecay, static_cast<float>(elapsed) / kGlideFrameMs);
   if (fabsf(s_list_velocity) < kGlideStopSpeed) {
     s_list_velocity = 0.0f;
   }
