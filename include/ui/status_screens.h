@@ -3,8 +3,12 @@
 #include <cstdint>
 
 /** Full-screen messages shown before -- or instead of -- the remote UI.
- *  These draw straight to the panel rather than through the frame buffer:
- *  they run at boot, before the buffer necessarily exists. */
+ *
+ *  These compose into ui::canvas() and present, exactly like every other
+ *  screen. Drawing straight to `tft` would be simpler and does work on a panel
+ *  with a command channel, but an RGB panel has no such channel: there `tft`
+ *  is an inert stand-in and the only route to the glass is the frame buffer.
+ *  ui::init() creates the canvas before anything here can be called. */
 
 /** Yellow setup card: AP name and the two URLs that reach the portal. */
 void statusScreenPortal();

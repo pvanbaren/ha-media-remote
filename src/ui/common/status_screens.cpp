@@ -7,9 +7,9 @@
 #include <cstring>
 
 #include "config.h"
-#include "hardware/display.h"
 #include "hardware/display_font.h"
 #include "services/device_name.h"
+#include "ui/canvas.h"
 #include "ui/text.h"
 #include "ui/theme.h"
 
@@ -33,19 +33,20 @@ SpinnerDot s_spinner_dots[kSpinnerDotCount];
 int s_spinner_head = 0;
 
 /** Draw one centred line, ellipsised to the chord available at its own y. */
-void drawCentredLine(const char* str, int y, int text_px, uint16_t color) {
+void drawCentredLine(lgfx::LovyanGFX& gfx, const char* str, int y, int text_px,
+                     uint16_t color) {
   if (str == nullptr || str[0] == '\0') {
     return;
   }
-  displayFontApplyHeight(tft, text_px);
-  tft.setTextDatum(textdatum_t::middle_center);
-  tft.setTextColor(color);
+  displayFontApplyHeight(gfx, text_px);
+  gfx.setTextDatum(textdatum_t::middle_center);
+  gfx.setTextColor(color);
 
   char line[ui::text::kMaxLineLen];
-  ui::text::ellipsize(tft, str,
+  ui::text::ellipsize(gfx, str,
                       ui::theme::usableWidthAt(y, ui::theme::kTextEdgeInset),
                       line, sizeof(line));
-  tft.drawString(line, ui::theme::kCenterX, y);
+  gfx.drawString(line, ui::theme::kCenterX, y);
 }
 
 void resetSpinner() {
@@ -56,13 +57,20 @@ void resetSpinner() {
   }
 }
 
+/** Push the square a spinner dot occupies, and nothing else. */
+void presentDot(int x, int y, int radius) {
+  const int side = radius * 2 + 1;
+  ui::canvasPresentRegion(x - radius, y - radius, side, side);
+}
+
 }  // namespace
 
 void statusScreenMessage(const char* title, const char* line1,
                          const char* line2, uint16_t background,
                          uint16_t foreground) {
-  displayFontEnsureLoaded(tft);
-  tft.fillScreen(background);
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  displayFontEnsureLoaded(gfx);
+  gfx.fillScreen(background);
 
   // Stack the lines around the centre so a one-, two- or three-line card all
   // sit in the same optical place.
@@ -81,18 +89,20 @@ void statusScreenMessage(const char* title, const char* line1,
   }
 
   int y = ui::theme::kCenterY - total / 2 + title_h / 2;
-  drawCentredLine(title, y, ui::theme::kStatusTitleTextPx, foreground);
+  drawCentredLine(gfx, title, y, ui::theme::kStatusTitleTextPx, foreground);
   y += title_h / 2;
 
   if (line1 != nullptr && line1[0] != '\0') {
     y += gap + body_h / 2;
-    drawCentredLine(line1, y, ui::theme::kStatusBodyTextPx, foreground);
+    drawCentredLine(gfx, line1, y, ui::theme::kStatusBodyTextPx, foreground);
     y += body_h / 2;
   }
   if (line2 != nullptr && line2[0] != '\0') {
     y += gap + body_h / 2;
-    drawCentredLine(line2, y, ui::theme::kStatusBodyTextPx, foreground);
+    drawCentredLine(gfx, line2, y, ui::theme::kStatusBodyTextPx, foreground);
   }
+
+  ui::canvasPresent();
 }
 
 void statusScreenPortal() {
@@ -152,18 +162,23 @@ void statusScreenConnectingBegin(const char* ssid) {
 
 void statusScreenConnectingTick() {
   // A comet of dots chasing itself round the bezel: only two pixels change per
-  // frame, so this stays cheap while a blocking connect attempt runs.
+  // frame, so this stays cheap while a blocking connect attempt runs. Only the
+  // two squares those dots occupy are pushed, which is what keeps it cheap on
+  // a panel where a full present is a megabyte.
   const float rad = s_spinner_angle_deg * static_cast<float>(M_PI) / 180.0f;
   const int x = ui::theme::kCenterX +
                 static_cast<int>(cosf(rad) * kSpinnerRadius);
   const int y = ui::theme::kCenterY +
                 static_cast<int>(sinf(rad) * kSpinnerRadius);
 
+  lgfx::LovyanGFX& gfx = ui::canvas();
   SpinnerDot& slot = s_spinner_dots[s_spinner_head];
   if (slot.drawn) {
-    tft.fillCircle(slot.x, slot.y, kSpinnerEraseRadius, config::kColorBlack);
+    gfx.fillCircle(slot.x, slot.y, kSpinnerEraseRadius, config::kColorBlack);
+    presentDot(slot.x, slot.y, kSpinnerEraseRadius);
   }
-  tft.fillCircle(x, y, kSpinnerDotRadius, config::kTextOnBlack);
+  gfx.fillCircle(x, y, kSpinnerDotRadius, config::kTextOnBlack);
+  presentDot(x, y, kSpinnerDotRadius);
   slot.x = x;
   slot.y = y;
   slot.drawn = true;
