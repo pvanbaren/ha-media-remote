@@ -558,11 +558,18 @@ bool httpPost(const char* path, const String& body, String& response,
     // failure, so the heap numbers go out alongside it: mbedTLS wants 16 KB in
     // and 16 KB out, and it is the largest contiguous block that decides
     // whether it gets them.
-    LOG_WARN("HA: POST %s transport failure (heap free %u, largest %u)",
+    //
+    // Internal RAM specifically. mbedTLS cannot use PSRAM for these, and on a
+    // board that has 8 MB of it a plain MALLOC_CAP_8BIT total reads as several
+    // megabytes free while the allocation that actually failed had nowhere to
+    // go -- which makes a genuine exhaustion look like anything but.
+    LOG_WARN("HA: POST %s transport failure (internal heap free %u, "
+                  "largest %u)",
                   url.c_str(),
-                  static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
-                  static_cast<unsigned>(
-                      heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+                  static_cast<unsigned>(heap_caps_get_free_size(
+                      MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                  static_cast<unsigned>(heap_caps_get_largest_free_block(
+                      MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
     http.end();
     return false;
   }

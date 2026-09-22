@@ -746,9 +746,21 @@ bool drawUrl(lgfx::LGFXBase& gfx, const char* url, int x, int y, int size) {
     Format format = Format::kUnknown;
 
     if (!openArt(http, plain, secure, target, content_length, format)) {
+      // Internal RAM at the moment it failed. A fresh WiFiClientSecure needs
+      // tens of KB of it for the mbedTLS context, and when that allocation is
+      // what failed the request never reaches the wire -- which reads as the
+      // host refusing something it was never asked. PSRAM is irrelevant here,
+      // so the total is deliberately not reported.
+      LOG_WARN("Art: open failed (internal heap free %u, largest %u)",
+                    static_cast<unsigned>(heap_caps_get_free_size(
+                        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                    static_cast<unsigned>(heap_caps_get_largest_free_block(
+                        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
       if (attempt == 0 && rewritten) {
-        // The host did not like the size we asked for. Ask for what the
-        // library actually gave us and take the bandwidth hit this once.
+        // Possibly the host declining the size we asked for -- it answers 400
+        // with the sizes it will accept. Retry untouched and take the
+        // bandwidth hit once. If the heap line above shows internal RAM is
+        // short, this retry is chasing a local failure and will fail too.
         LOG_DEBUG("Art: %s refused, retrying unresized", target.c_str());
         target = String(url);
         continue;
