@@ -250,11 +250,13 @@ bool untitledBriefly() {
 
 void showNowPlaying() {
   if (!services::ha::configured()) {
+    LOG_INFO("UI: now playing skipped, Home Assistant not configured");
     ui::showNeedsHaSetup();
     showMessageScreen();
     return;
   }
   if (services::ha::selectedEntity()[0] == '\0') {
+    LOG_INFO("UI: now playing skipped, no player selected");
     ui::showNoPlayer();
     showMessageScreen();
     return;
@@ -262,6 +264,11 @@ void showNowPlaying() {
 
   PlayerState snapshot;
   if (!snapshotState(snapshot)) {
+    // Either no poll has ever succeeded, or the 50 ms wait for the state
+    // mutex expired -- which reads the same from here and does not from
+    // the console, so say which.
+    LOG_WARN("UI: now playing skipped, no state snapshot (%s)",
+                  services::ha::lastError());
     ui::showHaUnreachable(services::ha::lastError());
     showMessageScreen();
     return;
@@ -274,6 +281,7 @@ void showNowPlaying() {
     g_untitled_repaint_owed = true;
   }
 
+  LOG_DEBUG("UI: now playing \"%s\"", snapshot.title);
   ui::showNowPlaying(snapshot);
   g_screen = Screen::kNowPlaying;
   g_last_elapsed_ms = millis();
@@ -918,6 +926,8 @@ void loop() {
     // landing underneath someone who is reading or typing.
     if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch) {
       showNowPlaying();
+    } else {
+      LOG_DEBUG("UI: repaint held back, a list is on screen");
     }
   }
 
