@@ -904,12 +904,14 @@ void loop() {
   // else, so the same press cannot also press a button.
   handleInput();
 
-  // Artwork arrives one image per pass rather than in a batch, so names are
-  // on screen immediately and the panel still answers taps between fetches.
-  ui::idleWork(g_screen);
-
   handleMessageRecheck();
 
+  // Before the artwork, and that ordering is the whole point. What is playing
+  // is why the device exists; browse thumbnails are a preload for a list
+  // nobody has opened yet. Behind them, this check ran once per fetch -- and a
+  // fetch is a TLS connection, which on a slow or contended link is seconds
+  // each and ten of them before the first frame. The boot symptom was the
+  // Loading card staying up long after Home Assistant had answered.
   if (g_state_dirty && !ui::isBlanked()) {
     g_state_dirty = false;
     // Neither the list nor the search screen may be replaced by a poll
@@ -918,6 +920,10 @@ void loop() {
       showNowPlaying();
     }
   }
+
+  // Artwork arrives one image per pass rather than in a batch, so names are
+  // on screen immediately and the panel still answers taps between fetches.
+  ui::idleWork(g_screen);
 
   // The untitled label's delay has run out with the title still missing:
   // the frame that held it back is redrawn with it. A title that arrived in
