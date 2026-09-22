@@ -485,6 +485,96 @@ struct ConnectionGuard {
   }
 };
 
+/** The host part of s_base_url -- the name the resolver is actually asked
+ *  for, with the scheme, the port and any path taken off.
+ *
+ *  Not IPv6-literal aware: a bracketed address would come back truncated at
+ *  the first colon. Nothing else in this file handles one either, and an HA
+ *  install reached by a raw IPv6 address is not a setup this has seen. */
+void hostFromBaseUrl(char* out, size_t out_len) {
+  if (out_len == 0) {
+    return;
+  }
+  out[0] = '\0';
+  const char* start = strstr(s_base_url, "://");
+  start = (start != nullptr) ? start + 3 : s_base_url;
+  size_t n = 0;
+  while (start[n] != '\0' && start[n] != '/' && start[n] != ':' &&
+         n + 1 < out_len) {
+    ++n;
+  }
+  memcpy(out, start, n);
+  out[n] = '\0';
+}
+
+/** What the last lookup returned, so a change in it can be noticed rather
+ *  than passing silently. Unset until the first successful resolve. */
+IPAddress s_server_ip;
+
+/**
+ * Resolve the base URL's host and print what came back.
+ *
+ * There is no resolver on this device and no hosts file to consult. The name
+ * goes to WiFi.hostByName(), which is a thin wrapper over lwIP's
+ * dns_gethostbyname(): lwIP sends a UDP query to the DNS servers that
+ * arrived in the DHCP lease -- the router, on an ordinary home network --
+ * and caches the answer for its TTL in a table of four entries. A name
+ * already in that cache resolves without a packet going anywhere, which is
+ * why a request can keep failing against a stale address long after the
+ * record behind it changed. Nothing here asks for mDNS, so a .local name
+ * would take an entirely different path.
+ *
+ * Which is why this prints the resolvers alongside the answer. A device
+ * handed a filtering or captive resolver gets a perfectly well-formed reply
+ * pointing somewhere that is not the server, and every symptom of that -- a
+ * refused connection, a handshake that never completes, a timeout -- looks
+ * exactly like the server being down. The address, and which resolver
+ * produced it, are the two facts that tell those apart.
+ */
+void logServerAddress(const char* why) {
+  char host[config::kHaBaseUrlMaxLen + 1] = {};
+  hostFromBaseUrl(host, sizeof(host));
+  if (host[0] == '\0') {
+    return;
+  }
+
+  IPAddress literal;
+  if (literal.fromString(host)) {
+    // Configured by address, so there is no lookup to get wrong.
+    s_server_ip = literal;
+    LOG_INFO("HA: server %s is a literal address (%s)", host, why);
+    return;
+  }
+
+  IPAddress ip;
+  const unsigned long started_ms = millis();
+  const bool ok = WiFi.hostByName(host, ip) == 1;
+  const unsigned long took_ms = millis() - started_ms;
+
+  if (!ok) {
+    LOG_WARN("HA: DNS %s -> no answer in %lu ms (%s)", host, took_ms,
+                  why);
+  } else {
+    LOG_INFO("HA: DNS %s -> %s in %lu ms (%s)", host,
+                  ip.toString().c_str(), took_ms, why);
+    if (s_server_ip != IPAddress() && ip != s_server_ip) {
+      LOG_INFO("HA: that address changed, it was %s",
+                    s_server_ip.toString().c_str());
+    }
+    s_server_ip = ip;
+  }
+
+  LOG_INFO("HA: resolver %s / %s, device %s, gateway %s",
+                WiFi.dnsIP(0).toString().c_str(),
+                WiFi.dnsIP(1).toString().c_str(),
+                WiFi.localIP().toString().c_str(),
+                WiFi.gatewayIP().toString().c_str());
+}
+
+/** True until the first request of this association has said where it is
+ *  going. Set again on a drop, so a new lease's resolver is reported too. */
+bool s_address_pending = true;
+
 /** POST `body` to `path`; the response text lands in `response`.
  *  `timeout_ms` is the read limit -- most calls want the default. */
 bool httpPost(const char* path, const String& body, String& response,
@@ -497,7 +587,13 @@ bool httpPost(const char* path, const String& body, String& response,
   }
   if (WiFi.status() != WL_CONNECTED) {
     setError("wifi down");
+    s_address_pending = true;  // a new association may bring a new resolver
     return false;
+  }
+
+  if (s_address_pending) {
+    s_address_pending = false;
+    logServerAddress("first request");
   }
 
   String url(s_base_url);
@@ -570,6 +666,10 @@ bool httpPost(const char* path, const String& body, String& response,
                       MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
                   static_cast<unsigned>(heap_caps_get_largest_free_block(
                       MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+    // Where it was trying to go, resolved again now rather than remembered.
+    // A connection refused at an address nothing is listening on reads in
+    // this log exactly like one the server itself turned away.
+    logServerAddress("after transport failure");
     http.end();
     return false;
   }
