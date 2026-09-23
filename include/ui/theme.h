@@ -159,9 +159,16 @@ constexpr int kListRowTextPx = listTextPx(20);
 /** Rows are inset from the circle edge at their own y by this much. */
 constexpr int kListRowInset = listPx(10);
 constexpr int kListTextInset = listPx(12);
-/** Scroll indicator arc on the right bezel. */
+/** Scroll indicator. The round build rides an arc on the bezel at these
+ *  radii; the square build ignores them and uses a straight bar instead --
+ *  see drawScrollIndicator() at the foot of this header. */
 constexpr int kListScrollOuterRadius = px(118);
 constexpr int kListScrollInnerRadius = px(114);
+/** Straight-bar indicator, square panels: width, and the gap to the edge. */
+constexpr int kListScrollBarWidth = px(4);
+constexpr int kListScrollBarInset = px(6);
+/** A thumb shorter than this is hard to see and hard to read as a position. */
+constexpr int kListScrollBarMinLength = px(16);
 
 // --- Artist search: keyboard, then results ---
 // Four rows of seven keys, sized against the chord at each row: the narrowest
@@ -217,5 +224,33 @@ int usableWidthAt(int y, int inset);
  * Leaves no clip set.
  */
 void fillListBackdrop(lgfx::LovyanGFX& gfx, int top, int height);
+
+/**
+ * Paint the list's scroll indicator: a track with a thumb somewhere on it.
+ *
+ * `offset` is how far down the scrollable range the view has got, 0 to 1.
+ * `visible` is the fraction of the content currently on screen, which is
+ * how long the thumb should be. The caller has already decided there is
+ * something worth indicating.
+ *
+ * Shape-specific, because the right-hand bezel of a circle and the
+ * right-hand edge of a square are not the same place. A round panel has no
+ * straight edge to put a bar against, so it curves one around the rim; a
+ * square one does, and a bar there reads as a scrollbar without having to
+ * be learned.
+ */
+void drawScrollIndicator(lgfx::LovyanGFX& gfx, float offset, float visible);
+
+/** The topmost row drawScrollIndicator() can touch. A repaint that covers
+ *  only part of the screen has to reach at least this far up, or it leaves
+ *  the top of the thumb behind. */
+int scrollIndicatorTopY();
+
+/** The columns drawScrollIndicator() can touch, from x for w pixels, when it
+ *  keeps to a straight vertical strip. A scroll that moves the rows already
+ *  on the panel moves the old indicator with them, and repaints this strip
+ *  to put it right. False where the indicator does not fit a strip -- the
+ *  round build's arc -- in which case nothing may be scrolled in place. */
+bool scrollIndicatorColumn(int& x, int& w);
 
 }  // namespace ui::theme

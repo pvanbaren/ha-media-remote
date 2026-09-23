@@ -63,3 +63,9 @@ void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h) {
   }
   tft.endWrite();
 }
+
+bool displayScrollFrame(int, int, int, int, int) {
+  // The frame lives in the controller's own RAM, on the far side of a bus
+  // this firmware only writes. There is nothing here to move.
+  return false;
+}

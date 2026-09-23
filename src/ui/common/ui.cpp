@@ -77,11 +77,14 @@ struct ScrollableList {
   void (*redraw)();
 };
 
+// redrawRows() rather than draw(): a drag only moves the rows and the
+// indicator, and repainting the rest costs more than the scroll can afford.
 constexpr ScrollableList kBrowseList{browse_list::scrollByPx,
                                      browse_list::atScrollLimit,
-                                     browse_list::draw};
+                                     browse_list::redrawRows};
 constexpr ScrollableList kSearchResults{search::scrollByPx,
-                                        search::atScrollLimit, search::draw};
+                                        search::atScrollLimit,
+                                        search::redrawResults};
 
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
@@ -673,7 +676,9 @@ bool idleWork(Screen screen) {
   if (screen == Screen::kSearch) {
     search::draw();
   } else {
-    browse_list::draw();
+    // Not redrawRows(): that may move the rows already on the panel, and
+    // those are the ones without the new pictures.
+    browse_list::repaintRows();
   }
   return true;
 }

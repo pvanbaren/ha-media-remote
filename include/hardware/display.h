@@ -32,3 +32,16 @@ bool displayIsBlanked();
  * so the same call is a memcpy.
  */
 void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h);
+
+/**
+ * Move rows [y, y + h) of what is on the glass by `dy` pixels, positive
+ * down, without being handed a frame: the pixels are the panel's own.
+ *
+ * Only a panel that keeps its frame somewhere the CPU can reach can do this,
+ * which here means the RGB panel and its framebuffer. The SPI panels hold
+ * theirs in the controller, behind a bus that only writes, and return false;
+ * so does any panel that is not up. The rows the move uncovers are the
+ * caller's to present. Columns [keep_x, keep_x + keep_w) are left where they
+ * are.
+ */
+bool displayScrollFrame(int y, int h, int dy, int keep_x = 0, int keep_w = 0);

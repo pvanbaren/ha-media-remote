@@ -13,6 +13,17 @@ enum class Result : uint8_t {
 /** Compose and present the list. */
 void draw();
 
+/** Repaint what a scroll moved. Where it can, by moving the rows already on
+ *  the panel and drawing only the strip that uncovers; otherwise the rows and
+ *  the indicator composed afresh, leaving the title strip alone. Only for a
+ *  change of scroll: the moved rows are the old rows. */
+void redrawRows();
+
+/** Compose and present the rows and indicator afresh, whatever is on the
+ *  panel. For when what the rows show has changed -- a thumbnail arriving --
+ *  rather than only where they are. */
+void repaintRows();
+
 /** Handle a tap at display coordinates.
  *
  *  Deliberately does **not** play anything: starting an artist takes Music

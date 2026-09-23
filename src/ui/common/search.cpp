@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 
+#include "board/board.h"
 #include "config.h"
 #include "hardware/display_font.h"
 #include "services/ha_client.h"
@@ -163,8 +164,18 @@ void clampScroll() {
 
 /** Widest the row can be: the chord at whichever edge is further out. */
 int resultHalfWidth(int top) {
-  const int a = theme::chordHalfWidth(top);
-  const int b = theme::chordHalfWidth(top + theme::kListRowHeight);
+  // At the row's first and last lines on the panel: chordHalfWidth() is 0
+  // off it, and top + height is one past the row besides, so a row reaching
+  // the bottom edge used to get no width and was not drawn. See
+  // rowHalfWidth() in browse_list.cpp.
+  const int first = top > 0 ? top : 0;
+  const int bottom = top + theme::kListRowHeight - 1;
+  const int last = bottom < theme::kSize - 1 ? bottom : theme::kSize - 1;
+  if (last < first) {
+    return 0;
+  }
+  const int a = theme::chordHalfWidth(first);
+  const int b = theme::chordHalfWidth(last);
   const int half = (a < b ? a : b) - theme::kListRowInset;
   return half > 0 ? half : 0;
 }
@@ -221,6 +232,22 @@ void drawResultRow(lgfx::LovyanGFX& gfx, int index, int top) {
   }
 }
 
+/** Draw every result that crosses rows [y0, y1) of the panel, at the
+ *  current scroll. The caller has set a clip no wider than the results
+ *  view: rows are drawn whole and left to the clip to trim. */
+void drawResultRows(lgfx::LovyanGFX& gfx, int y0, int y1) {
+  const int count = services::search::count();
+  for (int i = 0; i < count; ++i) {
+    const int top = resultTop(i);
+    if (top >= y1) {
+      break;
+    }
+    if (top + theme::kListRowHeight > y0) {
+      drawResultRow(gfx, i, top);
+    }
+  }
+}
+
 void drawResults(lgfx::LovyanGFX& gfx) {
   const int count = services::search::count();
 
@@ -249,23 +276,93 @@ void drawResults(lgfx::LovyanGFX& gfx) {
 
   clampScroll();
   gfx.setClipRect(0, kResultViewTop, theme::kSize, kResultViewHeight);
-  for (int i = 0; i < count; ++i) {
-    const int top = resultTop(i);
-    if (top >= theme::kSize) {
-      break;
-    }
-    if (top + theme::kListRowHeight > kResultViewTop - theme::kListRowHeight) {
-      drawResultRow(gfx, i, top);
-    }
-  }
+  drawResultRows(gfx, kResultViewTop, theme::kSize);
   gfx.clearClipRect();
 }
 
+/** The same backdrop the browse list paints, from the shape: flat on a
+ *  square panel, a circle on black on a round one. It used to be the round
+ *  one everywhere -- a full-screen black fill and a circle over it -- which
+ *  on the square panel put a circular edge behind rows that run the full
+ *  width, and a background that changes with height is one a scroll cannot
+ *  move rows across. */
 void beginFrame(lgfx::LovyanGFX& gfx) {
   displayFontEnsureLoaded(gfx);
-  gfx.fillScreen(theme::kBackground);
-  gfx.fillCircle(theme::kCenterX, theme::kCenterY, theme::kRadius,
-                 theme::kListBackdrop);
+  theme::fillListBackdrop(gfx, 0, theme::kSize);
+}
+
+/**
+ * What the panel holds of the results, so a scroll can build on it -- the
+ * same bookkeeping browse_list keeps, for the same reason. `valid` means the
+ * results view on the glass is these results composed at `scroll_px`, and
+ * `writes` is canvasPanelWrites() just after they got there; anything else
+ * drawn on the panel since shows up as a different count.
+ */
+struct PanelState {
+  bool valid = false;
+  int scroll_px = 0;
+  uint32_t writes = 0;
+};
+PanelState s_panel;
+
+void notePanelMatches() {
+  s_panel.valid = true;
+  s_panel.scroll_px = s_scroll_px;
+  s_panel.writes = ui::canvasPanelWrites();
+}
+
+/**
+ * Repaint a scroll of the results by moving what is already on the glass.
+ *
+ * The browse list's scrollInPlace(), without the indicator column: the
+ * results have no scroll bar. Every kept row is on the panel already, only
+ * elsewhere, so the view is moved in place and only the strip the move
+ * uncovers is composed and presented. The canvas is left stale outside that
+ * strip until the next whole draw(), which PanelState makes safe.
+ *
+ * Square panels only. On a round one a row's width follows the chord at its
+ * height, so a moved row is not the row that belongs there -- and the panel
+ * is SPI, which cannot move its frame anyway.
+ *
+ * False when it cannot, with nothing sent to the panel; the caller draws the
+ * screen whole instead.
+ */
+bool scrollInPlace() {
+  if constexpr (board::kDisplayIsRound) {
+    return false;
+  }
+  if (!s_showing_results || services::search::count() == 0 ||
+      !s_panel.valid || s_panel.writes != ui::canvasPanelWrites()) {
+    return false;
+  }
+  // How far the picture moves: scrolling further down the results moves it
+  // up.
+  const int dy = s_panel.scroll_px - s_scroll_px;
+  if (dy == 0) {
+    return true;  // already what the panel shows
+  }
+  if (dy > kResultViewHeight / 2 || -dy > kResultViewHeight / 2) {
+    return false;  // mostly new rows; a whole draw costs about the same
+  }
+
+  lgfx::LovyanGFX& gfx = ui::canvas();
+
+  // The rows the move uncovers: at the bottom when the picture moves up.
+  const int strip_y = dy < 0 ? theme::kSize + dy : kResultViewTop;
+  const int strip_h = dy < 0 ? -dy : dy;
+  displayFontEnsureLoaded(gfx);
+  gfx.setClipRect(0, strip_y, theme::kSize, strip_h);
+  theme::fillListBackdrop(gfx, strip_y, strip_h);
+  drawResultRows(gfx, strip_y, strip_y + strip_h);
+  gfx.clearClipRect();
+
+  if (!ui::canvasScrollPanel(kResultViewTop, kResultViewHeight, dy)) {
+    return false;  // nothing moved; the canvas strip is harmless
+  }
+
+  ui::canvasPresentRegion(0, strip_y, theme::kSize, strip_h);
+  notePanelMatches();
+  return true;
 }
 
 }  // namespace
@@ -351,6 +448,17 @@ void draw() {
     drawKeyboard(gfx);
   }
   ui::canvasPresent();
+  if (s_showing_results) {
+    notePanelMatches();
+  } else {
+    s_panel.valid = false;  // the keyboard, not results, is on the glass
+  }
+}
+
+void redrawResults() {
+  if (!scrollInPlace()) {
+    draw();
+  }
 }
 
 void showSearching() {

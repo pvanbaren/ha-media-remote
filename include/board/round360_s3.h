@@ -195,6 +195,11 @@ constexpr size_t kCoverArtBufferBytes = 256u * 1024u;
  *  Qualia, where a repaint costs more than a frame. */
 constexpr unsigned long kListRedrawMinMs = 16;
 
+/** No stand-off while composing: this panel is written over a bus rather
+ *  than scanned out of PSRAM, so there is no continuous read to starve.
+ *  See the Qualia's header for what this is for. */
+constexpr int kComposeSlabRows = 0;
+
 // --- Not used here ---------------------------------------------------------
 // The module also carries an SD slot on GPIO 1..6, I2S audio out on 16/17/18
 // with mute on 48, and an I2S microphone on 42/45/46. None of it is wired up

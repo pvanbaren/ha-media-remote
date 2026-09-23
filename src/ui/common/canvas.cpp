@@ -15,6 +15,8 @@ namespace {
 
 LGFX_Sprite s_frame(&tft);
 bool s_ready = false;
+/** See canvasPanelWrites(). */
+uint32_t s_panel_writes = 0;
 /** True when the buffer stores RGB565 byte-swapped relative to the host. */
 bool s_swapped = false;
 
@@ -134,9 +136,23 @@ void canvasPresentRegion(int x, int y, int w, int h) {
   if (!s_ready) {
     return;  // drawing went straight to the panel; there is nothing to push
   }
+  ++s_panel_writes;
   displayPresentFrame(static_cast<const uint16_t*>(s_frame.getBuffer()), x, y,
                       w, h);
 }
+
+bool canvasScrollPanel(int y, int h, int dy, int keep_x, int keep_w) {
+  if (!s_ready) {
+    return false;  // drawing goes straight to the panel; there is no frame
+  }
+  if (!displayScrollFrame(y, h, dy, keep_x, keep_w)) {
+    return false;
+  }
+  ++s_panel_writes;
+  return true;
+}
+
+uint32_t canvasPanelWrites() { return s_panel_writes; }
 
 lgfx::LovyanGFX& panel() {
   // Where a small repaint goes. On a panel with a command channel that is the

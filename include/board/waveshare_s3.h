@@ -153,6 +153,11 @@ constexpr int kCoverArtRequestPx = kDisplayDiameter;
  *  number here -- see the Qualia. */
 constexpr unsigned long kListRedrawMinMs = 16;
 
+/** No stand-off while composing: this panel is written over a bus rather
+ *  than scanned out of PSRAM, so there is no continuous read to starve.
+ *  See the Qualia's header for what this is for. */
+constexpr int kComposeSlabRows = 0;
+
 /** Cover art is cached compressed, not decoded, so one buffer serves every
  *  repaint. Claimed once at boot and never resized: sizing it per image meant
  *  a free and a differently-sized malloc on every track change, which is how a

@@ -33,6 +33,12 @@ bool backToKeyboard();
 /** Compose and present whichever half is showing. */
 void draw();
 
+/** Repaint what a scroll of the results moved. Where it can, by moving the
+ *  rows already on the panel and drawing only the strip that uncovers;
+ *  otherwise draw(). Only for a change of scroll: the moved rows are the old
+ *  rows, so anything that changes what a row shows wants draw(). */
+void redrawResults();
+
 /** Show just the chosen result, centred, while it starts. The same
  *  acknowledgement the browse list gives, and for the same reason: play_media
  *  on an artist takes seconds, and a screen that stops for that long reads as
