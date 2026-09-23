@@ -292,7 +292,21 @@ void driveList(const ScrollableList& list, bool active) {
   // Distance and decay both taken from the time that actually passed rather
   // than from a nominal frame, so a slower repaint makes the glide coarser
   // without also making it travel further or last longer.
-  const int step = static_cast<int>(-s_list_velocity * elapsed);
+  //
+  // Capped, though, because that reasoning holds for a slow repaint and not
+  // for a stall. Nothing here bounds `elapsed`, and the loop can lose most of
+  // a second to a blocking fetch; at a typical fling speed that multiplied out
+  // to a single step of more than a screen height, after which the decay below
+  // -- 0.88 to the power of the same number -- killed the velocity outright.
+  // The list teleported and stopped dead. Half a screen is the most a step may
+  // cover, so a fling always lands somewhere you watched it go.
+  constexpr int kMaxGlideStepPx = board::kDisplayHeight / 2;
+  int step = static_cast<int>(-s_list_velocity * elapsed);
+  if (step > kMaxGlideStepPx) {
+    step = kMaxGlideStepPx;
+  } else if (step < -kMaxGlideStepPx) {
+    step = -kMaxGlideStepPx;
+  }
   if (step != 0 && list.scrollByPx(step)) {
     s_list_moved_ms = now;
     s_list_draw_ms = now;
@@ -599,7 +613,12 @@ void prepareArtwork(const char* picture) { cover::prepare(picture); }
 void clearArtwork() { cover::clear(); }
 
 bool idleWork(Screen screen) {
-  if (hw::touchIsDown()) {
+  // Each call is one blocking HTTPS fetch -- 550 to 790 ms on this hardware
+  // -- so it may only run when nothing is moving. A finger down was the
+  // obvious half of that and the only half guarded for a while: a fling lifts
+  // the finger, which opened the gate in the middle of the glide and dropped
+  // two thirds of a second into it.
+  if (hw::touchIsDown() || s_list_velocity != 0.0f) {
     return false;  // responsiveness matters more than a picture
   }
   if (screen == Screen::kSearch) {
