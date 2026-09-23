@@ -471,7 +471,9 @@ void resetWifiCredentials() {
 }
 
 void onConfigPortalApStarted(WiFiManager*) {
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  // Matched to the station path below, so the portal is reachable from
+  // wherever the device will actually sit.
+  WiFi.setTxPower(WIFI_POWER_11dBm);
   notify(s_observer.portalStarted);
 #ifdef WM_MDNS
   if (MDNS.begin(services::device::name())) {
@@ -538,8 +540,37 @@ void stopLanWebPortal() {
 #endif
 }
 
+/** Signal, and the power being answered with. Both, because either one on
+ *  its own can look healthy while the link is not. */
+void logLinkQuality() {
+  int8_t tx_quarter_dbm = 0;
+  esp_wifi_get_max_tx_power(&tx_quarter_dbm);
+  LOG_INFO("WiFi: RSSI %d dBm, channel %d, tx %.1f dBm",
+                static_cast<int>(WiFi.RSSI()),
+                static_cast<int>(WiFi.channel()), tx_quarter_dbm / 4.0f);
+}
+
+/**
+ * Transmit at 11 dBm.
+ *
+ * Above the 8.5 dBm this started at, and well below the 19.5 dBm an
+ * ESP32-S3 is specified for. The low end was costing packets: on the Qualia
+ * a DNS query to the router took 3503 ms, then 1038 ms, then 8 ms, which is
+ * lwIP retransmitting a query nothing answered rather than a slow resolver,
+ * and TCP connections to a host on the same subnet were timing out at six
+ * seconds before occasionally getting through. Full power is not the answer
+ * to that either -- it is more heat and more current for a device sitting a
+ * room away from its access point, and a radio driven hard close to one can
+ * be worse than a quieter one.
+ *
+ * Whether 11 dBm is enough is a question about this room rather than this
+ * code, which is what logLinkQuality() above is for. RSSI alone will not
+ * answer it: that is what this device hears from the access point, and the
+ * access point was never the quiet end. A link lopsided that way reads as a
+ * strong signal and drops packets anyway.
+ */
 void prepareSta() {
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  WiFi.setTxPower(WIFI_POWER_11dBm);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(WIFI_PS_NONE);
   WiFi.setAutoReconnect(true);
@@ -747,6 +778,7 @@ bool wifiSetupConnect() {
       WiFi.setAutoReconnect(true);
       LOG_INFO("Connected: %s  IP %s", WiFi.SSID().c_str(),
                     WiFi.localIP().toString().c_str());
+      logLinkQuality();
       return true;
     }
     LOG_WARN("WiFi connection failed");
@@ -760,6 +792,7 @@ bool wifiSetupConnect() {
     WiFi.setAutoReconnect(true);
     LOG_INFO("Connected: %s  IP %s", WiFi.SSID().c_str(),
                   WiFi.localIP().toString().c_str());
+    logLinkQuality();
     return true;
   }
 
@@ -767,6 +800,7 @@ bool wifiSetupConnect() {
     WiFi.setAutoReconnect(true);
     LOG_INFO("Connected: %s  IP %s", WiFi.SSID().c_str(),
                   WiFi.localIP().toString().c_str());
+    logLinkQuality();
     return true;
   }
 
@@ -780,6 +814,7 @@ bool wifiSetupConnect() {
     WiFi.setAutoReconnect(true);
     LOG_INFO("Connected: %s  IP %s", WiFi.SSID().c_str(),
                   WiFi.localIP().toString().c_str());
+    logLinkQuality();
     return true;
   }
 
