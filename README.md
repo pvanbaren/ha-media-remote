@@ -479,6 +479,41 @@ the network stack only takes a hostname when the interface comes up. Like the
 rotation it is stored apart from the Home Assistant settings, so a BOOT reset
 keeps it -- and the setup card then tells you the name to look for.
 
+### Finding the Music Assistant config entry id
+
+The swipe-up list calls `music_assistant.get_library` and
+`music_assistant.search`, and both take a **`config_entry_id`** -- Home
+Assistant's internal handle for one configured integration. Music Assistant
+never shows it to you, and it is not the server's name, its host or an
+entity id.
+
+It is typed into the portal rather than picked from a dropdown the way the
+player is, and that is a limitation rather than a preference: no REST
+endpoint lists config entries for a long-lived token, so the device cannot
+look it up the way it enumerates `media_player` entities.
+
+It looks like `01KM24MRTQZSBJKRTQB1JAGV0S` -- 26 characters, uppercase.
+Entries created by older Home Assistant versions are 32 lowercase hex
+characters instead. Either fits the portal field, which holds 40.
+
+**From Developer tools.** The only route that shows the id beside a readable
+name, which matters if you run more than one Music Assistant server:
+
+1. **Developer tools -> Actions**
+2. Choose the action **Music Assistant: Get Library**
+3. In the **Config Entry Id** picker, select your Music Assistant server
+4. Switch the editor to **YAML mode** (the three-dot menu, top right)
+5. Copy the value on the `config_entry_id:` line
+
+**From the URL.** **Settings -> Devices & services -> Music Assistant**,
+click through to its devices or entities, and the address bar carries
+`?config_entry=01KM24MRTQZSBJKRTQB1JAGV0S`.
+
+Paste it into the portal's **Music Assistant config entry id** field.
+Leaving it empty is a supported configuration: now-playing, transport and
+volume all work without it and only the swipe-up list is unavailable, which
+is what that list's **Not set up** card means.
+
 ### Choosing the player
 
 The portal carries a **Media player** dropdown listing every `media_player`
