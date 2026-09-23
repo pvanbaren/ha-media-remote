@@ -521,8 +521,10 @@ IPAddress s_server_ip;
  * and caches the answer for its TTL in a table of four entries. A name
  * already in that cache resolves without a packet going anywhere, which is
  * why a request can keep failing against a stale address long after the
- * record behind it changed. Nothing here asks for mDNS, so a .local name
- * would take an entirely different path.
+ * record behind it changed -- and why the timing printed below is only
+ * evidence about the link on the first lookup after boot. A cache hit
+ * costs microseconds however bad the network is. Nothing here asks for mDNS, so a .local name would take an entirely
+ * different path.
  *
  * Which is why this prints the resolvers alongside the answer. A device
  * handed a filtering or captive resolver gets a perfectly well-formed reply
@@ -564,11 +566,21 @@ void logServerAddress(const char* why) {
     s_server_ip = ip;
   }
 
-  LOG_INFO("HA: resolver %s / %s, device %s, gateway %s",
+  // RSSI belongs on the failure line rather than only at association: a
+  // link can be fine when it is joined and unusable ten minutes later, and
+  // the moment a request gave up is the one worth knowing it at.
+  //
+  // Read it for what it is, though. RSSI is the strength of frames this
+  // device did receive, so it says nothing about the noise they arrived
+  // over and nothing at all about whether this end is being heard. A
+  // healthy number here alongside a request that timed out is not a
+  // contradiction -- it is the ordinary look of a lossy link.
+  LOG_INFO("HA: resolver %s / %s, device %s, gateway %s, RSSI %d dBm",
                 WiFi.dnsIP(0).toString().c_str(),
                 WiFi.dnsIP(1).toString().c_str(),
                 WiFi.localIP().toString().c_str(),
-                WiFi.gatewayIP().toString().c_str());
+                WiFi.gatewayIP().toString().c_str(),
+                static_cast<int>(WiFi.RSSI()));
 }
 
 /** True until the first request of this association has said where it is
