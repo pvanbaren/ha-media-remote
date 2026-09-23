@@ -50,6 +50,11 @@ constexpr float kTextScale = 1.0f;
 /** Nor for the lists. */
 constexpr float kListScale = 1.0f;
 
+/** Section headers in the browse list, at the 240 px design size. A step
+ *  below the row titles here, where three or four rows fill the glass and a
+ *  header the same size as its rows would crowd them. */
+constexpr int kListHeaderTextPx240 = 15;
+
 /** How far the transport row sits above the 240 px design's, in design
  *  pixels. None: this is the panel it was designed on. */
 constexpr int kTransportRowLiftPx240 = 0;

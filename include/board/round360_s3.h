@@ -60,6 +60,11 @@ constexpr float kTextScale = 1.0f;
 /** Lists scale with the layout too. */
 constexpr float kListScale = 1.0f;
 
+/** Section headers in the browse list, at the 240 px design size. A step
+ *  below the row titles here, where three or four rows fill the glass and a
+ *  header the same size as its rows would crowd them. */
+constexpr int kListHeaderTextPx240 = 15;
+
 /** How far the transport row sits above the 240 px design's, in design
  *  pixels. Scaled by 1.5 the play button's lower edge and the elapsed chip's
  *  upper one land on the same row of pixels -- the 23 px face is a pixel

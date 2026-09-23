@@ -144,7 +144,10 @@ constexpr int kListTopY = px(32);
  *  room than a row -- which is what makes two sections fit on a 240 px
  *  circle at all. */
 constexpr int kListHeaderHeight = listPx(20);
-constexpr int kListHeaderTextPx = listTextPx(15);
+/** The board's call, because it depends on how many rows fit: a panel showing
+ *  six wants its headers the same size as the rows they head, and one showing
+ *  three wants them a step smaller. */
+constexpr int kListHeaderTextPx = listTextPx(board::kListHeaderTextPx240);
 /** Tall enough for an item thumbnail plus a little air either side; the
  *  thumbnail (board::kThumbPx) is sized to match. */
 constexpr int kListRowHeight = listPx(46);
