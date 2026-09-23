@@ -5,6 +5,14 @@ release/
 .vscode/launch.json
 .vscode/ipch
 
+# Written into the project root by pioarduino's component manager on every
+# build. Outputs, not settings.
+sdkconfig.defaults
+CMakeLists.txt
+dependencies.lock
+managed_components/
+.dummy/
+
 # Written into src/ by the pioarduino platform on every build
 src/idf_component.yml
 src/idf_component.yml.orig
