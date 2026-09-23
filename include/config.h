@@ -90,16 +90,21 @@ struct BrowseSection {
  *  Sections cost one request each when the list is opened, so this table is
  *  the network cost as well as the layout. */
 constexpr BrowseSection kBrowseSections[] = {
-    {"Recent artists", "artist", "last_played_desc", 5},
-    {"Recommended", "album", "random", 5},
+    {"Recent artists", "artist", "last_played_desc", 8},
+    {"Recommended", "album", "random", 8},
 };
 constexpr int kBrowseSectionCount =
     static_cast<int>(sizeof(kBrowseSections) / sizeof(kBrowseSections[0]));
 
 /** Items held across all sections. Each costs a name, a URI, an image URL and
  *  a decoded thumbnail, so this is the real cost knob here. It caps the total,
- *  not the per-section limits above. */
-constexpr int kMaxBrowseItems = 10;
+ *  not the per-section limits above -- keep it at their sum, or the later
+ *  sections are what get cut.
+ *
+ *  At 16: two ~5 KB item arrays in internal RAM (the list and the one being
+ *  fetched into), and sixteen thumbnail sprites in PSRAM -- 46 KB on the
+ *  240 px panel, 185 KB on the Qualia. */
+constexpr int kMaxBrowseItems = 16;
 
 // =====================================================================
 // Artist search — the swipe-left screen
