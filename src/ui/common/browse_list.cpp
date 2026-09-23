@@ -288,10 +288,31 @@ void opened() {
   artwork::forget(artwork::Kind::kBrowse);
 }
 
-bool loadNextThumb() {
-  return artwork::loadNext(artwork::Kind::kBrowse,
-                           services::browse::itemCount(),
-                           services::browse::imageUrlAt);
+uint32_t updateThumbs() {
+  return artwork::update(artwork::Kind::kBrowse, services::browse::itemCount(),
+                         services::browse::imageUrlAt);
+}
+
+bool anyItemVisible(uint32_t items) {
+  if (items == 0) {
+    return false;
+  }
+  services::browse::ReadGuard guard;
+  const int count = services::browse::rowCount();
+  // The same walk compose() does, and the same test for a row being in view.
+  int top = kViewTop - s_scroll_px;
+  for (int i = 0; i < count && top < theme::kSize; ++i) {
+    const int pitch = pitchFor(i);
+    if (top + pitch > kViewTop) {
+      services::browse::Row row;
+      if (services::browse::rowAt(i, row) && !row.header && row.item >= 0 &&
+          row.item < 32 && (items & (1u << row.item)) != 0) {
+        return true;
+      }
+    }
+    top += pitch;
+  }
+  return false;
 }
 
 bool scrollByPx(int delta) {

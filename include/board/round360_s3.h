@@ -164,6 +164,12 @@ constexpr int kTouchSwipeMinPx = 28;
 /** I2C sample interval. The INT pin is wired, on GPIO 41, but the driver polls
  *  rather than waiting on an edge -- same as the other boards. */
 constexpr unsigned long kTouchPollIntervalMs = 16;
+/** Sample the touch controller on a task of its own rather than from the
+ *  loop. Off here: touch is read through
+ *  LovyanGFX's device object, which the loop is drawing through at the same
+ *  time, and nothing has shown that to be safe from a second task. The loop
+ *  samples instead, into the same queue.  */
+constexpr bool kTouchSampleTask = false;
 
 // --- Artwork ---------------------------------------------------------------
 /** Thumbnail edge in px at kUiBaseSize: 38 becomes 57 here. Each is a

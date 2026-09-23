@@ -30,15 +30,21 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter);
 
 void clear();
 
-/** Fetch the image at `url` and decode it straight into `gfx`, fitted inside a
- *  `size` square whose TOP-LEFT corner is (x, y).
+/** Fetch the image at `url` and decode it into `gfx`, fitted inside a `size`
+ *  square whose TOP-LEFT corner is (x, y). For images fetched once and kept
+ *  as pixels afterwards -- the list thumbnails.
  *
- *  Nothing is cached and nothing is held: the bytes are decoded off the socket
- *  through the same DataWrapper the oversized-cover path uses, so the only RAM
- *  involved is the decoder's own working buffer. That makes it right for
- *  images fetched once and kept as pixels afterwards -- the station
- *  thumbnails -- and wrong for anything redrawn often. Blocks on the network.
- */
-bool drawUrl(lgfx::LGFXBase& gfx, const char* url, int x, int y, int size);
+ *  Keeps its connection open between calls, so a run of thumbnails from one
+ *  host pays for one TLS handshake rather than one each; releaseThumbConnection()
+ *  gives it back. The body is downloaded whole before decoding, so the lock
+ *  shared with draw() is held for a decode from memory and never across the
+ *  network. Blocks on the network, and is for one task only: the artwork
+ *  worker. */
+bool fetchThumb(lgfx::LGFXBase& gfx, const char* url, int x, int y, int size);
+
+/** Close the connection fetchThumb() keeps. Called once a batch is done: an
+ *  idle TLS connection is tens of KB of internal RAM held for nothing, beside
+ *  the poll task's own. */
+void releaseThumbConnection();
 
 }  // namespace ui::cover

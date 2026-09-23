@@ -51,11 +51,14 @@ void opened();
 
 void resetScroll();
 
-/** Fetch one thumbnail that has not been tried yet. Blocks on the network for
- *  the length of one image, so the caller does this between touch polls and
- *  stops when it returns false. Safe to call whatever is on screen -- the
- *  list is usually filled in from the now-playing screen, before anyone has
- *  asked to see it. */
-bool loadNextThumb();
+/** Queue the list's thumbnails and report, as a bit per item index, which
+ *  have finished since the last call. Never blocks on the network. Safe to
+ *  call whatever is on screen -- the list is usually filled in from the
+ *  now-playing screen, before anyone has asked to see it. */
+uint32_t updateThumbs();
+
+/** Whether any item in `items` (a bit per item index, as updateThumbs()
+ *  returns) is at least partly on screen at the current scroll. */
+bool anyItemVisible(uint32_t items);
 
 }  // namespace ui::browse_list

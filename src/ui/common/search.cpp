@@ -288,9 +288,23 @@ bool resultImageUrl(int index, char* out, size_t out_len) {
 
 }  // namespace
 
-bool loadNextThumb() {
-  return artwork::loadNext(artwork::Kind::kSearch, services::search::count(),
-                           resultImageUrl);
+uint32_t updateThumbs() {
+  return artwork::update(artwork::Kind::kSearch, services::search::count(),
+                         resultImageUrl);
+}
+
+bool anyResultVisible(uint32_t results) {
+  const int count = services::search::count();
+  for (int i = 0; i < count && i < 32; ++i) {
+    if ((results & (1u << i)) == 0) {
+      continue;
+    }
+    const int top = resultTop(i);
+    if (top < theme::kSize && top + theme::kListRowHeight > kResultViewTop) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void reset() {

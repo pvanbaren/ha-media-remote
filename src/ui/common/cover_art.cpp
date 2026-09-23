@@ -15,6 +15,7 @@
 #include "config.h"
 #include "log.h"
 #include "services/ha_client.h"
+#include "services/yielding_client.h"
 
 namespace ui::cover {
 namespace {
@@ -333,6 +334,128 @@ class StreamWrapper : public lgfx::DataWrapper {
   uint32_t _pos = 0;
 };
 
+/** Collects a response body into a fixed buffer, for HTTPClient's
+ *  writeToStream(). That call is the reason to have this at all: it handles
+ *  both a Content-Length and a chunked body, reads the response to its end
+ *  -- which is what leaves a kept-alive connection clean for the next
+ *  request -- and closes the connection itself on any error. */
+class BufferSink : public Stream {
+ public:
+  BufferSink(uint8_t* buffer, size_t capacity)
+      : _buffer(buffer), _capacity(capacity) {}
+
+  size_t write(uint8_t c) override { return write(&c, 1); }
+  size_t write(const uint8_t* data, size_t len) override {
+    if (len > _capacity - _length) {
+      _overflowed = true;
+      return 0;  // writeToStream() takes a short write as an error
+    }
+    memcpy(_buffer + _length, data, len);
+    _length += len;
+    return len;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+
+  size_t length() const { return _length; }
+  bool overflowed() const { return _overflowed; }
+
+ private:
+  uint8_t* _buffer;
+  size_t _capacity;
+  size_t _length = 0;
+  bool _overflowed = false;
+};
+
+/**
+ * The one connection thumbnails keep open between fetches.
+ *
+ * Measured, a thumbnail was 515-613 ms of TLS handshake and then 40-100 ms of
+ * everything else, and a list's worth came from two hosts. So one connection,
+ * kept alive across a batch and reopened only when the host changes, turns
+ * sixteen handshakes into two. The artwork worker orders its queue by host
+ * for exactly this reason.
+ *
+ * Only the artwork worker uses it, so it needs no lock. Created on first use
+ * and never destroyed. The clients come before the HTTPClient for the reason
+ * given in prepare(), though it never matters here.
+ */
+struct ThumbConnection {
+  services::YieldingClient plain;
+  services::YieldingClientSecure secure;
+  HTTPClient http;
+  /** scheme://host:port the open connection, if any, belongs to. */
+  String origin;
+
+  void close() {
+    plain.stop();
+    secure.stop();
+  }
+};
+
+ThumbConnection& thumbConnection() {
+  static ThumbConnection* connection = new ThumbConnection();
+  return *connection;
+}
+
+/** Downloads land here before decoding, so the cover-art lock is held for a
+ *  decode from memory rather than for however long the network takes. 64 KB
+ *  is many times a resized thumbnail -- they measured 2 to 8 KB -- and
+ *  anything larger decodes straight off the socket instead. PSRAM, claimed
+ *  by the worker on its first fetch and never freed. */
+constexpr size_t kThumbBufferBytes = 64 * 1024;
+uint8_t* s_thumb_buffer = nullptr;
+
+/** Host and port out of an http(s) URL, the way HTTPClient will read them.
+ *  False for anything it would be unwise to second-guess, such as an IPv6
+ *  literal. */
+bool splitHost(const String& url, String& host, uint16_t& port) {
+  const bool https = url.startsWith("https://");
+  const int start = https ? 8 : (url.startsWith("http://") ? 7 : -1);
+  if (start < 0) {
+    return false;
+  }
+  int end = static_cast<int>(url.length());
+  for (const char stop : {'/', '?', '#'}) {
+    const int at = url.indexOf(stop, start);
+    if (at >= 0 && at < end) {
+      end = at;
+    }
+  }
+  String authority = url.substring(start, end);
+  const int at = authority.lastIndexOf('@');
+  if (at >= 0) {
+    authority = authority.substring(at + 1);
+  }
+  if (authority.length() == 0 || authority[0] == '[') {
+    return false;
+  }
+  port = https ? 443 : 80;
+  const int colon = authority.indexOf(':');
+  if (colon >= 0) {
+    const long parsed = authority.substring(colon + 1).toInt();
+    if (parsed <= 0 || parsed > 65535) {
+      return false;
+    }
+    port = static_cast<uint16_t>(parsed);
+    authority = authority.substring(0, colon);
+  }
+  host = authority;
+  return host.length() > 0;
+}
+
+/** "https://host:port", or empty when the URL will not split. */
+String originOf(const String& url) {
+  String host;
+  uint16_t port = 0;
+  if (!splitHost(url, host, port)) {
+    return String();
+  }
+  return String(url.startsWith("https://") ? "https://" : "http://") + host +
+         ":" + String(port);
+}
+
 /** Rewrite an artwork URL to ask its host for something near `size` pixels.
  *
  *  Not a nicety. The Music Assistant library hands back whatever the provider
@@ -561,8 +684,8 @@ void prepare(const char* picture) {
   // it a second time through a dead vtable. lwIP notices when the last ACK
   // arrives and trips `pbuf_free: p->ref > 0` on the tcpip thread, with nothing
   // of this firmware in the backtrace. Clients first, HTTPClient last.
-  WiFiClient plain;
-  WiFiClientSecure secure;
+  services::YieldingClient plain;
+  services::YieldingClientSecure secure;
   HTTPClient http;
   int content_length = -1;
   Format format = Format::kUnknown;
@@ -688,8 +811,8 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
   // it a second time through a dead vtable. lwIP notices when the last ACK
   // arrives and trips `pbuf_free: p->ref > 0` on the tcpip thread, with nothing
   // of this firmware in the backtrace. Clients first, HTTPClient last.
-  WiFiClient plain;
-  WiFiClientSecure secure;
+  services::YieldingClient plain;
+  services::YieldingClientSecure secure;
   HTTPClient http;
   int content_length = -1;
   Format format = Format::kUnknown;
@@ -722,95 +845,145 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
   return drawn;
 }
 
-bool drawUrl(lgfx::LGFXBase& gfx, const char* url, int x, int y, int size) {
+bool fetchThumb(lgfx::LGFXBase& gfx, const char* url, int x, int y,
+                int size) {
   if (url == nullptr || url[0] == '\0' || WiFi.status() != WL_CONNECTED) {
     return false;
+  }
+  ThumbConnection& conn = thumbConnection();
+  conn.http.setReuse(true);
+  if (s_thumb_buffer == nullptr) {
+    s_thumb_buffer = static_cast<uint8_t*>(
+        heap_caps_malloc(kThumbBufferBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   }
 
   bool rewritten = false;
   String target = thumbnailUrl(url, size, rewritten);
+  bool retried_stale = false;
 
-  for (int attempt = 0; attempt < 2; ++attempt) {
-    // Order matters, and not for style. C++ destroys automatics in reverse
-    // declaration order, and ~HTTPClient() does `if (_client) _client->stop()`
-    // on a raw pointer to whichever client below was handed to begin(). Declared
-    // the other way round, that pointer dangles: the client is destroyed first,
-    // ~WiFiClientSecure has already closed the socket, and HTTPClient then closes
-    // it a second time through a dead vtable. lwIP notices when the last ACK
-    // arrives and trips `pbuf_free: p->ref > 0` on the tcpip thread, with nothing
-    // of this firmware in the backtrace. Clients first, HTTPClient last.
-    WiFiClient plain;
-    WiFiClientSecure secure;
-    HTTPClient http;
+  // At most three: once more if a kept-alive connection turns out to have
+  // been dropped by the server, and once more unresized if the host refused
+  // the size asked for.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    const String origin = originOf(target);
+    if (origin.length() == 0 || origin != conn.origin) {
+      conn.close();  // HTTPClient would otherwise send this host's request to the last one
+      conn.origin = origin;
+    }
+    WiFiClient& client = target.startsWith("https://")
+                             ? static_cast<WiFiClient&>(conn.secure)
+                             : conn.plain;
+    const bool reusing = client.connected();
+
     int content_length = -1;
     Format format = Format::kUnknown;
+    const bool opened = openArt(conn.http, conn.plain, conn.secure, target,
+                                content_length, format);
 
-    if (!openArt(http, plain, secure, target, content_length, format)) {
+    if (!opened) {
+      // Whatever a refusal left on the wire -- the rest of an error body --
+      // must not be read as the start of the next response.
+      conn.close();
+      if (reusing && !retried_stale) {
+        retried_stale = true;
+        continue;
+      }
+      if (rewritten && target != url) {
+        // Possibly the host declining the size we asked for -- it answers 400
+        // with the sizes it will accept. Retry untouched and take the
+        // bandwidth hit once.
+        LOG_DEBUG("Art: %s refused, retrying unresized", target.c_str());
+        target = String(url);
+        continue;
+      }
       // Internal RAM at the moment it failed. A fresh WiFiClientSecure needs
       // tens of KB of it for the mbedTLS context, and when that allocation is
       // what failed the request never reaches the wire -- which reads as the
-      // host refusing something it was never asked. PSRAM is irrelevant here,
-      // so the total is deliberately not reported.
+      // host refusing something it was never asked.
       LOG_WARN("Art: open failed (internal heap free %u, largest %u)",
                     static_cast<unsigned>(heap_caps_get_free_size(
                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
                     static_cast<unsigned>(heap_caps_get_largest_free_block(
                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
-      if (attempt == 0 && rewritten) {
-        // Possibly the host declining the size we asked for -- it answers 400
-        // with the sizes it will accept. Retry untouched and take the
-        // bandwidth hit once. If the heap line above shows internal RAM is
-        // short, this retry is chasing a local failure and will fail too.
-        LOG_DEBUG("Art: %s refused, retrying unresized", target.c_str());
-        target = String(url);
-        continue;
-      }
       return false;
     }
 
-    StreamWrapper source(
-        http.getStreamPtr(),
-        content_length > 0 ? static_cast<uint32_t>(content_length) : ~0u);
+    bool drawn = false;
+    int bytes = content_length;
+    const bool buffered =
+        s_thumb_buffer != nullptr &&
+        content_length <= static_cast<int>(kThumbBufferBytes);  // -1 too
 
-    // Serialised against every other decode on the device, and it has to be.
-    // LovyanGFX keeps ONE pngle_t in a file-scope static and reuses it on
-    // purpose (LGFXBase.cpp: "static pngle_t* pngle"), so two tasks decoding
-    // PNGs at once tear up each other's decoder state. This runs on the poll
-    // task while the Arduino loop is composing cover art into a frame, which
-    // is exactly that case -- and the damage surfaces later and elsewhere, as
-    // a wild pointer in whatever touches the heap next.
-    //
-    // draw_jpg is not affected (its decoder is a local plus a malloc'd pool)
-    // but is covered here too: the format is not known until the response
-    // headers arrive, and one lock is simpler than two paths.
-    Guard guard;
+    if (buffered) {
+      // Download all of it first, then decode from memory: the lock below is
+      // shared with the cover art the loop draws, and holding it across a
+      // network read would stall the now-playing screen for the length of it.
+      BufferSink sink(s_thumb_buffer, kThumbBufferBytes);
+      const int got = conn.http.writeToStream(&sink);
+      if (got <= 0 || sink.overflowed()) {
+        LOG_WARN("Art: body failed for %s (%d%s)", target.c_str(), got,
+                      sink.overflowed() ? ", larger than the buffer" : "");
+        conn.close();
+        conn.http.end();
+        return false;
+      }
+      bytes = static_cast<int>(sink.length());
+      if (format == Format::kUnknown) {
+        format = formatFromMagic(s_thumb_buffer, sink.length());
+      }
 
-    // Fit, not crop: artwork is often wider than it is tall and carries a
-    // name, so cropping to a square would cut the name in half. Scale 0 = fit.
-    const bool drawn =
-        format == Format::kPng
-            ? gfx.drawPng(&source, x, y, size, size, 0, 0, 0.0f, 0.0f,
-                          datum_t::middle_center)
-            : gfx.drawJpg(&source, x, y, size, size, 0, 0, 0.0f, 0.0f,
-                          datum_t::middle_center);
-    http.end();
-
-    if (drawn) {
-      return true;
+      // Serialised against every other decode on the device: LovyanGFX keeps
+      // ONE pngle_t in a file-scope static (LGFXBase.cpp: "static pngle_t*
+      // pngle"), so two tasks decoding PNGs at once tear up each other's
+      // state, and the damage surfaces later as a wild pointer elsewhere.
+      Guard guard;
+      // Fit, not crop: artwork is often wider than it is tall and carries a
+      // name, so cropping to a square would cut it in half. Scale 0 = fit.
+      drawn = format == Format::kPng
+                  ? gfx.drawPng(s_thumb_buffer, sink.length(), x, y, size, size,
+                                0, 0, 0.0f, 0.0f, datum_t::middle_center)
+                  : gfx.drawJpg(s_thumb_buffer, sink.length(), x, y, size, size,
+                                0, 0, 0.0f, 0.0f, datum_t::middle_center);
+    } else {
+      // Too big to hold: decode off the socket, as every thumbnail once did.
+      StreamWrapper source(
+          conn.http.getStreamPtr(),
+          content_length > 0 ? static_cast<uint32_t>(content_length) : ~0u);
+      Guard guard;
+      drawn = format == Format::kPng
+                  ? gfx.drawPng(&source, x, y, size, size, 0, 0, 0.0f, 0.0f,
+                                datum_t::middle_center)
+                  : gfx.drawJpg(&source, x, y, size, size, 0, 0, 0.0f, 0.0f,
+                                datum_t::middle_center);
+      // A decoder that stops at the end of the image can leave bytes of it
+      // unread, and those would be read as the next response's headers.
+      if (content_length <= 0 || source.tell() != content_length) {
+        conn.close();
+      }
     }
-    // Name the likely cause rather than leaving a bare failure. TJpgD decodes
-    // baseline JPEG only -- lgfx_tjpgd.c returns JDR_FMT3 with the comment
-    // "may be progressive JPEG" -- and some hosts serve nothing else at any
-    // size, so this is a limitation to recognise, not a bug to go hunting.
-    LOG_WARN(
-        "Art: decode failed for %s (%d bytes, %s)%s", target.c_str(),
-        content_length, format == Format::kPng ? "png" : "jpeg",
-        format == Format::kPng
-            ? ""
-            : " - progressive JPEG is not supported by this decoder");
-    return false;
+    conn.http.end();  // keeps the connection open when the server allows it
+
+    if (!drawn) {
+      // Name the likely cause rather than leaving a bare failure. TJpgD
+      // decodes baseline JPEG only -- lgfx_tjpgd.c returns JDR_FMT3 with the
+      // comment "may be progressive JPEG" -- and some hosts serve nothing
+      // else at any size, so this is a limitation to recognise, not a bug.
+      LOG_WARN(
+          "Art: decode failed for %s (%d bytes, %s)%s", target.c_str(), bytes,
+          format == Format::kPng ? "png" : "jpeg",
+          format == Format::kPng
+              ? ""
+              : " - progressive JPEG is not supported by this decoder");
+    }
+    return drawn;
   }
   return false;
+}
+
+void releaseThumbConnection() {
+  ThumbConnection& conn = thumbConnection();
+  conn.close();
+  conn.origin = String();
 }
 
 }  // namespace ui::cover

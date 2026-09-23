@@ -959,13 +959,28 @@ alphabet. The last two keys of the bottom row are space and backspace, drawn as
 glyphs rather than labelled.
 
 Results are the browse list's rows -- same shape, same artwork, same
-finger-following scroll and glide -- and **the artwork arrives one image per
-loop pass**. Each fetch is a TLS handshake and takes the better part of a
-second, so loading eight in a batch would either delay the results by several
-seconds or freeze touch for as long. One at a time puts the names on screen
-immediately and lets the pictures land under them, with the panel still
-answering taps in between. A row with no artwork yet centres its name, so
-nothing shifts sideways when the picture arrives.
+finger-following scroll and glide -- and **the artwork is fetched on a worker
+task of its own** (`ui/common/artwork.cpp`), pinned to core 0 away from the
+loop. It used to be one image per loop pass, and each fetch -- 560 to 860 ms,
+most of it a TLS handshake -- was that long with touch unread: at boot the
+panel was blind for over half of every ten seconds and caught about one tap
+in six. The worker keeps one connection open across a batch and takes its
+queue grouped by host, so a list's sixteen thumbnails from two CDN hosts cost
+two handshakes rather than sixteen, and closes it when the queue empties. The
+names go on screen immediately, the pictures land under them, and arrivals
+are gathered into one repaint every `kThumbRepaintMinMs` at most, and only
+when one is on screen. A row with no artwork yet centres its name, so nothing
+shifts sideways when the picture arrives.
+
+Touch itself is sampled on its own task on the Qualia
+(`board::kTouchSampleTask`) into a queue of timestamped changes, which the
+loop replays through the gesture state machine -- so a slow pass delays a tap
+rather than losing it. The other boards keep sampling from the loop, into the
+same queue: their touch goes through LovyanGFX's device object, which the
+loop is drawing through at the same time.
+
+The list and search screens go back to now playing after
+`config::kListIdleReturnMs` (a minute) without a touch.
 
 Tapping a result draws it alone and centred with "Starting radio..." before
 the call, because `play_media` in radio mode has to build a queue as well as

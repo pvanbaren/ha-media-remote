@@ -458,12 +458,13 @@ Input poll(Screen screen, const PlayerState* state) {
   // A touch on a blanked panel only wakes it. Handled before anything else
   // reads the touch state, so the same press cannot also press a button.
   if (displayIsBlanked()) {
-    if (hw::touchIsDown()) {
+    // A whole tap can now arrive in one poll -- down and up queued behind a
+    // slow pass -- so a completed gesture wakes the panel too, not only a
+    // finger seen resting on it.
+    hw::TouchReport discard;
+    if (hw::touchIsDown() || hw::touchPoll(discard)) {
       wake();
       out.intent = Intent::kWokeFromTouch;
-    } else {
-      hw::TouchReport discard;
-      hw::touchPoll(discard);
     }
     return out;
   }
@@ -613,31 +614,71 @@ void prepareArtwork(const char* picture) { cover::prepare(picture); }
 void clearArtwork() { cover::clear(); }
 
 bool idleWork(Screen screen) {
-  // Each call is one blocking HTTPS fetch -- 550 to 790 ms on this hardware
-  // -- so it may only run when nothing is moving. A finger down was the
-  // obvious half of that and the only half guarded for a while: a fling lifts
-  // the finger, which opened the gate in the middle of the glide and dropped
-  // two thirds of a second into it.
-  if (hw::touchIsDown() || s_list_velocity != 0.0f) {
-    return false;  // responsiveness matters more than a picture
+  // Thumbnails are fetched by artwork's own worker now, so nothing here
+  // blocks: this queues what the screen wants, collects what has arrived, and
+  // decides whether that is worth a repaint.
+  //
+  // Arrivals are gathered per screen and repainted together. The worker can
+  // land several a second once its connection is warm, and a full list
+  // repaint is the better part of 150 ms on the Qualia -- one per image
+  // would put back a slice of the stall the worker exists to remove.
+  static Screen s_pending_screen = Screen::kMessage;
+  static uint32_t s_pending = 0;
+  static unsigned long s_repainted_ms = 0;
+
+  if (screen != s_pending_screen) {
+    s_pending_screen = screen;
+    s_pending = 0;  // a new screen is composed whole, pictures and all
   }
+
   if (screen == Screen::kSearch) {
-    if (search::showingResults() && search::loadNextThumb()) {
-      search::draw();
-      return true;
+    if (!search::showingResults()) {
+      return false;
     }
+    s_pending |= search::updateThumbs();
+  } else {
+    // The list's own artwork is filled in from wherever the user happens to
+    // be, so a swipe up lands on a finished list rather than one loading.
+    //
+    // Except while the poll task is reloading it: that holds the list's lock
+    // across the network, and asking for the item count would wait out the
+    // whole load on the loop. The load only runs off the list screens.
+    if (screen != Screen::kBrowse && services::browse::busy()) {
+      return false;
+    }
+    const uint32_t finished = browse_list::updateThumbs();
+    if (screen == Screen::kBrowse) {
+      s_pending |= finished;
+    }
+  }
+
+  if (s_pending == 0) {
     return false;
   }
-  // The list's own artwork is filled in from wherever the user happens to be,
-  // so a swipe up lands on a finished list rather than on one still loading.
-  if (browse_list::loadNextThumb()) {
-    if (screen == Screen::kBrowse) {
-      browse_list::draw();
-    }
-    return true;
+  // Never under a finger or a glide: those repaint the rows themselves, and
+  // with the pictures in, since artwork::draw() shows whatever has arrived.
+  if (hw::touchIsDown() || s_list_velocity != 0.0f ||
+      millis() - s_repainted_ms < config::kThumbRepaintMinMs) {
+    return false;
   }
-  return false;
+
+  const bool visible = screen == Screen::kSearch
+                           ? search::anyResultVisible(s_pending)
+                           : browse_list::anyItemVisible(s_pending);
+  s_pending = 0;
+  if (!visible) {
+    return false;  // they will be drawn when scrolled to
+  }
+  s_repainted_ms = millis();
+  if (screen == Screen::kSearch) {
+    search::draw();
+  } else {
+    browse_list::draw();
+  }
+  return true;
 }
+
+unsigned long lastInteractionMs() { return hw::touchLastActivityMs(); }
 
 bool volumeDragging() { return s_vol_dragging; }
 

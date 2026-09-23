@@ -19,9 +19,10 @@
  * whichever screen last used it and switching screens invalidates the other.
  * That also halves the sprite count against a pool each.
  *
- * Loading blocks on the network, a TLS handshake per image, so callers take
- * one per loop pass rather than a batch: the names are on screen immediately
- * and the pictures arrive under them with touch still answering in between.
+ * The fetching happens on a worker task of this module's own, so nothing
+ * here blocks: the loop queues what a screen wants with update(), draws
+ * whatever has arrived, and repaints when update() says more has. The names
+ * are on screen immediately and the pictures arrive under them.
  */
 namespace ui::artwork {
 
@@ -31,8 +32,9 @@ enum class Kind : uint8_t { kBrowse, kSearch };
  *  entry has no artwork. False when `index` is not a real entry. */
 using UrlFn = bool (*)(int index, char* out, size_t out_len);
 
-/** Claim the sprite pool. After the display is up -- the sprites take its
- *  colour depth -- and before Wi-Fi, while the heap is unfragmented. */
+/** Claim the sprite pool and start the worker. After the display is up --
+ *  the sprites take its colour depth -- and before Wi-Fi, while the heap is
+ *  unfragmented. */
 void init();
 
 /** Thumbnail edge in display px, or 0 when there was no room for the pool, in
@@ -40,13 +42,15 @@ void init();
 int size();
 
 /** Start the walk over again for `kind`. Pixels already decoded are kept: a
- *  refresh that returns the same items compares URLs and skips the refetch. */
+ *  refresh that returns the same items compares URLs and skips the refetch,
+ *  and one that failed is tried again. */
 void forget(Kind kind);
 
-/** Load the next entry not tried since forget(). Blocks on the network when
- *  it does work. False once every entry has been tried, which is how a caller
- *  knows to stop asking. */
-bool loadNext(Kind kind, int count, UrlFn url_for);
+/** Queue every entry below `count` not walked since forget(), and report
+ *  which slots have finished -- arrived or failed -- since the last call, as a
+ *  bit per slot index. Never blocks on the network; cheap enough to call on
+ *  every loop pass. Switching `kind` drops the other screen's pictures. */
+uint32_t update(Kind kind, int count, UrlFn url_for);
 
 /** Push the slot's picture at (x, y). False when it has none -- no URL, a
  *  decode that failed, no pool, or the pool belongs to the other screen --

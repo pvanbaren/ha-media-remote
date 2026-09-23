@@ -129,6 +129,12 @@ constexpr int kTouchTapSlopPx = 10;
 constexpr int kTouchSwipeMinPx = 28;
 /** I2C sample interval when no INT pin is wired. */
 constexpr unsigned long kTouchPollIntervalMs = 16;
+/** Sample the touch controller on a task of its own rather than from the
+ *  loop. Off here: touch is read through
+ *  LovyanGFX's device object, which the loop is drawing through at the same
+ *  time, and nothing has shown that to be safe from a second task. The loop
+ *  samples instead, into the same queue.  */
+constexpr bool kTouchSampleTask = false;
 
 /** Thumbnail edge in px at kUiBaseSize, scaled with the panel like everything
  *  else. Each is a permanent sprite of edge^2 * 2 bytes: 38 px is 2.9 KB. */

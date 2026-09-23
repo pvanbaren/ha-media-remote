@@ -126,10 +126,16 @@ void prepareArtwork(const char* picture);
 /** Drop it, when what is playing is about to change. */
 void clearArtwork();
 
-/** Work the display would like to do when nothing else is happening: one
- *  thumbnail fetch per call. Returns true when it did something, so the
- *  caller knows there may be more. Never called while a finger is down. */
+/** Housekeeping for the list screens, once per loop pass: queue the
+ *  thumbnails a screen wants (fetched on a worker, so this never blocks on
+ *  the network) and repaint when some that are on screen have arrived.
+ *  Returns true when it repainted. */
 bool idleWork(Screen screen);
+
+/** millis() of the last touch the panel saw -- down, move or release -- or 0
+ *  if there has been none. For timeouts that should wait on a person rather
+ *  than on the clock. */
+unsigned long lastInteractionMs();
 
 /** True while a finger is dragging the volume. The level on screen is then the
  *  finger's, and a state update must not move it or repaint over it. */

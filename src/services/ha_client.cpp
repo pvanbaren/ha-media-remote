@@ -1,4 +1,5 @@
 #include "services/ha_client.h"
+#include "services/yielding_client.h"
 #include "log.h"
 
 #include <Arduino.h>
@@ -459,8 +460,8 @@ bool validEntityId(const char* entity_id) {
 
 // The HA connection, held across requests rather than rebuilt per call. See
 // httpPost() for why, and for why access has to be serialised.
-WiFiClient s_plain;
-WiFiClientSecure s_secure;
+services::YieldingClient s_plain;
+services::YieldingClientSecure s_secure;
 HTTPClient s_http;
 SemaphoreHandle_t s_http_mutex = nullptr;
 

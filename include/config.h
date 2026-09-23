@@ -243,17 +243,6 @@ constexpr unsigned long kHaPollAfterCommandMs = 400;
 /** Slowest rate volume_set is sent while the finger is dragging. The arc
  *  follows the finger locally regardless, so this only paces the audio. */
 constexpr unsigned long kVolumeSendIntervalMs = 250;
-
-/** A tap on a scrolling list is refused if it began while the list was
- *  moving, or this soon after it stopped. Flicking again to keep a list going
- *  is a press that lands mid-glide, and taking it as a tap started whatever
- *  row happened to be under the finger. */
-constexpr unsigned long kListTapGuardMs = 250;
-/** ...and refused, too, if the finger went unread for longer than this at any
- *  point while it was down. Where touch is read from the loop, a flick can
- *  fall between two reads of a busy pass -- down, then gone, never seen to
- *  move -- and a press nobody watched cannot be told from a tap. */
-constexpr unsigned long kTouchWatchGapMs = 60;
 /** How long the entity list stays fresh before the picker refetches it. */
 constexpr unsigned long kHaPlayerListTtlMs = 300000;
 
@@ -287,6 +276,35 @@ constexpr bool kBlankWhenPaused = true;
  *  Only sent once per blanking, and only to an entity whose supported_features
  *  claim TURN_OFF. */
 constexpr bool kTurnOffControlOnBlank = true;
+
+/** How long the browse list or the search screen stays up with nobody
+ *  touching it before the device goes back to now playing. 0 never does.
+ *
+ *  Those screens are only ever up because someone was using them, and one
+ *  walked away from leaves a remote that no longer says what is playing --
+ *  and keeps the panel lit, since only now playing ever blanks. Counted from
+ *  the last touch of any kind, or from opening the screen if that is later,
+ *  so a list being read slowly is not pulled away mid-scroll. */
+constexpr unsigned long kListIdleReturnMs = 60000;
+
+/** A tap on a scrolling list is refused if it began while the list was
+ *  moving, or this soon after it stopped. Flicking again to keep a list going
+ *  is a press that lands mid-glide, and taking it as a tap started whatever
+ *  row happened to be under the finger. */
+constexpr unsigned long kListTapGuardMs = 250;
+/** ...and refused, too, if the finger went unread for longer than this at any
+ *  point while it was down. Where touch is read from the loop, a flick can
+ *  fall between two reads of a busy pass -- down, then gone, never seen to
+ *  move -- and a press nobody watched cannot be told from a tap. */
+constexpr unsigned long kTouchWatchGapMs = 60;
+
+/** Shortest gap between two repaints of a list for thumbnails arriving.
+ *
+ *  The worker can land several a second once its connection is warm, and
+ *  each repaint is the better part of 150 ms of compose and copy on the
+ *  Qualia. Gathering what arrived in the meantime into one repaint keeps
+ *  the list from spending most of a second redrawing itself. */
+constexpr unsigned long kThumbRepaintMinMs = 300;
 
 
 /** Give up on art beyond this size outright; something is wrong upstream.

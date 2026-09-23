@@ -72,6 +72,9 @@ std::atomic<bool> g_turn_on_control{false};
 std::atomic<bool> g_turn_off_control{false};
 
 unsigned long g_last_elapsed_ms = 0;
+/** When the browse list or search screen was last opened, for
+ *  kListIdleReturnMs. Loop only. */
+unsigned long g_list_opened_ms = 0;
 
 /** A volume gesture is in progress somewhere on the panel, so a poll must not
  *  contradict it. The display owns the gesture; this is a copy of
@@ -542,6 +545,7 @@ void openSearch() {
   }
   g_screen = Screen::kSearch;
   ui::showSearch();
+  g_list_opened_ms = millis();
 }
 
 /** Open the browse list.
@@ -564,6 +568,30 @@ void openBrowse() {
   services::browse::ensureLoaded();
   g_screen = Screen::kBrowse;
   ui::showBrowse();
+  g_list_opened_ms = millis();
+}
+
+/** Go back to now playing from a list or search screen nobody is using.
+ *
+ *  Measured from the later of the last touch and the screen opening, so the
+ *  clock starts fresh on arrival -- a swipe up after a minute of listening
+ *  must not be sent straight back. */
+void handleListTimeout() {
+  if (config::kListIdleReturnMs == 0 ||
+      (g_screen != Screen::kBrowse && g_screen != Screen::kSearch)) {
+    return;
+  }
+  unsigned long since = ui::lastInteractionMs();
+  if (static_cast<long>(g_list_opened_ms - since) > 0) {
+    since = g_list_opened_ms;  // the later of the two, wrap-safe
+  }
+  if (millis() - since < config::kListIdleReturnMs) {
+    return;
+  }
+  LOG_DEBUG("UI: %s untouched for %lu s, back to now playing",
+                g_screen == Screen::kBrowse ? "list" : "search",
+                config::kListIdleReturnMs / 1000);
+  showNowPlaying();
 }
 
 /** No player is selected, and the device cannot choose one: the picker lives
@@ -898,7 +926,18 @@ void setup() {
   // 12 KB covers TLS plus the JSON body; the touch loop stays on the Arduino
   // task. Left unpinned: letting the scheduler place it across the S3's two
   // cores is no worse than guessing which one it wants.
-  xTaskCreate(haPollTask, "ha_poll", 12288, nullptr, 1, nullptr);
+  //
+  // Priority 0, the idle task's own, so that on core 1 it never takes time
+  // from the loop.
+  //
+  // That is not what keeps it from starving the idle task on core 0 while it
+  // waits on a slow response, and cannot be: the loop sends commands over
+  // the same connection and blocks on s_http_mutex while this task holds it,
+  // and priority inheritance then lifts this task to the loop's priority for
+  // as long as it holds the lock. What does is the client it waits through,
+  // which sleeps instead of spinning -- see services::Yielding.
+  xTaskCreate(haPollTask, "ha_poll", 12288, nullptr, tskIDLE_PRIORITY,
+              nullptr);
 }
 
 void loop() {
@@ -911,6 +950,7 @@ void loop() {
   // The display reports a tap on a dark panel as kWokeFromTouch and nothing
   // else, so the same press cannot also press a button.
   handleInput();
+  handleListTimeout();
 
   handleMessageRecheck();
 
@@ -931,10 +971,6 @@ void loop() {
     }
   }
 
-  // Artwork arrives one image per pass rather than in a batch, so names are
-  // on screen immediately and the panel still answers taps between fetches.
-  ui::idleWork(g_screen);
-
   // The untitled label's delay has run out with the title still missing:
   // the frame that held it back is redrawn with it. A title that arrived in
   // the meantime has already repainted, and cancels this.
@@ -946,6 +982,10 @@ void loop() {
       g_state_dirty = true;
     }
   }
+
+  // Thumbnails are fetched on artwork's own worker; this only queues what the
+  // screen wants and repaints when some of it has arrived.
+  ui::idleWork(g_screen);
 
   if (!ui::isBlanked() && g_screen == Screen::kNowPlaying &&
       !g_volume_dragging && millis() - g_last_elapsed_ms >= 1000) {

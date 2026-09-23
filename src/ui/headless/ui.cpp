@@ -114,6 +114,8 @@ void clearArtwork() {}
 
 bool idleWork(Screen) { return false; }
 
+unsigned long lastInteractionMs() { return 0; }  // nobody can touch it
+
 bool volumeDragging() { return false; }
 
 }  // namespace ui

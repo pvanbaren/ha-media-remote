@@ -48,6 +48,10 @@ bool touchPoll(TouchReport& out);
  *  release would produce, it does not lift the finger. A drag handler needs
  *  exactly this: grab, cancel the gesture, then keep tracking until lift. */
 bool touchIsDown();
+
+/** millis() of the last touch the gesture layer processed -- down, move or
+ *  release -- or now while a finger is down; 0 before the first. */
+unsigned long touchLastActivityMs();
 /** Live finger position; only meaningful while touchIsDown(). */
 void touchPosition(int& x, int& y);
 

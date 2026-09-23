@@ -15,11 +15,12 @@ enum class Result : uint8_t {
 /** Start over: empty query, no results, keyboard showing. */
 void reset();
 
-/** Fetch one result thumbnail that has not been tried yet. One image per
- *  call: each is a TLS handshake and takes the better part of a second, so a
- *  batch would either delay the names by several seconds or freeze touch for
- *  as long. False once every result has been tried. */
-bool loadNextThumb();
+/** Queue the results' thumbnails and report, as a bit per result index,
+ *  which have finished since the last call. Never blocks on the network. */
+uint32_t updateThumbs();
+
+/** Whether any result in `results` is at least partly on screen. */
+bool anyResultVisible(uint32_t results);
 
 /** True once a search has run, so the screen is showing results rather than
  *  the keyboard. */
