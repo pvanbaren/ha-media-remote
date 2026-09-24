@@ -154,6 +154,40 @@ int fetchPlayers(PlayerEntry* out, size_t capacity);
 /** Fetch the selected player's now-playing snapshot. False on failure. */
 bool fetchState(const char* entity_id, PlayerState& out);
 
+/**
+ * Live state over Home Assistant's WebSocket API, instead of polling.
+ *
+ * The stream renders the same template fetchState() posts, but as a
+ * subscription: Home Assistant tracks every entity the template reads and
+ * sends a fresh rendering whenever one of them changes -- the player, and the
+ * volume/power entity where that is a different one. So a volume change or a
+ * track starting arrives in a round trip rather than at the next poll, and
+ * nothing is asked while nothing happens. The template reads now(), which
+ * re-renders it once a minute as well; that keeps the position honest and
+ * doubles as proof the connection is alive.
+ *
+ * Service calls ride the same socket while it is open (callService,
+ * setVolume, playMedia, and the library and search, which ask for the
+ * service's response), so steady state is one connection and one TLS
+ * session. Only the player list stays on REST.
+ *
+ * One task owns the stream: the one that calls streamOpen() and
+ * streamService(). Any task may call the services above; from elsewhere they
+ * are handed to the owner, and fall back to REST if it cannot take them
+ * promptly.
+ */
+/** Connect, authenticate and subscribe to `entity_id`'s state. False on any
+ *  failure, with the reason in lastError(). */
+bool streamOpen(const char* entity_id);
+/** From any task. */
+bool streamIsOpen();
+/** Service the stream for up to `wait_ms`: answer pings, run services handed
+ *  over by other tasks, and read state. True when `out` holds a fresh state.
+ *  Closes the stream when it has died, or when the settings it was opened
+ *  against have changed -- check streamIsOpen() after a false. */
+bool streamService(PlayerState& out, uint32_t wait_ms);
+void streamClose();
+
 /** Fetch one slice of the Music Assistant library, via
  *  `music_assistant.get_library?return_response`.
  *

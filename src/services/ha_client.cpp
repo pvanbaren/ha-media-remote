@@ -1,5 +1,7 @@
 #include "services/ha_client.h"
 #include "services/yielding_client.h"
+
+#include "ha_internal.h"
 #include "log.h"
 
 #include <Arduino.h>
@@ -12,6 +14,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#include <atomic>
 #include <cctype>
 #include <cstdarg>
 #include <cstdlib>
@@ -108,6 +111,10 @@ void copyBounded(char* out, size_t out_len, const char* src) {
   out[i] = '\0';
 }
 char s_last_error[128] = {};
+/** Bumped whenever something the state stream was opened against -- the
+ *  server, the token, the player, the volume/power entity -- changes, so the
+ *  stream can notice it is subscribed to the wrong thing and start again. */
+std::atomic<uint32_t> s_generation{0};
 
 void setError(const char* fmt, ...) {
   va_list args;
@@ -631,8 +638,13 @@ bool httpPost(const char* path, const String& body, String& response,
     client = &s_secure;
   }
 
+  // Kept alive only while there is no state stream. With one open, this
+  // connection is for the occasional library load or command fallback, and
+  // holding a second TLS session's worth of internal RAM for those is the
+  // wrong trade: the stream is the connection that is always wanted.
+  const bool keep_alive = config::kHaKeepAlive && !streamIsOpen();
   HTTPClient& http = s_http;
-  http.setReuse(config::kHaKeepAlive);
+  http.setReuse(keep_alive);
   http.setTimeout(timeout_ms);
   http.setConnectTimeout(config::kHaHttpTimeoutMs);
   if (!http.begin(*client, url)) {
@@ -645,7 +657,7 @@ bool httpPost(const char* path, const String& body, String& response,
   const unsigned long started_ms = millis();
   int code = http.POST(body);
 
-  if (code <= 0 && config::kHaKeepAlive) {
+  if (code <= 0 && keep_alive) {
     // A kept-alive connection the server has since closed fails on the first
     // write. That is the ordinary cost of keep-alive rather than a fault, so
     // drop the socket and give the retry a fresh one before reporting
@@ -768,6 +780,7 @@ void init() {
   if (s_http_mutex == nullptr) {
     s_http_mutex = xSemaphoreCreateMutex();
   }
+  detail::streamInit();
 
   Preferences prefs;
   if (!prefs.begin(kPrefsNamespace, true)) {
@@ -824,6 +837,7 @@ void saveCredentials(const char* base_url, const char* token_in) {
       s_base_url[--len] = '\0';
     }
     prefs.putString(kPrefsUrlKey, s_base_url);
+    ++s_generation;
   }
 
   // The portal shows a stored token as a placeholder rather than echoing it,
@@ -831,6 +845,7 @@ void saveCredentials(const char* base_url, const char* token_in) {
   if (token_in != nullptr && token_in[0] != '\0') {
     snprintf(s_token, sizeof(s_token), "%s", token_in);
     prefs.putString(kPrefsTokenKey, s_token);
+    ++s_generation;
   }
   prefs.end();
 }
@@ -841,6 +856,7 @@ void clearCredentials() {
   taskENTER_CRITICAL(&s_entity_lock);
   s_selected[0] = '\0';
   taskEXIT_CRITICAL(&s_entity_lock);
+  ++s_generation;
   Preferences prefs;
   if (prefs.begin(kPrefsNamespace, false)) {
     prefs.clear();
@@ -861,6 +877,7 @@ void selectEntity(const char* entity_id) {
   taskENTER_CRITICAL(&s_entity_lock);
   copyBounded(s_selected, sizeof(s_selected), entity_id);
   taskEXIT_CRITICAL(&s_entity_lock);
+  ++s_generation;
   Preferences prefs;
   if (prefs.begin(kPrefsNamespace, false)) {
     prefs.putString(kPrefsSelectedKey, s_selected);
@@ -911,9 +928,25 @@ int fetchPlayers(PlayerEntry* out, size_t capacity) {
 }
 
 bool fetchState(const char* entity_id, PlayerState& out) {
+  const String tmpl = detail::stateTemplate(entity_id);
+  if (tmpl.length() == 0) {
+    return false;
+  }
+
+  String body;
+  if (!renderTemplate(tmpl.c_str(), body)) {
+    return false;
+  }
+  detail::parseState(body, out);
+  return true;
+}
+
+namespace detail {
+
+String stateTemplate(const char* entity_id) {
   if (!validEntityId(entity_id)) {
     setError("bad entity id");
-    return false;
+    return String();
   }
 
   char control_copy[config::kEntityIdMaxLen];
@@ -925,12 +958,10 @@ bool fetchState(const char* entity_id, PlayerState& out) {
 
   char tmpl[sizeof(kStateTemplateFmt) + 2 * config::kEntityIdMaxLen];
   snprintf(tmpl, sizeof(tmpl), kStateTemplateFmt, entity_id, control);
+  return String(tmpl);
+}
 
-  String body;
-  if (!renderTemplate(tmpl, body)) {
-    return false;
-  }
-
+void parseState(const String& body, PlayerState& out) {
   int pos = 0;
   const String state = nextField(body, pos);
   const String title = nextField(body, pos);
@@ -973,8 +1004,57 @@ bool fetchState(const char* entity_id, PlayerState& out) {
       out.playback == PlaybackState::kPlaying ? position_age.toFloat() : 0.0f;
   out.position_s = position.toFloat() + age;
   out.sampled_ms = millis();
-  return true;
 }
+
+}  // namespace detail
+
+namespace {
+
+/** One service call, over the state stream when it is open and over REST
+ *  when it is not -- or when the stream's owner is too busy to take it, which
+ *  is the same as not open from here. `data` is the service_data object, which
+ *  is also exactly the REST body. */
+bool serviceCall(const char* domain, const char* service, const String& data,
+                 uint16_t timeout_ms = config::kHaHttpTimeoutMs) {
+  switch (detail::streamCall(domain, service, data, timeout_ms)) {
+    case detail::StreamCall::kOk:
+      s_last_error[0] = '\0';
+      return true;
+    case detail::StreamCall::kFailed:
+      return false;
+    case detail::StreamCall::kNotSent:
+      break;
+  }
+  char path[96];
+  snprintf(path, sizeof(path), "/api/services/%s/%s", domain, service);
+  String response;
+  return httpPost(path, data, response, timeout_ms);
+}
+
+/** serviceCall() for a service that answers with data: `response` gets the
+ *  answer, which holds the service's response object either way. Over the
+ *  stream when it is open, so a library load or a search never needs a TLS
+ *  session of its own beside the stream's. */
+bool serviceQuery(const char* domain, const char* service, const String& data,
+                  String& response,
+                  uint16_t timeout_ms = config::kHaHttpTimeoutMs) {
+  response = "";
+  switch (detail::streamCall(domain, service, data, timeout_ms, &response)) {
+    case detail::StreamCall::kOk:
+      s_last_error[0] = '\0';
+      return true;
+    case detail::StreamCall::kFailed:
+      return false;
+    case detail::StreamCall::kNotSent:
+      break;
+  }
+  char path[112];
+  snprintf(path, sizeof(path), "/api/services/%s/%s?return_response", domain,
+           service);
+  return httpPost(path, data, response, timeout_ms);
+}
+
+}  // namespace
 
 bool callService(const char* service, const char* entity_id) {
   if (!validEntityId(entity_id)) {
@@ -986,11 +1066,7 @@ bool callService(const char* service, const char* entity_id) {
   appendJsonString(body, entity_id);
   body += '}';
 
-  char path[64];
-  snprintf(path, sizeof(path), "/api/services/media_player/%s", service);
-
-  String response;
-  const bool ok = httpPost(path, body, response);
+  const bool ok = serviceCall("media_player", service, body);
   LOG_INFO("HA: media_player.%s %s -> %s", service, entity_id,
                 ok ? "ok" : s_last_error);
   return ok;
@@ -1008,9 +1084,7 @@ bool selectSource(const char* entity_id, const char* source) {
   appendJsonString(body, source);
   body += '}';
 
-  String response;
-  const bool ok = httpPost("/api/services/media_player/select_source",
-                           body, response);
+  const bool ok = serviceCall("media_player", "select_source", body);
   LOG_INFO("HA: select_source %s \"%s\" -> %s", entity_id, source,
                 ok ? "ok" : s_last_error);
   return ok;
@@ -1036,9 +1110,7 @@ bool setVolume(const char* entity_id, float level) {
   body += level_text;
   body += '}';
 
-  String response;
-  const bool ok = httpPost("/api/services/media_player/volume_set", body,
-                           response);
+  const bool ok = serviceCall("media_player", "volume_set", body);
   LOG_DEBUG("HA: volume_set %s %s -> %s", entity_id, level_text,
                 ok ? "ok" : s_last_error);
   return ok;
@@ -1075,6 +1147,7 @@ void selectControlEntity(const char* entity_id) {
   taskENTER_CRITICAL(&s_entity_lock);
   copyBounded(s_control, sizeof(s_control), entity_id);
   taskEXIT_CRITICAL(&s_entity_lock);
+  ++s_generation;
 
   Preferences prefs;
   if (!prefs.begin(kPrefsNamespace, false)) {
@@ -1130,8 +1203,7 @@ int fetchLibrary(const char* media_type, const char* order_by, int limit,
   body += '}';
 
   String response;
-  if (!httpPost("/api/services/music_assistant/get_library?return_response",
-                body, response)) {
+  if (!serviceQuery("music_assistant", "get_library", body, response)) {
     return -1;
   }
 
@@ -1194,8 +1266,8 @@ int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
   body += '}';
 
   String response;
-  if (!httpPost("/api/services/music_assistant/search?return_response", body,
-                response, config::kHaServiceTimeoutMs)) {
+  if (!serviceQuery("music_assistant", "search", body, response,
+                    config::kHaServiceTimeoutMs)) {
     return -1;
   }
 
@@ -1263,10 +1335,8 @@ bool playMedia(const char* entity_id, const char* uri, const char* media_type,
   }
   body += '}';
 
-  String response;
-  const bool ok =
-      httpPost("/api/services/music_assistant/play_media", body, response,
-               config::kHaServiceTimeoutMs);
+  const bool ok = serviceCall("music_assistant", "play_media", body,
+                              config::kHaServiceTimeoutMs);
   LOG_INFO("HA: play_media%s %s on %s -> %s",
                 radio_mode ? " (radio)" : "", uri, entity_id,
                 ok ? "ok" : s_last_error);
@@ -1291,6 +1361,65 @@ float interpolatedPosition(const PlayerState& state) {
 }
 
 const char* lastError() { return s_last_error; }
+
+namespace detail {
+
+void appendJson(String& out, const char* value) { appendJsonString(out, value); }
+
+const char* readJson(const char* p, char* out, size_t out_len) {
+  return readJsonString(p, out, out_len);
+}
+
+const char* skipJson(const char* p) { return skipJsonValue(p); }
+
+void reportError(const char* message) { setError("%s", message); }
+
+uint32_t settingsGeneration() { return s_generation; }
+
+void dropRestConnection() {
+  ConnectionGuard connection;
+  s_http.end();
+  s_secure.stop();
+  s_plain.stop();
+}
+
+bool serverAddress(char* host, size_t host_len, uint16_t& port, bool& tls,
+                   char* prefix, size_t prefix_len) {
+  if (host_len == 0 || prefix_len == 0) {
+    return false;
+  }
+  tls = usesTls();
+  port = tls ? 443 : 80;
+  hostFromBaseUrl(host, host_len);
+  prefix[0] = '\0';
+  if (host[0] == '\0') {
+    return false;
+  }
+  const char* start = strstr(s_base_url, "://");
+  start = (start != nullptr) ? start + 3 : s_base_url;
+  const char* rest = start + strlen(host);
+  if (*rest == ':') {
+    port = static_cast<uint16_t>(strtoul(rest + 1, nullptr, 10));
+    while (*rest != '\0' && *rest != '/') {
+      ++rest;
+    }
+  }
+  // Whatever path the base URL carries -- an install behind a reverse proxy
+  // at /ha -- goes in front of /api/websocket just as it goes in front of
+  // /api/template.
+  snprintf(prefix, prefix_len, "%s", rest);
+  return port != 0;
+}
+
+void logHeap(const char* what) {
+  LOG_DEBUG("HA: %s (internal heap free %u, largest %u)", what,
+                static_cast<unsigned>(heap_caps_get_free_size(
+                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                static_cast<unsigned>(heap_caps_get_largest_free_block(
+                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+}
+
+}  // namespace detail
 
 void logHttpRequest(const char* method, const char* url, int status,
                     int request_bytes, int response_bytes,

@@ -240,6 +240,40 @@ constexpr unsigned long kHaPollPlayingMs = 2000;
 constexpr unsigned long kHaPollIdleMs = 8000;
 /** Re-poll this soon after a transport press so the UI catches up. */
 constexpr unsigned long kHaPollAfterCommandMs = 400;
+
+/** Take state from Home Assistant's WebSocket API rather than polling for it
+ *  (see services::ha::streamOpen). Polling above is what runs while the
+ *  stream is down, and all that runs with this false. */
+constexpr bool kHaStreamEnabled = true;
+/** First wait before reopening a stream that failed to open, doubled on each
+ *  further failure up to the max. A stream that had been working for a
+ *  minute is reopened at once when it drops; one that dies sooner -- a
+ *  subscription refused, say -- counts as a failure to open. */
+constexpr unsigned long kHaStreamRetryMinMs = 5000;
+constexpr unsigned long kHaStreamRetryMaxMs = 60000;
+/** Longest the stream's TLS handshake may take. More than the REST timeout:
+ *  on this board's noisier links a handshake has measured over 4 s. */
+constexpr unsigned long kHaStreamHandshakeMs = 10000;
+/** Send Home Assistant a ping after this long without one... */
+constexpr unsigned long kHaStreamPingMs = 30000;
+/** ...and give the connection up after this long without hearing anything at
+ *  all. The template re-renders every minute on its own, so a live
+ *  connection is never quiet for long. */
+constexpr unsigned long kHaStreamSilentMs = 75000;
+/** After a state message, wait this long for the next before handing it on.
+ *  A track change arrives as a burst -- title, then art, then duration -- and
+ *  each would otherwise be its own recompose. */
+constexpr unsigned long kHaStreamSettleMs = 150;
+/** How long another task waits for the stream's owner to take a service call
+ *  before sending it over REST instead. The owner can be busy for seconds on
+ *  a library load or a cover fetch; a button press should not wait on that. */
+constexpr unsigned long kHaStreamPickupMs = 300;
+/** Largest message the stream will hold; anything bigger is read off the
+ *  wire and dropped. State is a few hundred bytes, but Music Assistant's
+ *  library and search answers come this way too while the stream is open --
+ *  sixteen albums run to about 8 KB. A message this size is one allocation,
+ *  which lands in PSRAM. */
+constexpr size_t kHaStreamMaxMessage = 32768;
 /** Slowest rate volume_set is sent while the finger is dragging. The arc
  *  follows the finger locally regardless, so this only paces the audio. */
 constexpr unsigned long kVolumeSendIntervalMs = 250;

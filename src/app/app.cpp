@@ -1,13 +1,13 @@
 /**
- * The remote itself: what it polls, what it decides, what it sends.
+ * The remote itself: what it hears, what it decides, what it sends.
  *
  * Nothing in this file draws, and nothing in it knows the panel is round. It
  * asks ui/ui.h to put a screen up and hands it back intents -- "play/pause",
  * "set the volume to 0.4", "play browse row 3" -- without ever learning where
  * the finger landed.
  *
- * Network work all happens on haPollTask; setup() and loop() own everything
- * else. The two meet at g_state (behind g_state_mutex) and at the artwork
+ * Network work all happens on haPollTask, which also owns the state stream;
+ * setup() and loop() own everything else. The two meet at g_state (behind g_state_mutex) and at the artwork
  * cache, which serialises itself.
  */
 
@@ -803,10 +803,44 @@ void handleInput() {
   }
 }
 
-/** All HTTP lives here so a blocking request never stalls the touch loop. */
+/** How long streamService() may wait for state before the task goes round
+ *  again for the power flags and the preload. */
+constexpr uint32_t kStreamSliceMs = 250;
+/** A stream that lasted this long was a working one, and is reopened at once
+ *  when it drops. One that died sooner -- a subscription the server refused,
+ *  a template it rejected -- counts as a failure to open, and backs off. */
+constexpr unsigned long kStreamHealthyMs = 60000;
+
+/** All network work lives here so a blocking request never stalls the touch
+ *  loop.
+ *
+ *  State comes from Home Assistant's WebSocket stream while one is open --
+ *  pushed the moment anything changes -- and from polling while it is not:
+ *  before it first opens, after it drops, or when the server will not give
+ *  one. A stream that fails to open, or dies soon after it does, is retried
+ *  on a doubling backoff; one that had been working is reopened at once. */
 void haPollTask(void*) {
+  unsigned long stream_retry_at = 0;
+  unsigned long stream_backoff = config::kHaStreamRetryMinMs;
+  unsigned long stream_opened_ms = 0;
+  auto stream_failed = [&](const char* how) {
+    LOG_WARN("HA: stream %s, polling; next try in %lu s", how,
+                  stream_backoff / 1000);
+    stream_retry_at = millis() + stream_backoff;
+    stream_backoff = stream_backoff * 2 < config::kHaStreamRetryMaxMs
+                         ? stream_backoff * 2
+                         : config::kHaStreamRetryMaxMs;
+  };
   for (;;) {
     unsigned long interval = config::kHaPollIdleMs;
+    bool streaming = false;
+
+    // A stream over a dead link would sit there until its silence timeout,
+    // taking service calls it cannot deliver.
+    if (services::ha::streamIsOpen() &&
+        (WiFi.status() != WL_CONNECTED || !services::ha::configured())) {
+      services::ha::streamClose();
+    }
 
     // A copy, not the pointer. selectedEntity() hands back the live buffer,
     // and the portal rewrites that buffer from the Arduino task when someone
@@ -842,8 +876,39 @@ void haPollTask(void*) {
         services::browse::preload();
       }
 
+      if (config::kHaStreamEnabled && !services::ha::streamIsOpen() &&
+          static_cast<long>(millis() - stream_retry_at) >= 0) {
+        // The backoff is not reset here: a server can take the connection
+        // and then refuse the subscription, and reopening at once each time
+        // that happens is a reconnect loop that never gets any state.
+        if (services::ha::streamOpen(entity)) {
+          stream_opened_ms = millis();
+        } else {
+          stream_failed("unavailable");
+        }
+      }
+
       PlayerState fresh;
-      if (services::ha::fetchState(entity, fresh)) {
+      bool got = false;
+      streaming = services::ha::streamIsOpen();
+      if (streaming) {
+        got = services::ha::streamService(fresh, kStreamSliceMs);
+        if (!services::ha::streamIsOpen()) {
+          if (millis() - stream_opened_ms >= kStreamHealthyMs) {
+            stream_backoff = config::kHaStreamRetryMinMs;
+            stream_retry_at = millis();  // it was working: straight back
+          } else {
+            stream_failed("closed soon after opening");
+          }
+          // And poll this pass rather than leave it with nothing.
+          streaming = false;
+        }
+      }
+      if (!streaming && !got) {
+        got = services::ha::fetchState(entity, fresh);
+      }
+
+      if (got) {
         // Cache the art before publishing, so the repaint the main loop does
         // in response already has something to draw.
         ui::prepareArtwork(fresh.picture);
@@ -856,12 +921,19 @@ void haPollTask(void*) {
         interval = fresh.playback == PlaybackState::kPlaying
                        ? config::kHaPollPlayingMs
                        : config::kHaPollIdleMs;
-      } else if (!g_state_valid) {
+      } else if (!streaming && !g_state_valid) {
         // Only worth a repaint when there is nothing already on screen; a
         // single dropped poll should not replace a good frame with an error
         // card.
         g_state_dirty = true;
       }
+    }
+
+    if (streaming) {
+      // streamService() has already waited, and a command's effect arrives
+      // as an event rather than needing a poll to fetch it.
+      g_poll_now = false;
+      continue;
     }
 
     // Sleep in slices so a transport command can cut the wait short.

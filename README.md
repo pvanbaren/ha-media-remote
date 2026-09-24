@@ -740,8 +740,67 @@ stays in the stored value, in the `<option value>` and in every request.
 `config::kMaxPlayers` (96) caps the list; entities past it are unselectable, and
 hitting the cap is logged.
 
-Commands are ordinary service calls: `POST /api/services/media_player/`
-`media_previous_track` | `media_play_pause` | `media_next_track`.
+Commands are ordinary service calls: `media_player.media_previous_track` |
+`media_play_pause` | `media_next_track`, and `volume_set` -- over the state
+stream below while it is open, and `POST /api/services/...` while it is not.
+
+### The state stream
+
+State is **pushed, not polled**, whenever Home Assistant will give a stream.
+The firmware opens its WebSocket API (`/api/websocket`, over TLS when the base
+URL is https), authenticates with the same long-lived token, and sends the
+now-playing template above as a `render_template` subscription. Home Assistant
+works out which entities the template reads -- the player, and the control
+entity where that is a different one -- and sends a fresh rendering whenever
+any of them changes. A volume change on the receiver, a track starting on
+another device, a pause from a phone: each arrives in one round trip rather
+than at the next poll, and nothing is asked while nothing happens.
+
+Same template, same parser, same few hundred bytes, and the position age still
+comes from the server -- the device has no clock to work it out itself. The
+template reads `now()`, so Home Assistant re-renders it once a minute as well;
+that keeps the position honest and proves the connection alive between
+changes. A burst of changes (a track change is title, then art, then duration)
+is settled for `kHaStreamSettleMs` so it costs one recompose, not three.
+
+Service calls ride the same socket while it is open, so steady state is **one
+connection and one TLS session**: the REST connection stops being kept alive
+while the stream is up. The Music Assistant library and the artist search ride
+it too, asking for the service's response: mbedTLS takes its buffers from
+internal RAM only, and a REST session beside the stream's -- with a cover or a
+thumbnail being fetched as well -- is one session more than it holds. Their
+answers run to several kilobytes, so the stream holds a message of up to
+`kHaStreamMaxMessage` (32 KB), in PSRAM. Only the portal's player list stays
+on REST.
+
+One task owns the socket, the same one that used to poll. A button pressed on
+the touch loop is handed to it through a one-deep slot and answered over the
+stream; if the owner is tied up for longer than `kHaStreamPickupMs` -- in a
+library load, or fetching a cover -- the press goes over REST instead rather
+than waiting. The client is a few hundred lines of RFC 6455 over the same
+`services::Yielding` sockets as everything else, rather than a library, because
+the libraries available either create their own TLS client (so it cannot be
+made to sleep instead of spin) or need an IDF rebuild and a CA certificate.
+
+When the stream cannot be had -- before the first connection, after a drop, or
+against a server that refuses it -- the firmware **polls exactly as before**,
+every `kHaPollPlayingMs` while playing and `kHaPollIdleMs` otherwise, and
+retries the stream on a backoff from `kHaStreamRetryMinMs` to
+`kHaStreamRetryMaxMs`. A stream that had been working for a minute is reopened
+at once when it drops; one the server closes sooner -- a subscription it
+refuses, a template it rejects -- counts as a failure to open, so it backs off
+and polls rather than reconnecting in a loop.
+Changing the server, token, player or control entity in the portal resubscribes
+it. `config::kHaStreamEnabled = false` turns it off and leaves only polling.
+
+The console says which is happening:
+
+```
+HA: stream connecting to homeassistant.local:8123/api/websocket
+HA: stream open, following media_player.living_room
+HA: stream closed, nothing heard
+HA: no stream, polling; next try in 5 s
+```
 
 Transport buttons grey out when the player's `supported_features` says the
 action is unavailable. A player reporting no features at all is treated as
@@ -1005,7 +1064,8 @@ Once the selected player has been idle for `kIdleTimeoutMs` (5 minutes) the
 panel is cleared, the backlight cut and the controller put to sleep — and the
 volume/power entity switched off with it, see
 […and off again](#and-off-again). Any touch wakes it, as does playback
-resuming; polling carries on while blanked, which is what notices.
+resuming; the state stream (or the poll, without one) carries on while
+blanked, which is what notices -- at once, with a stream.
 
 The delay exists so the gap between two tracks does not flick the screen off and
 straight back on, and so the amplifier is not cut on a thirty-second pause.
@@ -1154,7 +1214,7 @@ the text and transport row, so white text stays legible over any image.
 src/
   main.cpp                  Arduino entry points, nothing else
   app/
-    app.cpp                 state machine, poll task, commands, idle timer
+    app.cpp                 state machine, network task, commands, idle timer
   services/                 no graphics library below this line
     wifi_setup.cpp          WiFiManager portal + HA URL/token/player fields
     player_list.cpp         cached media_player list, for the portal dropdown
@@ -1162,6 +1222,8 @@ src/
     search.cpp              artist search query and results
     ha_client.cpp           template reads, service calls, NVS settings
     device_name.cpp         the device's name: hostname and mDNS
+    ha_stream.cpp           the WebSocket state stream, and calls over it
+    websocket.cpp           RFC 6455 client over a Yielding socket
   hardware/
     boot_button.cpp         the one pin that is not a panel detail
     display.cpp             LovyanGFX bring-up
@@ -1182,9 +1244,11 @@ src/
       cover_art.cpp         art fetch, cache, decode
 ```
 
-All HTTP runs on `haPollTask`; `setup()` and `loop()` own the display. Polling
-is 2 s while playing, 8 s otherwise, and a transport press cuts the wait short
-so the UI catches up immediately.
+All network work runs on `haPollTask`, which owns the state stream as well;
+`setup()` and `loop()` own the display. Without a stream it polls, 2 s while
+playing and 8 s otherwise, and a transport press cuts the wait short so the UI
+catches up immediately. With one, state arrives as it changes and there is no
+wait to cut short.
 
 ### What the two tasks share
 
