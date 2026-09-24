@@ -463,6 +463,29 @@ The same portal stays available on the LAN afterwards, at
 or the device's IP; use it to change the URL or token later. Leaving the token field blank keeps the stored one; the field
 never echoes it back.
 
+### Screen rotation
+
+The portal's **Screen rotation** dropdown turns the whole picture -- every
+screen, and the touch with it -- by **+90 degrees** (clockwise), **180** or
+**-90**, for a panel mounted any way up. Saving a different rotation restarts
+the device a moment later to apply it; the page answers first.
+
+It is stored apart from the Home Assistant settings, so holding BOOT to clear
+those does not stand a wall-mounted panel back upright with its setup screen
+sideways.
+
+How it is done depends on the panel. The round SPI panels turn in their own
+controller, and LovyanGFX turns their touch to match, so it costs nothing. The
+Qualia scans out one framebuffer in a fixed order, so there the canvas is drawn
+turned and every touch is turned back. Two costs follow on the Qualia only:
+
+- **At +/-90 the list scroll repaints instead of moving rows.** A quarter turn
+  puts the list's rows down the framebuffer's columns, and the in-place scroll
+  moves rows. Scrolling still works; each step costs a band repaint, as it did
+  before the in-place scroll. Upright and 180 keep the fast path.
+- **Drawing turned is slower than drawing straight**, mostly the full-screen
+  cover art decode, because LovyanGFX's fast copy only runs unturned.
+
 ### Device name
 
 The portal's **Device name** field is what the device calls itself on the
@@ -1221,6 +1244,7 @@ src/
     browse.cpp              library sections, by URL rather than by pixel
     search.cpp              artist search query and results
     ha_client.cpp           template reads, service calls, NVS settings
+    display_settings.cpp    the screen rotation, stored apart from the rest
     device_name.cpp         the device's name: hostname and mDNS
     ha_stream.cpp           the WebSocket state stream, and calls over it
     websocket.cpp           RFC 6455 client over a Yielding socket

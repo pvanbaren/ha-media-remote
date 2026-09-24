@@ -23,12 +23,15 @@ namespace {
 
 bool s_blanked = false;
 bool s_up = false;
+uint8_t s_rotation = 0;
 
 }  // namespace
 
-void displayInit() {
-  LOG_INFO("Board: %s, %dx%d square", board::kName,
-                board::kDisplayWidth, board::kDisplayHeight);
+void displayInit(uint8_t rotation) {
+  s_rotation = rotation & 3;
+  LOG_INFO("Board: %s, %dx%d square, turned %u quarter%s",
+                board::kName, board::kDisplayWidth, board::kDisplayHeight,
+                static_cast<unsigned>(s_rotation), s_rotation == 1 ? "" : "s");
 
   // Order matters: the panel wants its reset released before the peripheral
   // starts clocking pixels at it.
@@ -68,6 +71,11 @@ void displayWake() {
 }
 
 bool displayIsBlanked() { return s_blanked; }
+
+uint8_t displayRotation() { return s_rotation; }
+
+// The scan-out order is fixed, so the canvas is drawn turned instead.
+bool displayRotatesItself() { return false; }
 
 void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h) {
   if (!s_up) {

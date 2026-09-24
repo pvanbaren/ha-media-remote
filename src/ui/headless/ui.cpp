@@ -58,7 +58,7 @@ const char* playbackName(services::ha::PlaybackState state) {
 
 }  // namespace
 
-bool init() {
+bool init(uint8_t) {
   LOG_INFO("UI: headless -- no panel, serial only");
   return true;
 }

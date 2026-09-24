@@ -423,7 +423,8 @@ void composeClipped(lgfx::LovyanGFX& gfx, int x, int y, int w, int h) {
  * reached the panel; the caller repaints the band instead.
  */
 bool scrollInPlace() {
-  if (!s_panel.valid || s_panel.writes != ui::canvasPanelWrites()) {
+  if (!s_panel.valid || s_panel.writes != ui::canvasPanelWrites() ||
+      !ui::canvasCanScroll()) {
     return false;
   }
   // How far the picture moves: scrolling further down the list moves it up.

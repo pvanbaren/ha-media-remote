@@ -332,7 +332,8 @@ bool scrollInPlace() {
     return false;
   }
   if (!s_showing_results || services::search::count() == 0 ||
-      !s_panel.valid || s_panel.writes != ui::canvasPanelWrites()) {
+      !s_panel.valid || s_panel.writes != ui::canvasPanelWrites() ||
+      !ui::canvasCanScroll()) {
     return false;
   }
   // How far the picture moves: scrolling further down the results moves it

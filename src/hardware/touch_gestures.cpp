@@ -14,6 +14,7 @@
 #include "board/board.h"
 #include "config.h"
 #include "log.h"
+#include "hardware/display.h"
 #include "hardware/touch_raw.h"
 
 namespace hw {
@@ -95,6 +96,32 @@ void mapPoint(int& x, int& y) {
   }
   x = constrain(x, 0, board::kDisplayWidth - 1);
   y = constrain(y, 0, board::kDisplayHeight - 1);
+
+  // Where the panel cannot turn itself the canvas is drawn turned, so a
+  // touch -- which arrives in the glass's own coordinates -- is turned back
+  // into the canvas's. The inverse of LovyanGFX's sprite rotation; the panel
+  // is square, so width and height are the same number throughout.
+  if (!displayRotatesItself()) {
+    const int last = board::kDisplayWidth - 1;
+    const int px = x;
+    const int py = y;
+    switch (displayRotation()) {
+      case 1:
+        x = py;
+        y = last - px;
+        break;
+      case 2:
+        x = last - px;
+        y = last - py;
+        break;
+      case 3:
+        x = last - py;
+        y = px;
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 /** Resolve the finished press into a gesture. `release_ms` is when the

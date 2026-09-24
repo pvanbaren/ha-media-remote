@@ -60,10 +60,14 @@ struct Input {
   int index = -1;
 };
 
-/** Claim buffers and bring the panel up. Call once in setup(), before Wi-Fi,
- *  while the heap is unfragmented. False when there is no usable display, in
- *  which case everything below is a no-op and the remote still runs. */
-bool init();
+/** Claim buffers and bring the panel up, turned `rotation` quarter turns
+ *  clockwise (0..3). Call once in setup(), before Wi-Fi, while the heap is
+ *  unfragmented. False when there is no usable display, in which case
+ *  everything below is a no-op and the remote still runs.
+ *
+ *  Every screen is laid out the same way at any rotation -- the panels are
+ *  square -- so the turn is entirely below this line. */
+bool init(uint8_t rotation);
 
 /** Service touch, drags and glides, and report what the finger asked for.
  *  Called every loop iteration. `state` is the current snapshot, or nullptr

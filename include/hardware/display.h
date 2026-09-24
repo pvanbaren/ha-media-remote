@@ -4,7 +4,20 @@
 
 extern LGFX tft;
 
-void displayInit();
+/** Bring the panel up turned `rotation` quarter turns clockwise (0..3). */
+void displayInit(uint8_t rotation);
+
+/** The rotation displayInit() was given. */
+uint8_t displayRotation();
+
+/** Whether the panel turns the picture itself.
+ *
+ *  An SPI controller does, in its address mode, and LovyanGFX turns its
+ *  touch readings to match; everything above then works in turned
+ *  coordinates without knowing. An RGB panel scans a framebuffer out in one
+ *  fixed order, so there the canvas has to be drawn turned, and a touch
+ *  turned back -- see ui::canvasInit() and hw::mapPoint(). */
+bool displayRotatesItself();
 
 /** Clear the panel, cut the backlight and put the controller to sleep.
  *

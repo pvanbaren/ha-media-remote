@@ -18,6 +18,7 @@
 #include "config.h"
 #include "log.h"
 #include "services/device_name.h"
+#include "services/display_settings.h"
 #include "services/ha_client.h"
 #include "services/player_list.h"
 
@@ -111,6 +112,14 @@ WiFiManagerParameter s_param_ma_entry("ma_entry",
                                       "Music Assistant config entry id", "",
                                       kMaEntryParamLen, kMaEntryAttrs);
 
+/** Screen rotation, a dropdown over a hidden input like the entity pickers.
+ *  The markup lives in a fixed array for the reason EntitySelect's does:
+ *  WiFiManagerParameter keeps the pointer, so the buffer must never move.
+ *  Rebuilt in place with the current choice marked. */
+char s_rotation_attrs[480] = " type=\"hidden\"";
+WiFiManagerParameter s_param_rotation("rotation",
+                                      "Screen rotation (restarts to apply)",
+                                      "0", 2, s_rotation_attrs);
 /** What the device is called on the network -- its hostname, so DHCP and
  *  mDNS both carry it, and the portal is at http://<name>.local. A text field
  *  the name is cleaned from on save (see services::device::cleanName()). */
@@ -119,13 +128,37 @@ WiFiManagerParameter s_param_device_name(
     "dev_name", "Device name (restarts to apply)", "",
     static_cast<int>(services::device::kNameMaxLen), s_name_attrs);
 
-/** A name change restarts the device, but not from inside the save
- *  callback: WiFiManager sends its response page after the callback
+/** A rotation or name change restarts the device, but not from inside the
+ *  save callback: WiFiManager sends its response page after the callback
  *  returns, and restarting first would leave the browser hanging on a dead
  *  request. */
 bool s_restart_pending = false;
 unsigned long s_restart_requested_ms = 0;
 constexpr unsigned long kRestartAfterSaveMs = 1500;
+
+void buildRotationSelect() {
+  const uint8_t current = services::display::rotation();
+  static const char* const kLabels[4] = {
+      "Upright", "+90&deg; (clockwise)", "180&deg;",
+      "-90&deg; (counter-clockwise)"};
+  int n = snprintf(s_rotation_attrs, sizeof(s_rotation_attrs),
+                   " type=\"hidden\"><select id=\"rotation_sel\" "
+                   "onchange='document.getElementById(\"rotation\")"
+                   ".value=this.value'>");
+  for (uint8_t r = 0; r < 4 && n > 0 &&
+                      static_cast<size_t>(n) < sizeof(s_rotation_attrs);
+       ++r) {
+    n += snprintf(s_rotation_attrs + n, sizeof(s_rotation_attrs) - n,
+                  "<option value=\"%u\"%s>%s</option>",
+                  static_cast<unsigned>(r), r == current ? " selected" : "",
+                  kLabels[r]);
+  }
+  if (n > 0 && static_cast<size_t>(n) < sizeof(s_rotation_attrs)) {
+    snprintf(s_rotation_attrs + n, sizeof(s_rotation_attrs) - n, "</select");
+  }
+  char value[2] = {static_cast<char>('0' + current), '\0'};
+  s_param_rotation.setValue(value, 2);
+}
 
 /** Rough worst case per option: entity_id, escaped name and the markup. */
 constexpr size_t kPlayerOptionBytes = 160;
@@ -284,6 +317,7 @@ void refreshPortalParamDefaults() {
                                           : "paste token here");
   s_param_ha_token.setValue("", kTokenParamLen);
   s_param_ma_entry.setValue(services::ha::maConfigEntry(), kMaEntryParamLen);
+  buildRotationSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
            config::kPortalHostname);
@@ -355,6 +389,17 @@ void onPortalParamsSaved() {
     services::ha::saveMaConfigEntry(ma_entry);
   }
 
+  const char* rotation = s_param_rotation.getValue();
+  if (rotation != nullptr && rotation[0] >= '0' && rotation[0] <= '3' &&
+      rotation[1] == '\0') {
+    const uint8_t chosen = static_cast<uint8_t>(rotation[0] - '0');
+    if (chosen != services::display::rotation()) {
+      services::display::saveRotation(chosen);
+      s_restart_pending = true;
+      s_restart_requested_ms = millis();
+    }
+  }
+
   // Blank keeps the current name rather than clearing it; the placeholder
   // shows the one it would fall back to.
   const char* requested = s_param_device_name.getValue();
@@ -391,6 +436,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ha_url);
   wm.addParameter(&s_param_ha_token);
   wm.addParameter(&s_param_ma_entry);
+  wm.addParameter(&s_param_rotation);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 

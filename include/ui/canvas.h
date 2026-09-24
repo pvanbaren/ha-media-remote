@@ -47,6 +47,13 @@ bool canvasScrollPanel(int y, int h, int dy, int keep_x = 0, int keep_w = 0);
  *  drawn over them since. */
 uint32_t canvasPanelWrites();
 
+/** False when a move is ruled out before it is tried -- no frame, or a quarter
+ *  turn, which puts a list's rows down the framebuffer's columns -- so a
+ *  caller can find out before composing the strips the move would need. A
+ *  panel that cannot move its frame at all still only says so from
+ *  canvasScrollPanel(). */
+bool canvasCanScroll();
+
 /** The panel itself, for the small direct repaints that skip compositing --
  *  a pressed transport button, the elapsed chip. Both draw over an opaque
  *  shape, so they need nothing from the frame underneath. */

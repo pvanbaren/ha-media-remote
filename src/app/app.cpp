@@ -26,6 +26,7 @@
 #include "config.h"
 #include "log.h"
 #include "services/browse.h"
+#include "services/display_settings.h"
 #include "services/ha_client.h"
 #include "services/search.h"
 #include "services/wifi_setup.h"
@@ -972,7 +973,9 @@ void setup() {
   });
 
   bootButtonInit();
-  ui::init();
+  // Stored in its own namespace, so it is there before anything else is
+  // loaded -- the first screen already has to be the right way up.
+  ui::init(services::display::rotation());
   // Claimed before Wi-Fi, while the heap is still unfragmented, and never
   // freed -- so it cannot fail later and cannot leave a hole.
   services::browse::init();

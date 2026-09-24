@@ -447,8 +447,8 @@ Input searchTouch(const hw::TouchReport& report) {
 
 }  // namespace
 
-bool init() {
-  displayInit();
+bool init(uint8_t rotation) {
+  displayInit(rotation);
   canvasInit();
   artwork::init();
   hw::touchInit();
