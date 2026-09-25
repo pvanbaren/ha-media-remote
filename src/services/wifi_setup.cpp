@@ -8,6 +8,7 @@
 
 #include <Preferences.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 #include <esp_wifi.h>
 
 #ifdef WM_MDNS
@@ -103,6 +104,21 @@ WiFiManagerParameter s_param_ha_url("ha_url", "Home Assistant URL", "",
                                     kUrlParamLen, kUrlInputAttrs);
 WiFiManagerParameter s_param_ha_token("ha_token", "Long-lived access token", "",
                                       kTokenParamLen, s_token_attrs);
+/** Which input on the volume/power entity carries the player, for a device
+ *  whose inputs are not named after it -- a receiver's "AirPlay" or "HDMI4".
+ *  Playing from the list or search switches the device to it, and while the
+ *  device is on it the player is what the room hears. A dropdown of that
+ *  device's own inputs, over a hidden input like the entity pickers, in a
+ *  buffer that never moves for the same reason: WiFiManager keeps the
+ *  pointer. In PSRAM, and so made -- with the parameter pointing at it -- on
+ *  first build rather than at static init: three kilobytes of markup the
+ *  internal heap and its TLS sessions have better uses for. Blank keeps the
+ *  old rule, an input named after the player, which is what a Triad zone
+ *  amplifier offers. */
+constexpr size_t kInputAttrsBytes = 3072;
+char* s_input_attrs = nullptr;
+WiFiManagerParameter* s_param_ctl_input = nullptr;
+
 /** Music Assistant config entry id. Only the station list needs it, and only
  *  because get_library is addressed by config entry rather than by entity --
  *  it asks the server what is in the library, not a player what it is doing.
@@ -338,12 +354,112 @@ void buildEntitySelect(EntitySelect& sel, const char* selected) {
   s_wm.addParameter(sel.param);
 }
 
+/** The input dropdown, from the volume device's own source_list. Built after
+ *  the two entity dropdowns and registered straight after them, so it sits
+ *  under "Volume & power" on the page. */
+/** Room for one entity's input list: PSRAM, claimed on first use and kept.
+ *  Shared by the dropdown and the save that checks a choice against it. */
+char (*sourceBuffer())[config::kSourceNameMaxLen] {
+  static char (*sources)[config::kSourceNameMaxLen] = nullptr;
+  if (sources == nullptr) {
+    sources = static_cast<char (*)[config::kSourceNameMaxLen]>(
+        heap_caps_calloc(config::kMaxSources, config::kSourceNameMaxLen,
+                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  return sources;
+}
+
+/** Whether `entity_id` lists `input` among its sources. */
+bool listsInput(const char* entity_id, const char* input) {
+  char (*sources)[config::kSourceNameMaxLen] = sourceBuffer();
+  if (sources == nullptr) {
+    return false;
+  }
+  const int n =
+      services::ha::fetchSources(entity_id, sources, config::kMaxSources);
+  for (int i = 0; i < n; ++i) {
+    if (strcmp(sources[i], input) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void buildInputSelect() {
+  const char* stored = services::ha::storedControlInput();
+  String html;
+  if (s_input_attrs == nullptr) {
+    s_input_attrs = static_cast<char*>(heap_caps_calloc(
+        1, kInputAttrsBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (s_input_attrs == nullptr) {
+      return;  // no dropdown; the name-match rule still applies
+    }
+  }
+  html.reserve(kInputAttrsBytes);
+  html += " type=\"hidden\"><select id=\"ctl_input_sel\" "
+          "onchange='document.getElementById(\"ctl_input\").value=this.value'>";
+  html += "<option value=\"\"";
+  html += stored[0] == '\0' ? " selected>" : ">";
+  html += "The input named after the player</option>";
+
+  if (services::ha::controlIsSeparate()) {
+    char (*sources)[config::kSourceNameMaxLen] = sourceBuffer();
+    const int n = sources != nullptr
+                      ? services::ha::fetchSources(
+                            services::ha::controlEntity(), sources,
+                            config::kMaxSources)
+                      : -1;
+    bool stored_listed = false;
+    for (int i = 0; i < n; ++i) {
+      // Room for this option and the closing tags, or stop: the buffer the
+      // parameter points at never grows.
+      if (html.length() + 2 * config::kSourceNameMaxLen + 64 >
+          kInputAttrsBytes) {
+        break;
+      }
+      const bool selected = strcmp(sources[i], stored) == 0;
+      stored_listed = stored_listed || selected;
+      html += "<option value=\"";
+      appendHtmlEscaped(html, sources[i]);
+      html += selected ? "\" selected>" : "\">";
+      appendHtmlEscaped(html, sources[i]);
+      html += "</option>";
+    }
+    if (stored[0] != '\0' && !stored_listed) {
+      // Chosen before, and the device does not list it now -- off, or
+      // renamed. Kept, and said so, rather than silently dropped.
+      html += "<option value=\"";
+      appendHtmlEscaped(html, stored);
+      html += "\" selected>";
+      appendHtmlEscaped(html, stored);
+      html += " (not listed now)</option>";
+    }
+  } else {
+    html += "<option value=\"\" disabled>not needed - no separate volume "
+            "device</option>";
+  }
+  html += "</select";
+  snprintf(s_input_attrs, kInputAttrsBytes, "%s", html.c_str());
+  if (s_param_ctl_input != nullptr) {
+    s_param_ctl_input->setValue(
+        stored, static_cast<int>(config::kSourceNameMaxLen) - 1);
+    return;
+  }
+  s_param_ctl_input = new WiFiManagerParameter(
+      "ctl_input", "Player's input on the volume device", stored,
+      static_cast<int>(config::kSourceNameMaxLen) - 1, s_input_attrs);
+  s_wm.addParameter(s_param_ctl_input);
+}
+
 void buildPlayerSelects() {
   buildEntitySelect(s_player_select, services::ha::selectedEntity());
   // The *stored* value, not the resolved one: an empty string means "follow
   // the player", and offering it back as the player's own entity_id would
   // quietly turn a default into a pin.
   buildEntitySelect(s_control_select, services::ha::storedControlEntity());
+  if (s_control_select.param != nullptr) {
+    buildInputSelect();
+  }
 }
 
 void refreshPortalParamDefaults() {
@@ -383,11 +499,11 @@ void refreshPortalParamDefaults() {
 /** Whether the form just saved carried the field `id`.
  *
  *  WiFiManager stores an empty string for a parameter the form did not
- *  include, which reads exactly like a deliberate blank. The dropdowns are
- *  registered only once the player list has loaded, so a page opened before
- *  that -- straight after a boot -- has none of them, and saving it would
- *  clear Volume & power, where blank is a real choice. A field that was not
- *  on the page is left as it is instead. */
+ *  include, which reads exactly like a deliberate blank. The three dropdowns
+ *  are registered only once the player list has loaded, so a page opened
+ *  before that -- straight after a boot -- has none of them, and saving it
+ *  would clear Volume & power and the player's input, where blank is a real
+ *  choice. A field that was not on the page is left as it is instead. */
 bool submitted(const char* id) {
   return s_wm.server != nullptr && s_wm.server->hasArg(id);
 }
@@ -420,14 +536,41 @@ void onPortalParamsSaved() {
       s_control_select.param != nullptr && submitted(s_control_select.id)
           ? s_control_select.param->getValue()
           : nullptr;
-  if (control != nullptr &&
-      strcmp(control, services::ha::storedControlEntity()) != 0) {
+  const bool control_changed =
+      control != nullptr &&
+      strcmp(control, services::ha::storedControlEntity()) != 0;
+  if (control_changed) {
     services::ha::selectControlEntity(control);
+    // The dropdown listed the old device's inputs, so the choice sent with
+    // this save was made from that list. Kept if the new device has an input
+    // by that name too -- a Triad's outputs all share one list, so moving to
+    // another zone should not lose it -- and cleared if it does not.
+    const char* input = s_param_ctl_input != nullptr && submitted("ctl_input")
+                            ? s_param_ctl_input->getValue()
+                            : services::ha::storedControlInput();
+    char keep[config::kSourceNameMaxLen] = {};
+    if (input != nullptr && input[0] != '\0' &&
+        services::ha::controlIsSeparate() &&
+        listsInput(services::ha::controlEntity(), input)) {
+      snprintf(keep, sizeof(keep), "%s", input);
+    } else if (input != nullptr && input[0] != '\0') {
+      LOG_WARN("Portal: %s has no input \"%s\", cleared",
+                    services::ha::controlEntity(), input);
+    }
+    if (strcmp(keep, services::ha::storedControlInput()) != 0) {
+      services::ha::selectControlInput(keep);
+    }
+  } else if (s_param_ctl_input != nullptr && submitted("ctl_input")) {
+    const char* input = s_param_ctl_input->getValue();
+    if (input != nullptr &&
+        strcmp(input, services::ha::storedControlInput()) != 0) {
+      services::ha::selectControlInput(input);
+    }
   }
 
   // WiFiManager blanked a missing field's value all the same, and the page
   // is rendered from those values: put the stored ones back, or the next
-  // page would carry the blank.
+  // page would carry the blank. (The input dropdown is rebuilt below.)
   if (s_player_select.param != nullptr && !submitted(s_player_select.id)) {
     s_player_select.param->setValue(services::ha::selectedEntity(),
                                     kPlayerParamLen);
@@ -481,11 +624,13 @@ void onPortalParamsSaved() {
   // which in practice meant a reboot. Built now instead, so the page after
   // the save offers them; against the new server's list when it changed.
   if (services::ha::configured() &&
-      (server_changed || s_player_select.param == nullptr)) {
+      (server_changed || control_changed || s_player_select.param == nullptr)) {
     if (server_changed) {
       services::players::refresh();
     }
     buildPlayerSelects();
+  } else if (s_param_ctl_input != nullptr) {
+    buildInputSelect();  // the choice just saved, marked
   }
 }
 

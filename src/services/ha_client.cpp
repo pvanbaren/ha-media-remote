@@ -30,6 +30,7 @@ constexpr char kPrefsTokenKey[] = "tok";
 constexpr char kPrefsSelectedKey[] = "sel";
 constexpr char kPrefsMaEntryKey[] = "maid";
 constexpr char kPrefsControlKey[] = "ctl";
+constexpr char kPrefsControlInputKey[] = "ctlin";
 
 // Records come back from the template API delimited by ASCII unit (\037) and
 // record (\036) separators rather than tabs or newlines, so a track title
@@ -53,44 +54,82 @@ constexpr char kPlayersTemplate[] =
     "{{0 if s.state in ['unavailable','unknown'] else 1}}\036"
     "{% endfor %}";
 
-// %% escapes are for snprintf; the two %s are the player entity and the
-// control entity, which are the same string unless one was chosen separately.
+// %% escapes are for snprintf. The %s are the player entity, the control
+// entity -- the same string unless one was chosen separately -- and the
+// player's input on the control entity as chosen in the portal (quotes
+// escaped), or nothing.
 //
 // Volume, mute and the feature bits the slider tests come from `c`, not `e`.
 // Where the two differ -- a Music Assistant player streaming into a receiver
 // that owns the actual knob -- the player's own volume_level is either absent
 // or a software gain nobody wants to touch, while the receiver's is the one
-// that makes the room louder. Everything else still describes `e`: it is the
-// thing playing, and the thing whose cover art is on screen.
+// that makes the room louder.
+//
+// What is playing comes from `m`: what the room is hearing. That is `e`,
+// unless `c` is a separate device on some input other than the player's.
+// Then it is the player that input is named after, where one is playing or
+// paused -- a Triad zone switched to another of its linked players; its
+// Music Assistant entity where there are two by that name, since that is the
+// one with the art and the queue -- or failing that `c` itself, where it is
+// playing or paused with artwork of its own: a receiver on its own Spotify or
+// net radio. The title, the art, the progress, the transport buttons and the
+// history all follow `m`, and the last field names it for the calls that go
+// with them.
+//
+// Only that branch reads every media_player, so only while `c` is on another
+// input does the subscription follow them all -- which Home Assistant rate
+// limits to once a second.
 constexpr char kStateTemplateFmt[] =
     "{%% set e = '%s' %%}"
     "{%% set c = '%s' %%}"
-    "{{states(e)}}\037"
-    "{{state_attr(e,'media_title') or ''}}\037"
-    "{{state_attr(e,'media_artist') or state_attr(e,'media_album_name') or "
-    "state_attr(e,'media_series_title') or state_attr(e,'app_name') or ''}}\037"
-    "{{state_attr(e,'entity_picture') or ''}}\037"
-    "{{state_attr(e,'supported_features')|int(0)}}\037"
-    "{{(state_attr(e,'media_duration') or 0)|float(0)|round(1)}}\037"
-    "{{(state_attr(e,'media_position') or 0)|float(0)|round(1)}}\037"
-    "{%% set pu = state_attr(e,'media_position_updated_at') %%}"
+    // The input on `c` that is `e`: the one chosen in the portal, or failing
+    // that one named after the player -- a zone amplifier listing its players
+    // as inputs -- or nothing. See selectPlayerSource().
+    "{%% set ci = '%s' %%}"
+    "{%% set sl = state_attr(c,'source_list') or [] %%}"
+    "{%% set fn = state_attr(e,'friendly_name') %%}"
+    "{%% set ps = ci if ci else (fn if fn in sl else '') %%}"
+    "{%% set cs = state_attr(c,'source') or '' %%}"
+    "{%% set other = c != e and cs != '' and not (ps and cs == ps) %%}"
+    "{%% set sp = '' %%}"
+    "{%% if other %%}"
+    "{%% set cands = states.media_player|selectattr('name','eq',cs)"
+    "|selectattr('state','in',['playing','paused'])|list %%}"
+    "{%% set mass = cands|selectattr('attributes.mass_player_type','defined')"
+    "|list %%}"
+    "{%% set sp = ((mass or cands)|map(attribute='entity_id')|list|first) "
+    "or '' %%}"
+    "{%% endif %%}"
+    "{%% set m = sp if sp else (c if other and "
+    "states(c) in ['playing','paused'] and state_attr(c,'entity_picture') "
+    "else e) %%}"
+    "{{states(m)}}\037"
+    "{{state_attr(m,'media_title') or ''}}\037"
+    "{{state_attr(m,'media_artist') or state_attr(m,'media_album_name') or "
+    "state_attr(m,'media_series_title') or state_attr(m,'app_name') or ''}}\037"
+    "{{state_attr(m,'entity_picture') or ''}}\037"
+    "{{state_attr(m,'supported_features')|int(0)}}\037"
+    "{{(state_attr(m,'media_duration') or 0)|float(0)|round(1)}}\037"
+    "{{(state_attr(m,'media_position') or 0)|float(0)|round(1)}}\037"
+    "{%% set pu = state_attr(m,'media_position_updated_at') %%}"
     "{{((as_timestamp(now())-as_timestamp(pu)) if pu else 0)|float(0)|round(1)}}\037"
-    "{{state_attr(e,'friendly_name') or e}}\037"
+    "{{state_attr(m,'friendly_name') or m}}\037"
     "{{state_attr(c,'volume_level')|float(-1)|round(3)}}\037"
     "{{1 if state_attr(c,'is_volume_muted') else 0}}\037"
     "{{state_attr(c,'supported_features')|int(0)}}\037"
     "{{states(c)}}\037"
-    // The source on `c` that is `e` -- a zone amplifier listing the player as
-    // one of its inputs, by the player's own name -- or nothing when `c` has
-    // no such source; then the source `c` is on now. See powerOnControl().
-    "{%% set sl = state_attr(c,'source_list') or [] %%}"
-    "{{state_attr(e,'friendly_name') if state_attr(e,'friendly_name') in sl "
-    "else ''}}\037"
-    "{{state_attr(c,'source') or ''}}\037"
+    "{{ps}}\037"
+    "{{cs}}\037"
     // The artist alone, not the subtitle's fallbacks, and what is playing by
-    // them: what the room's history is kept by (services::history).
-    "{{state_attr(e,'media_artist') or ''}}\037"
-    "{{state_attr(e,'media_content_id') or ''}}\036";
+    // them: what the room's history is kept by (services::history). From `m`,
+    // since that is what the room is hearing.
+    "{{state_attr(m,'media_artist') or ''}}\037"
+    "{{state_attr(m,'media_content_id') or ''}}\037"
+    "{{m if m != e else ''}}\036";
+
+// Every input on one entity, for the portal's dropdown.
+constexpr char kSourcesTemplateFmt[] =
+    "{%% for s in (state_attr('%s','source_list') or []) %%}{{s}}\036{%% endfor %%}";
 
 char s_base_url[config::kHaBaseUrlMaxLen + 1] = {};
 char s_token[config::kHaTokenMaxLen + 1] = {};
@@ -99,6 +138,10 @@ char s_ma_entry[config::kMaConfigEntryIdMaxLen + 1] = {};
 /** Empty means "whatever is playing also carries the volume and the power",
  *  which is the ordinary case; controlEntity() resolves that. */
 char s_control[config::kEntityIdMaxLen] = {};
+/** The player's input on the control entity, chosen in the portal. Empty
+ *  means "the input named after the player, if there is one". Under
+ *  s_entity_lock like the two entities. */
+char s_control_input[config::kSourceNameMaxLen] = {};
 /** Guards s_selected and s_control: the portal writes them on the Arduino
  *  loop while the network task reads them. Held only for a copy of a few
  *  dozen bytes. */
@@ -796,6 +839,8 @@ void init() {
   prefs.getString(kPrefsSelectedKey, s_selected, sizeof(s_selected));
   prefs.getString(kPrefsMaEntryKey, s_ma_entry, sizeof(s_ma_entry));
   prefs.getString(kPrefsControlKey, s_control, sizeof(s_control));
+  prefs.getString(kPrefsControlInputKey, s_control_input,
+                  sizeof(s_control_input));
   prefs.end();
 
   if (s_selected[0] == '\0' && config::kDefaultPlayerEntityId[0] != '\0') {
@@ -860,6 +905,7 @@ void clearCredentials() {
   s_token[0] = '\0';
   taskENTER_CRITICAL(&s_entity_lock);
   s_selected[0] = '\0';
+  s_control_input[0] = '\0';
   taskEXIT_CRITICAL(&s_entity_lock);
   ++s_generation;
   Preferences prefs;
@@ -961,8 +1007,25 @@ String stateTemplate(const char* entity_id) {
     control = entity_id;
   }
 
-  char tmpl[sizeof(kStateTemplateFmt) + 2 * config::kEntityIdMaxLen];
-  snprintf(tmpl, sizeof(tmpl), kStateTemplateFmt, entity_id, control);
+  // Into a single-quoted Jinja literal, so its quotes and backslashes are
+  // escaped: an input can be called anything.
+  char input_copy[config::kSourceNameMaxLen];
+  taskENTER_CRITICAL(&s_entity_lock);
+  copyBounded(input_copy, sizeof(input_copy), s_control_input);
+  taskEXIT_CRITICAL(&s_entity_lock);
+  char input[2 * config::kSourceNameMaxLen] = {};
+  size_t n = 0;
+  for (const char* p = input_copy; *p != '\0' && n + 2 < sizeof(input); ++p) {
+    if (*p == '\'' || *p == '\\') {
+      input[n++] = '\\';
+    }
+    input[n++] = *p;
+  }
+  input[n] = '\0';
+
+  char tmpl[sizeof(kStateTemplateFmt) + 2 * config::kEntityIdMaxLen +
+            sizeof(input)];
+  snprintf(tmpl, sizeof(tmpl), kStateTemplateFmt, entity_id, control, input);
   return String(tmpl);
 }
 
@@ -985,6 +1048,7 @@ void parseState(const String& body, PlayerState& out) {
   const String control_source = nextField(body, pos);
   const String artist = nextField(body, pos);
   const String track = nextField(body, pos);
+  const String media_entity = nextField(body, pos);
 
   out = PlayerState{};
   out.playback = parsePlaybackState(state);
@@ -1006,6 +1070,7 @@ void parseState(const String& body, PlayerState& out) {
   copyField(out.control_source, sizeof(out.control_source), control_source);
   copyField(out.artist, sizeof(out.artist), artist);
   copyField(out.track, sizeof(out.track), track);
+  copyField(out.media_entity, sizeof(out.media_entity), media_entity);
 
   // media_position is a snapshot taken at media_position_updated_at; the
   // template reports how stale that is so the bar starts in the right place.
@@ -1141,6 +1206,51 @@ void copyControlEntity(char* out, size_t out_len) {
   taskENTER_CRITICAL(&s_entity_lock);
   copyBounded(out, out_len, s_control[0] != '\0' ? s_control : s_selected);
   taskEXIT_CRITICAL(&s_entity_lock);
+}
+
+const char* storedControlInput() { return s_control_input; }
+
+void selectControlInput(const char* input) {
+  if (input == nullptr) {
+    return;
+  }
+  taskENTER_CRITICAL(&s_entity_lock);
+  copyBounded(s_control_input, sizeof(s_control_input), input);
+  taskEXIT_CRITICAL(&s_entity_lock);
+  ++s_generation;  // the state template names it
+
+  Preferences prefs;
+  if (!prefs.begin(kPrefsNamespace, false)) {
+    return;
+  }
+  prefs.putString(kPrefsControlInputKey, s_control_input);
+  prefs.end();
+  LOG_INFO("HA: player's input on the volume device: %s",
+                s_control_input[0] != '\0' ? s_control_input
+                                            : "the one named after it");
+}
+
+int fetchSources(const char* entity_id, char (*out)[config::kSourceNameMaxLen],
+                 int capacity) {
+  if (!validEntityId(entity_id) || out == nullptr || capacity <= 0) {
+    return -1;
+  }
+  char tmpl[sizeof(kSourcesTemplateFmt) + config::kEntityIdMaxLen];
+  snprintf(tmpl, sizeof(tmpl), kSourcesTemplateFmt, entity_id);
+  String body;
+  if (!renderTemplate(tmpl, body)) {
+    return -1;
+  }
+  int count = 0;
+  int pos = 0;
+  const int len = static_cast<int>(body.length());
+  while (pos < len && count < capacity) {
+    const String source = nextField(body, pos);
+    if (source.length() > 0) {
+      copyField(out[count++], config::kSourceNameMaxLen, source);
+    }
+  }
+  return count;
 }
 
 bool controlIsSeparate() {

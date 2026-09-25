@@ -56,9 +56,9 @@ struct PlayerState {
   bool muted = false;
   /** Control entity is off or in standby, so a tap should power it on. */
   bool control_off = false;
-  /** The control entity's source that is this player, by the player's own
-   *  name -- empty when it lists no such source, which is anything that is
-   *  not an input-switching amplifier. */
+  /** The control entity's input that carries this player: the one chosen
+   *  in the portal, or one named after the player -- empty when neither,
+   *  which is anything that is not an input-switching amplifier. */
   char player_source[64] = {};
   /** The source the control entity is on now; empty when none. */
   char control_source[64] = {};
@@ -67,6 +67,13 @@ struct PlayerState {
   char artist[64] = {};
   /** media_content_id: for a Music Assistant player, the track's URI. */
   char track[96] = {};
+  /** When the room is hearing something other than the player -- the
+   *  volume/power entity is on another input -- the entity it is hearing:
+   *  the player that input is named after, or the volume device itself.
+   *  Everything above about what is playing (state, title, art, progress,
+   *  features, artist) is that entity's, and play/pause and skip go to it.
+   *  Empty when it is the player. */
+  char media_entity[config::kEntityIdMaxLen] = {};
   /** Set by the app, not the server: there has been no title for less than
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */
@@ -150,6 +157,14 @@ void copySelectedEntity(char* out, size_t out_len);
 void copyControlEntity(char* out, size_t out_len);
 /** Empty string is a real choice here: it stores "follow the player". */
 void selectControlEntity(const char* entity_id);
+/** The player's input on the volume/power entity, as chosen in the portal;
+ *  empty means the input named after the player, where there is one. */
+const char* storedControlInput();
+void selectControlInput(const char* input);
+/** Every input `entity_id` lists (source_list), for the portal. Returns the
+ *  count, or -1 on failure. */
+int fetchSources(const char* entity_id,
+                 char (*out)[config::kSourceNameMaxLen], int capacity);
 
 /** Fetch every media_player entity, sorted by friendly name.
  *  Writes at most config::kMaxPlayers entries; returns the count, or -1 on a

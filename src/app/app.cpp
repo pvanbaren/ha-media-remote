@@ -339,8 +339,9 @@ void requestControlWake() {
   g_poll_now = true;
 }
 
-/** Point the volume/power entity at this player, where it is a zone
- *  amplifier that lists the player as one of its inputs.
+/** Point the volume/power entity at this player, where it has an input for
+ *  it: the one chosen in the portal, or one named after the player, which is
+ *  how a zone amplifier lists its players.
  *
  *  Switching a zone on does not route anything to it: a Triad output comes up
  *  with no input, stays silent, and its integration drops it again a minute
@@ -359,7 +360,7 @@ void selectPlayerSource(const PlayerState& snapshot, bool just_turned_on,
     return;
   }
   if (snapshot.player_source[0] == '\0') {
-    return;  // no input by this player's name: not a zone amplifier
+    return;  // no input for this player, chosen or by its name
   }
   if (snapshot.control_features != 0 &&
       (snapshot.control_features & services::ha::kFeatureSelectSource) == 0) {
@@ -632,11 +633,18 @@ void sendCommand(Intent intent) {
   if (service == nullptr) {
     return;
   }
-  const char* entity = services::ha::selectedEntity();
-  if (entity[0] == '\0') {
+  if (services::ha::selectedEntity()[0] == '\0') {
     showNeedsPlayer();
     return;
   }
+  // To whatever the room is hearing: when the volume device is on another
+  // input, the player that input carries or the device itself; the player
+  // otherwise.
+  PlayerState before;
+  const bool have_before = snapshotState(before);
+  const bool elsewhere = have_before && before.media_entity[0] != '\0';
+  const char* entity =
+      elsewhere ? before.media_entity : services::ha::selectedEntity();
 
   // Light the button for the duration of the round trip: the call itself is
   // the press feedback, so nothing extra has to be timed.
@@ -645,12 +653,12 @@ void sendCommand(Intent intent) {
   // awake before the audio starts rather than a second into the track. Only
   // play: skip-next on a dark room is a mis-tap, not a request for music.
   ui::showCommandPending(intent, true);
-  if (intent == Intent::kPlayPause) {
+  if (intent == Intent::kPlayPause && !elsewhere) {
     // A press that will start playback also takes the zone over, whatever
-    // input it is on; one that will pause leaves it be.
-    PlayerState before;
+    // input it is on; one that will pause leaves it be. Not while the room
+    // is hearing another input: then play resumes that where it is.
     const bool starting =
-        !snapshotState(before) || before.playback != PlaybackState::kPlaying;
+        !have_before || before.playback != PlaybackState::kPlaying;
     powerOnControl(starting);
   }
   const bool ok = services::ha::callService(service, entity);
@@ -778,9 +786,11 @@ void handleInput() {
       // The item has its own art and title, and Music Assistant takes a
       // moment to switch; drop the cached cover so the old one cannot sit
       // behind the new name. Power first, so the amplifier has the length of
-      // the play_media round trip -- seconds, for an artist -- to wake up.
+      // the play_media round trip -- seconds, for an artist -- to wake up;
+      // and it is switched to the player's input whatever it was on, since
+      // picking something to play here is asking to hear it.
       ui::clearArtwork();
-      powerOnControl();
+      powerOnControl(true);
       startPlaying(services::browse::play(in.index));
       break;
 
@@ -791,7 +801,7 @@ void handleInput() {
 
     case Intent::kPlaySearchResult:
       ui::clearArtwork();
-      powerOnControl();
+      powerOnControl(true);
       startPlaying(services::search::play(in.index));
       break;
   }

@@ -589,16 +589,52 @@ What follows the control entity, and what does not:
 
 | | Entity |
 |---|---|
-| Cover art, title, artist, elapsed | the **player** |
-| Previous / play-pause / next | the **player** |
+| Cover art, title, artist, elapsed | whichever the room is hearing (below) |
+| Previous / play-pause / next | whichever the room is hearing (below) |
 | Volume slider, mute, `VOLUME_SET` | the **control entity** |
-| `turn_on` | the **control entity** |
+| `turn_on`, `select_source` | the **control entity** |
 
 Both come out of the **same** template render, so the second entity costs no
 extra request: `kStateTemplateFmt` takes two entity ids and reads
 `volume_level`, `is_volume_muted`, `supported_features` and `state` from the
 control one. Where nothing separate is configured the two ids are the same
 string and every field means what it always did.
+
+### When the volume device is on another input
+
+The room hears whatever the volume device is switched to, and that is not
+always the player. When a separate control entity is on an input other than
+the player's, the now-playing screen follows what that input is -- its title,
+artist, art and progress -- and previous / play-pause / next go to it:
+
+1. **Another player, by name.** A Triad zone lists its linked players as its
+   inputs, so a zone switched to "haos-vlc" is playing whatever the player
+   called haos-vlc is. Where that player is playing or paused, it is followed
+   -- its Music Assistant entity where there are two by the name, since that
+   is the one with the art and the queue.
+2. **The device itself.** Failing that, a device playing or paused with
+   artwork of its own -- a receiver on its own Spotify or net radio -- is
+   followed, and its own features say which buttons work.
+
+Otherwise -- on the player's input, or on an input with nothing to show, like
+an HDMI source -- the player is followed, as before. The same template decides
+all of it, so it costs no request; only while the device is on another input
+does its subscription watch every `media_player`, which Home Assistant limits
+to a re-render a second. Play on the remote while the room hears another
+input resumes that where it is, rather than taking the device over for the
+player.
+
+Which input is the player's is the **Player's input on the volume device**
+setting, below **Volume & power** in the portal: a dropdown of that device's
+inputs (`AirPlay`, `HDMI4`, `AUDIO1`...). Left at *The input named after the
+player*, it is the input that carries the player's own name, if there is one
+-- which is what a Triad zone amplifier offers, and a receiver does not.
+Changing **Volume & power** keeps it if the new device has an input by the same
+name -- a Triad's outputs share one list -- and clears it if not.
+
+Playing something from the swipe-up list or the search always plays it on
+the player and switches the volume device to the player's input, whatever it
+was on: picking something to play here is asking to hear it.
 
 An empty value is a real choice here rather than a missing one — it stores
 "follow the player" — so unlike the URL and token fields, saving it blank
@@ -665,16 +701,19 @@ supporting everything, as everywhere else here.
 
 **A zone amplifier also gets its input.** Switching a Triad output on routes
 nothing to it: it comes up silent, and its integration drops it again unless
-the linked player starts playing first. So where the volume/power entity lists
-the player among its sources -- by the player's own name, "Stonebridge Master
-bedroom" on a Triad whose input is linked to that player -- powering it on also
-calls `media_player.select_source` with it. Straight after the `turn_on`, unless
-the zone is already on that input. For a zone that was on already it depends
-on what asked: **play** pressed on the remote takes the zone over whatever it
-is on -- someone in the room wants this player -- while anything else only
-fills a zone with no input at all, so one deliberately switched to another
-source is left alone. A press that pauses never touches the source. Anything
-without such a source -- a receiver, a speaker -- is untouched. `config::kSelectControlSource = false` turns it off.
+the linked player starts playing first. So where the volume/power entity has
+an input for the player -- the one chosen in the portal (above), or one by the
+player's own name, "Stonebridge Master bedroom" on a Triad whose input is
+linked to that player -- powering it on also calls
+`media_player.select_source` with it. Straight after the `turn_on`, unless the
+device is already on that input. For one that was on already it depends on
+what asked: **play** pressed on the remote, or something picked from the list
+or the search, takes it over whatever it is on -- someone in the room wants
+this player -- while anything else only fills a device with no input at all,
+so one deliberately switched to another source is left alone. A press that
+pauses never touches the source, and nor does play while the device is
+playing for itself. Anything with no input for the player is untouched.
+`config::kSelectControlSource = false` turns it off.
 
 ### ...and off again
 

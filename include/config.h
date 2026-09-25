@@ -56,6 +56,10 @@ constexpr unsigned long kHistorySaveIntervalMs = 60UL * 60 * 1000;
 /** Pictures are not stored with the history; after a restart they are found
  *  again, one artist every this often, by the search that found them first. */
 constexpr unsigned long kHistoryPictureLookupMs = 5000;
+/** One input name on the volume/power entity ("AirPlay", "HDMI4"). */
+constexpr size_t kSourceNameMaxLen = 64;
+/** Inputs offered in the portal's dropdown. A Yamaha receiver lists 27. */
+constexpr int kMaxSources = 40;
 constexpr size_t kFriendlyNameMaxLen = 40;
 
 /** Music Assistant config entry id, entered in the portal. `get_library` is
