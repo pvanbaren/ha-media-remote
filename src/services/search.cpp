@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "services/history.h"
 
 namespace services::search {
 namespace {
@@ -83,8 +84,12 @@ bool play(int index) {
   if (entity[0] == '\0') {
     return false;
   }
-  return ha::playMedia(entity, item->uri, item->media_type,
-                       config::kSearchPlaysRadio);
+  if (!ha::playMedia(entity, item->uri, item->media_type,
+                     config::kSearchPlaysRadio)) {
+    return false;
+  }
+  history::notePicked(*item);
+  return true;
 }
 
 }  // namespace services::search

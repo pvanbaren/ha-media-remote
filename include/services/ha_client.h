@@ -62,6 +62,11 @@ struct PlayerState {
   char player_source[64] = {};
   /** The source the control entity is on now; empty when none. */
   char control_source[64] = {};
+  /** media_artist alone -- none of the subtitle's fallbacks to album or app
+   *  name. Empty when the player reports no artist. */
+  char artist[64] = {};
+  /** media_content_id: for a Music Assistant player, the track's URI. */
+  char track[96] = {};
   /** Set by the app, not the server: there has been no title for less than
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */

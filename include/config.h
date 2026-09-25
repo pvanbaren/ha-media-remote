@@ -48,6 +48,14 @@ constexpr size_t kEntityIdMaxLen = 64;
  *  or so with no title at all, and a label flashing up for that gap reads as
  *  the music stopping; until this has passed the title area is left blank. */
 constexpr unsigned long kUntitledLabelDelayMs = 3000;
+
+/** The room's history is written to NVS at once when an artist new to it is
+ *  added, and otherwise -- an artist moving back to the front -- at most this
+ *  often: a reordering lost to a power cut is worth less than the flash. */
+constexpr unsigned long kHistorySaveIntervalMs = 60UL * 60 * 1000;
+/** Pictures are not stored with the history; after a restart they are found
+ *  again, one artist every this often, by the search that found them first. */
+constexpr unsigned long kHistoryPictureLookupMs = 5000;
 constexpr size_t kFriendlyNameMaxLen = 40;
 
 /** Music Assistant config entry id, entered in the portal. `get_library` is
@@ -60,8 +68,22 @@ constexpr size_t kMaConfigEntryIdMaxLen = 40;
 // =====================================================================
 // The swipe-up list
 // =====================================================================
-/** One section of the list: a heading and the Music Assistant library query
- *  that fills it. */
+/** Where a section's items come from. The room's own sources are used only
+ *  with a Music Assistant token (services::ma); without one every section is
+ *  its library query. */
+enum class BrowseSource : uint8_t {
+  /** The Music Assistant library query in the section. */
+  kLibrary,
+  /** The artists played in this room (services::history), most recent first.
+   *  The library query stands in, under `fallback_title`, while there are
+   *  none yet. */
+  kRoomArtists,
+  /** Artists like this room's recent ones (services::recommend). The library
+   *  query stands in until there are any. */
+  kRoomSimilar,
+};
+
+/** One section of the list: a heading and what fills it. */
 struct BrowseSection {
   const char* title;
   /** artist, album, playlist, radio or track. */
@@ -70,28 +92,59 @@ struct BrowseSection {
    *  timestamp_added_desc, name... or nullptr for its default. */
   const char* order_by;
   int limit;
+  BrowseSource source = BrowseSource::kLibrary;
+  /** The heading while the library query stands in for the room, or nullptr
+   *  to keep `title`. */
+  const char* fallback_title = nullptr;
 };
+
+/** How many of the room's most recent artists "Recommended" is built from.
+ *  Each is one or two Music Assistant calls, made in the background whenever
+ *  they change -- not per list load. */
+constexpr int kRecommendSeedArtists = 3;
+/** Similar artists asked for per seed, and similar tracks read per seed
+ *  (twice this: a track list repeats its artists). */
+constexpr int kRecommendPerSeed = 12;
+/** Artists kept to draw from. */
+constexpr int kRecommendPoolMax = 48;
+/** How long the seeds must hold still before the pool is rebuilt, so artist
+ *  radio moving through a run of names costs one rebuild rather than one each. */
+constexpr unsigned long kRecommendSettleMs = 10000;
+/** A pool is rebuilt this often even when nothing changed: the answers do. */
+constexpr unsigned long kRecommendRefreshMs = 6UL * 60 * 60 * 1000;
+/** After Music Assistant could not be reached. */
+constexpr unsigned long kRecommendRetryMs = 5UL * 60 * 1000;
+
+/** Music Assistant's own API (services::ma). The add-on's port, on Home
+ *  Assistant's host, is what an empty address in the portal means. */
+constexpr uint16_t kMaDefaultPort = 8095;
+constexpr size_t kMaUrlMaxLen = 96;
+constexpr size_t kMaTokenMaxLen = 512;
+/** Similar artists take about three seconds as the library merges its
+ *  providers' answers; a provider's own lookup can take longer. */
+constexpr uint32_t kMaCallTimeoutMs = 20000;
+/** Largest answer read, in PSRAM. similar_tracks ignores its limit and sends
+ *  fifty tracks, about 107 KB; top_tracks about 65 KB. */
+constexpr size_t kMaResponseMaxBytes = 192 * 1024;
 
 /** What the swipe-up list shows, top to bottom.
  *
- *  A note on "Recommended", since the name is a promise this cannot quite
- *  keep. Music Assistant does have real recommendations -- the rows on its own
- *  Home page -- but they live behind its websocket API on port 8095 and are
- *  not exposed as a Home Assistant service, so nothing reachable over the REST
- *  API can ask for them. What `get_library` does offer is `order_by`, and a
- *  random draw from the albums is a decent stand-in: it surfaces things the
- *  library has and the last few weeks did not. `play_count_desc` is the other
- *  honest option, if "what we actually play" suits better than "something
- *  else for a change".
+ *  Both sections are this room's, not the server's. Music Assistant's own
+ *  "recently played" is one timestamp per library item shared by every
+ *  player, so two remotes in two rooms would see the same list; what played on
+ *  this remote's player is what played in this room (services::history).
  *
- *  "Recent artists" needs no such apology: last_played_desc over artists is
- *  exactly what it says.
+ *  "Recommended" is artists like the room's recent ones, from Music
+ *  Assistant's own API (services::recommend), which needs its token in the
+ *  portal. Built in the background and drawn from at random, so a load costs
+ *  nothing; a random draw of library albums stands in until it has any.
  *
- *  Sections cost one request each when the list is opened, so this table is
- *  the network cost as well as the layout. */
+ *  A library query costs a request when the list loads -- which, once the
+ *  room has a history, is only a stand-in's. */
 constexpr BrowseSection kBrowseSections[] = {
-    {"Recent artists", "artist", "last_played_desc", 8},
-    {"Recommended", "album", "random", 8},
+    {"Recent here", "artist", "last_played_desc", 8,
+     BrowseSource::kRoomArtists, "Recent artists"},
+    {"Recommended", "album", "random", 8, BrowseSource::kRoomSimilar, nullptr},
 };
 constexpr int kBrowseSectionCount =
     static_cast<int>(sizeof(kBrowseSections) / sizeof(kBrowseSections[0]));

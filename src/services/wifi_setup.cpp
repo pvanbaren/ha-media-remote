@@ -20,6 +20,7 @@
 #include "services/device_name.h"
 #include "services/display_settings.h"
 #include "services/ha_client.h"
+#include "services/ma_api.h"
 #include "services/player_list.h"
 
 bool s_long_press_handled = false;
@@ -111,6 +112,44 @@ WiFiManagerParameter s_param_ha_token("ha_token", "Long-lived access token", "",
 WiFiManagerParameter s_param_ma_entry("ma_entry",
                                       "Music Assistant config entry id", "",
                                       kMaEntryParamLen, kMaEntryAttrs);
+
+/** Music Assistant's own API, for "Recommended": the one thing Home Assistant
+ *  does not pass through is which artists are like which. The address may be
+ *  left blank -- the add-on is on Home Assistant's host, port 8095 -- and the
+ *  placeholder shows what blank means. The token comes from Music Assistant's
+ *  own profile settings, and like the Home Assistant one is never echoed. */
+char s_ma_url_attrs[160] = " type=\"url\"";
+WiFiManagerParameter s_param_ma_url("ma_url", "Music Assistant URL", "",
+                                    static_cast<int>(config::kMaUrlMaxLen),
+                                    s_ma_url_attrs);
+char s_ma_token_attrs[96] = " type=\"password\"";
+WiFiManagerParameter s_param_ma_token(
+    "ma_token", "Music Assistant token (for Recommended)", "",
+    static_cast<int>(config::kMaTokenMaxLen), s_ma_token_attrs);
+/** The one way to take the token away again, since a blank field keeps it.
+ *  A checkbox through the custom-attribute slot, label after the box: a
+ *  ticked box submits its value, "1", and an unticked one submits nothing,
+ *  which WiFiManager stores as empty -- so the value is put back after every
+ *  save. Ticked together with a new token, the new one is what is kept.
+ *
+ *  The label ends in a line break of its own. WiFiManager puts the label in
+ *  as it is, and every other field's input is full width, which is what
+ *  starts the next field on a new line; a checkbox is not, so without it the
+ *  next field's label runs on beside this one. */
+WiFiManagerParameter s_param_ma_forget(
+    "ma_forget", "Forget the stored Music Assistant token<br/>", "1", 1,
+    " type=\"checkbox\" style=\"width:auto\"", WFM_LABEL_AFTER);
+
+/** The token field's hint says whether one is stored, so it is redrawn
+ *  whenever that can have changed. */
+void refreshMaTokenField() {
+  snprintf(s_ma_token_attrs, sizeof(s_ma_token_attrs),
+           " type=\"password\" placeholder=\"%s\"",
+           services::ma::hasStoredToken() ? "stored - leave blank to keep"
+                                          : "blank = server's lists");
+  s_param_ma_token.setValue("", static_cast<int>(config::kMaTokenMaxLen));
+  s_param_ma_forget.setValue("1", 1);
+}
 
 /** Screen rotation, a dropdown over a hidden input like the entity pickers.
  *  The markup lives in a fixed array for the reason EntitySelect's does:
@@ -317,6 +356,21 @@ void refreshPortalParamDefaults() {
                                           : "paste token here");
   s_param_ha_token.setValue("", kTokenParamLen);
   s_param_ma_entry.setValue(services::ha::maConfigEntry(), kMaEntryParamLen);
+  {
+    // The placeholder is what a blank field means: the address derived from
+    // Home Assistant's, which is what effectiveUrl() gives while none is
+    // stored.
+    char derived[config::kMaUrlMaxLen + 1] = {};
+    if (services::ma::storedUrl()[0] == '\0') {
+      services::ma::effectiveUrl(derived, sizeof(derived));
+    }
+    snprintf(s_ma_url_attrs, sizeof(s_ma_url_attrs),
+             " type=\"url\" placeholder=\"%s\"",
+             derived[0] != '\0' ? derived : "http://homeassistant.local:8095");
+    s_param_ma_url.setValue(services::ma::storedUrl(),
+                            static_cast<int>(config::kMaUrlMaxLen));
+  }
+  refreshMaTokenField();
   buildRotationSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
@@ -389,6 +443,14 @@ void onPortalParamsSaved() {
     services::ha::saveMaConfigEntry(ma_entry);
   }
 
+  const char* forget = s_param_ma_forget.getValue();
+  if (forget != nullptr && strcmp(forget, "1") == 0) {
+    services::ma::clearToken();
+  }
+  services::ma::saveSettings(s_param_ma_url.getValue(),
+                             s_param_ma_token.getValue());
+  refreshMaTokenField();
+
   const char* rotation = s_param_rotation.getValue();
   if (rotation != nullptr && rotation[0] >= '0' && rotation[0] <= '3' &&
       rotation[1] == '\0') {
@@ -436,6 +498,9 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ha_url);
   wm.addParameter(&s_param_ha_token);
   wm.addParameter(&s_param_ma_entry);
+  wm.addParameter(&s_param_ma_url);
+  wm.addParameter(&s_param_ma_token);
+  wm.addParameter(&s_param_ma_forget);
   wm.addParameter(&s_param_rotation);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
@@ -513,6 +578,7 @@ void resetWifiCredentials() {
   markForceConfigPortal();
   eraseWifiCredentials();
   services::ha::clearCredentials();
+  services::ma::clear();
   LOG_INFO("WiFi credentials and Home Assistant settings cleared");
 }
 

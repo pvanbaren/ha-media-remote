@@ -101,53 +101,7 @@ SemaphoreHandle_t s_handoff_done = nullptr;
 /** The owner's copy of a handed-over body, taken under the lock. */
 char s_handoff_sending[kHandoffMax] = {};
 
-/** Walk the members of the JSON object at `p`, calling f(key, value) for
- *  each. Values are stepped over whole, so nested objects cannot be mistaken
- *  for the outer one's members. False if the text is malformed. */
-template <typename F>
-bool eachMember(const char* p, F&& f) {
-  if (p == nullptr) {
-    return false;
-  }
-  while (*p == ' ') {
-    ++p;
-  }
-  if (*p != '{') {
-    return false;
-  }
-  ++p;
-  for (;;) {
-    while (*p == ' ' || *p == ',') {
-      ++p;
-    }
-    if (*p == '}') {
-      return true;
-    }
-    if (*p != '"') {
-      return false;
-    }
-    char key[24];
-    const char* after = detail::readJson(p, key, sizeof(key));
-    if (after == nullptr) {
-      return false;
-    }
-    while (*after == ' ') {
-      ++after;
-    }
-    if (*after != ':') {
-      return false;
-    }
-    const char* value = after + 1;
-    while (*value == ' ') {
-      ++value;
-    }
-    f(key, value);
-    p = detail::skipJson(value);
-    if (p == nullptr) {
-      return false;
-    }
-  }
-}
+using detail::eachMember;
 
 /** The "message" of an error object, for the log and lastError(). */
 void errorMessage(const char* error_value, char* out, size_t out_len) {

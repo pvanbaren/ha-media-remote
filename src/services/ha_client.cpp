@@ -19,6 +19,7 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 
 namespace services::ha {
 namespace {
@@ -85,7 +86,11 @@ constexpr char kStateTemplateFmt[] =
     "{%% set sl = state_attr(c,'source_list') or [] %%}"
     "{{state_attr(e,'friendly_name') if state_attr(e,'friendly_name') in sl "
     "else ''}}\037"
-    "{{state_attr(c,'source') or ''}}\036";
+    "{{state_attr(c,'source') or ''}}\037"
+    // The artist alone, not the subtitle's fallbacks, and what is playing by
+    // them: what the room's history is kept by (services::history).
+    "{{state_attr(e,'media_artist') or ''}}\037"
+    "{{state_attr(e,'media_content_id') or ''}}\036";
 
 char s_base_url[config::kHaBaseUrlMaxLen + 1] = {};
 char s_token[config::kHaTokenMaxLen + 1] = {};
@@ -978,6 +983,8 @@ void parseState(const String& body, PlayerState& out) {
   const String control_state = nextField(body, pos);
   const String player_source = nextField(body, pos);
   const String control_source = nextField(body, pos);
+  const String artist = nextField(body, pos);
+  const String track = nextField(body, pos);
 
   out = PlayerState{};
   out.playback = parsePlaybackState(state);
@@ -997,6 +1004,8 @@ void parseState(const String& body, PlayerState& out) {
   out.control_off = control_state == "off" || control_state == "standby";
   copyField(out.player_source, sizeof(out.player_source), player_source);
   copyField(out.control_source, sizeof(out.control_source), control_source);
+  copyField(out.artist, sizeof(out.artist), artist);
+  copyField(out.track, sizeof(out.track), track);
 
   // media_position is a snapshot taken at media_position_updated_at; the
   // template reports how stale that is so the bar starts in the right place.

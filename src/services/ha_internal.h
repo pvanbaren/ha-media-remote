@@ -23,6 +23,86 @@ const char* readJson(const char* p, char* out, size_t out_len);
 /** Step over one JSON value of any kind; nullptr if it never terminates. */
 const char* skipJson(const char* p);
 
+inline const char* skipJsonSpace(const char* p) {
+  while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') {
+    ++p;
+  }
+  return p;
+}
+
+/** Walk the members of the JSON object at `p`, calling f(key, value) for
+ *  each. Values are stepped over whole, so nested objects cannot be mistaken
+ *  for the outer one's members. False if the text is malformed. */
+template <typename F>
+bool eachMember(const char* p, F&& f) {
+  if (p == nullptr) {
+    return false;
+  }
+  p = skipJsonSpace(p);
+  if (*p != '{') {
+    return false;
+  }
+  ++p;
+  for (;;) {
+    while (*p == ',' || *p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') {
+      ++p;
+    }
+    if (*p == '}') {
+      return true;
+    }
+    if (*p != '"') {
+      return false;
+    }
+    char key[24];
+    const char* after = readJson(p, key, sizeof(key));
+    if (after == nullptr) {
+      return false;
+    }
+    after = skipJsonSpace(after);
+    if (*after != ':') {
+      return false;
+    }
+    const char* value = skipJsonSpace(after + 1);
+    f(key, value);
+    p = skipJson(value);
+    if (p == nullptr) {
+      return false;
+    }
+  }
+}
+
+/** Walk the elements of the JSON array at `p`, calling f(value) for each
+ *  until it returns false. False if the text is malformed. */
+template <typename F>
+bool eachElement(const char* p, F&& f) {
+  if (p == nullptr) {
+    return false;
+  }
+  p = skipJsonSpace(p);
+  if (*p != '[') {
+    return false;
+  }
+  ++p;
+  for (;;) {
+    while (*p == ',' || *p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') {
+      ++p;
+    }
+    if (*p == ']') {
+      return true;
+    }
+    if (*p == '\0') {
+      return false;
+    }
+    if (!f(p)) {
+      return true;
+    }
+    p = skipJson(p);
+    if (p == nullptr) {
+      return false;
+    }
+  }
+}
+
 /** Record `message` as lastError() and log it. */
 void reportError(const char* message);
 /** Log the internal heap alongside `what`: the numbers a failed TLS handshake

@@ -537,6 +537,28 @@ Leaving it empty is a supported configuration: now-playing, transport and
 volume all work without it and only the swipe-up list is unavailable, which
 is what that list's **Not set up** card means.
 
+### The Music Assistant token (for Recommended)
+
+**Recommended** asks Music Assistant's own API which artists are like which
+(see [the swipe-up list](#recommended-artists-like-this-rooms)), and that API
+wants a token of its own -- the Home Assistant one does not open it.
+
+1. Open Music Assistant's web UI and your **profile**, and create a
+   **long-lived access token**
+2. Paste it into the portal's **Music Assistant token** field
+
+**Music Assistant URL** can stay blank: the add-on listens on port 8095 of the
+Home Assistant host, and the placeholder shows the address a blank field
+means. Fill it in for a server that lives elsewhere. Like the Home Assistant
+token, this one is never shown back and a blank field keeps it. To take it
+away, tick **Forget the stored Music Assistant token** and save (a BOOT reset
+clears it too).
+
+Without a token the list is the server's, as it was before any of this:
+Music Assistant's recent artists, headed "Recent artists", and a random draw
+of albums as "Recommended". The device goes on noting what plays here, so
+Recent here is ready the moment a token is saved.
+
 ### Choosing the player
 
 The portal carries a **Media player** dropdown listing every `media_player`
@@ -788,13 +810,9 @@ is settled for `kHaStreamSettleMs` so it costs one recompose, not three.
 
 Service calls ride the same socket while it is open, so steady state is **one
 connection and one TLS session**: the REST connection stops being kept alive
-while the stream is up. The Music Assistant library and the artist search ride
-it too, asking for the service's response: mbedTLS takes its buffers from
-internal RAM only, and a REST session beside the stream's -- with a cover or a
-thumbnail being fetched as well -- is one session more than it holds. Their
-answers run to several kilobytes, so the stream holds a message of up to
-`kHaStreamMaxMessage` (32 KB), in PSRAM. Only the portal's player list stays
-on REST.
+while the stream is up. The Music Assistant library, the artist search and the
+portal's player list stay on REST -- they are rare, large, and not worth
+moving.
 
 One task owns the socket, the same one that used to poll. A button pressed on
 the touch loop is handed to it through a one-deep slot and answered over the
@@ -835,38 +853,92 @@ attribute, not that nothing works.
 Swipe up on now-playing for a short shelf of the Music Assistant library, in
 sections, each row with its artwork and one tap to play.
 
-What the sections are is a table in `config.h`, and the table is the network
-cost as well as the layout — one `get_library` request per section when the
-list is opened:
+What the sections are is a table in `config.h`:
 
 ```cpp
 constexpr BrowseSection kBrowseSections[] = {
-    {"Recent artists", "artist", "last_played_desc", 5},
-    {"Recommended",    "album",  "random",           5},
+    {"Recent here", "artist", "last_played_desc", 8,
+     BrowseSource::kRoomArtists, "Recent artists"},
+    {"Recommended", "album", "random", 8, BrowseSource::kRoomSimilar, nullptr},
 };
 ```
 
-`media_type` is `artist`, `album`, `playlist`, `radio` or `track`; `order_by`
-is any of the integration's sort keys (`last_played_desc`, `play_count_desc`,
-`random`, `timestamp_added_desc`, `name`, ...).
+With a Music Assistant token in the portal both sections are the room's own
+(below), drawn from memory, so opening the list costs nothing. Without one
+they are the server's, as they always were: its recent artists, headed
+"Recent artists", and a random draw of albums. The library query in each row -- `media_type` is `artist`,
+`album`, `playlist`, `radio` or `track`; `order_by` any of the integration's
+sort keys (`last_played_desc`, `play_count_desc`, `random`,
+`timestamp_added_desc`, `name`, ...) -- is what stands in, at one
+`get_library` request, while the room has nothing of its own; a
+`BrowseSource::kLibrary` row is only ever that query.
 
-### "Recommended" is a stand-in, and the name is a promise this cannot keep
+### Each room keeps its own list
 
-Music Assistant has real recommendations — the rows on its own Home page —
-but they live behind its websocket API on port 8095 and are **not exposed as a
-Home Assistant service**, so nothing reachable over the REST API can ask for
-them. The six services the integration does register are `search`,
-`get_library`, `play_media`, `play_announcement`, `transfer_queue` and
-`get_queue`; there is no seventh.
+**Recent here** is what has played in this room, not on the server. Music
+Assistant's own "recently played" is one timestamp per library item shared by
+every player, so two remotes in two rooms would see the same list: whatever
+anyone played last. Each remote drives its own player, though, so what played
+on that player is what played in that room -- in practice, what one person
+listens to.
 
-What `get_library` does offer is `order_by`, and a random draw from the albums
-is a decent stand-in: it surfaces things the library has and the last few weeks
-did not. `play_count_desc` is the other honest option, if "what we actually
-play" suits better than "something else for a change". Swap the `order_by` in
-the table above.
+So the device keeps it: the last 16 artists seen playing on its player, most
+recent first, from the state it already receives. Anything that plays counts,
+started from the remote, a phone or an automation. A new artist costs one
+Music Assistant artist search, to turn the name into something playable with a
+picture, and only an exact match is kept (trying the lead artist of "A feat.
+B" or "A & B" when the whole credit finds nothing); an artist already on the
+list just moves to the front. A name that finds nothing -- a radio station's
+"Artist - Title" text, say -- is remembered and not searched for again.
+An artist picked from search or the list goes on at once, from the pick
+itself, with no search and no wait for the player to start.
 
-**Recent artists** needs no such apology: `last_played_desc` over artists is
-exactly what it says.
+Until a room has any history -- a new device, or the first boot of this
+firmware -- the library stands in: Music Assistant's recent artists, headed
+"Recent artists". The list reloads as soon as a new artist is noted, rather
+than waiting out its five minutes.
+
+The history lives in its own NVS namespace, so a BOOT reset of the Home
+Assistant settings keeps it, as it keeps the device's name and rotation. It
+keeps each artist's name and the URI that plays them -- about 2 KB for all
+sixteen, in a 20 KB partition the radio's calibration data and the Wi-Fi
+settings share -- and is written at once when an artist new to it is added,
+otherwise at most once an hour (`kHistorySaveIntervalMs`). Pictures are kept
+in RAM: after a restart the list shows names, and the network task finds one
+picture again every five seconds by the same artist search, keeping it only
+for the same artist.
+
+### Recommended: artists like this room's
+
+**Recommended** is artists similar to the room's three most recent ones. Home
+Assistant does not pass similarity through -- the integration's services are
+`search`, `get_library`, `play_media`, `play_announcement`, `transfer_queue`
+and `get_queue` -- so this one thing comes from Music Assistant's own API
+(`POST <server>/api`), which needs its own token in the portal (below).
+
+For each of the three it asks for **similar artists**. A library artist gets a
+good answer, merged from whatever its providers know, with pictures. YouTube
+Music has no similar artists of its own, though, and for one of its artists
+the answer is empty -- so then it asks for **tracks similar** to one of theirs
+that played here (the tracks artist radio would pick) and takes their artists,
+each shown with that track's cover. After a restart, until one of theirs has
+played again, the artist's top track stands in as the seed.
+
+Those calls take seconds each, so none of it happens when the list opens: a
+task of its own builds a pool of up to 48 artists whenever the three change
+(once they have held still for ten seconds, so artist radio working through a
+run of names is one rebuild), and every six hours regardless. Each artist in
+the pool counts how many of the seeds pointed at it. A list load draws eight
+at random, weighted by that count, and leaves out anyone already on Recent
+here -- so the section changes from one load to the next and leans toward the
+artists more than one seed agrees on.
+
+Until there is a pool -- nothing played yet, or Music Assistant out of reach
+-- a random draw of library albums stands in. The pool is not saved:
+after a restart that draw is what shows for the first few seconds of history.
+
+The server is plain HTTP on the LAN, so none of this costs a TLS session
+beside the Home Assistant stream's.
 
 ### Loaded before you ask for it
 
@@ -1246,6 +1318,9 @@ src/
     ha_client.cpp           template reads, service calls, NVS settings
     display_settings.cpp    the screen rotation, stored apart from the rest
     device_name.cpp         the device's name: hostname and mDNS
+    history.cpp             the artists played in this room
+    ma_api.cpp              Music Assistant's own API: similarity
+    recommend.cpp           Recommended: artists like this room's
     ha_stream.cpp           the WebSocket state stream, and calls over it
     websocket.cpp           RFC 6455 client over a Yielding socket
   hardware/

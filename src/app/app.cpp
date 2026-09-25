@@ -27,6 +27,9 @@
 #include "log.h"
 #include "services/browse.h"
 #include "services/display_settings.h"
+#include "services/history.h"
+#include "services/ma_api.h"
+#include "services/recommend.h"
 #include "services/ha_client.h"
 #include "services/search.h"
 #include "services/wifi_setup.h"
@@ -836,6 +839,10 @@ void haPollTask(void*) {
     unsigned long interval = config::kHaPollIdleMs;
     bool streaming = false;
 
+    // A pick made from the touch loop changed the room's history; the flash
+    // write is done here rather than there.
+    services::history::persist();
+
     // A stream over a dead link would sit there until its silence timeout,
     // taking service calls it cannot deliver.
     if (services::ha::streamIsOpen() &&
@@ -919,6 +926,13 @@ void haPollTask(void*) {
         g_last_playback = fresh.playback;
         g_have_last_playback = true;
 
+        // What plays on this player is what plays in this room: the history
+        // the swipe-up list's first two sections are built from. A new
+        // artist costs a search, here on the network task.
+        if (fresh.playback == PlaybackState::kPlaying) {
+          services::history::notePlaying(fresh.artist, fresh.track);
+        }
+
         interval = fresh.playback == PlaybackState::kPlaying
                        ? config::kHaPollPlayingMs
                        : config::kHaPollIdleMs;
@@ -928,6 +942,10 @@ void haPollTask(void*) {
         // card.
         g_state_dirty = true;
       }
+
+      // After a restart the history has names but no pictures; one is found
+      // again every few seconds until the list is whole.
+      services::history::refreshPictures();
     }
 
     if (streaming) {
@@ -979,11 +997,16 @@ void setup() {
   // Claimed before Wi-Fi, while the heap is still unfragmented, and never
   // freed -- so it cannot fail later and cannot leave a hole.
   services::browse::init();
+  services::history::init();
 
   if (wifiShowsSetupScreenOnBoot()) {
     ui::showPortal();
   }
   services::ha::init();
+  // After ha::init(): an unset Music Assistant address is derived from Home
+  // Assistant's. The recommendations wait for Wi-Fi on their own task.
+  services::ma::init();
+  services::recommend::init();
 
   if (!wifiSetupConnect()) {
     showMessageScreen();
