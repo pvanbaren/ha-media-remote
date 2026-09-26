@@ -1278,6 +1278,17 @@ recompose when something *visible* changed; position alone does not.
 
 ## Cover art
 
+The cover is fetched on the artwork worker, the same task that fetches the
+list thumbnails and ahead of any of them -- not on the task that services the
+state stream. That task only asks for it and goes straight back to the
+stream, so a slow cover no longer holds up a volume change, a pause from
+another room or the next track. The now-playing repaint for a track change
+waits up to `kCoverArtHoldMs` (1 s) for its cover: a quick one lands in time
+and the title and the art appear together, and a slow one shows the title
+over the plain backdrop and drops in when it arrives. At most one thumbnail
+fetch is ever ahead of a cover, and a cover asked for while another loads
+replaces anything waiting behind it.
+
 Downscaling locally does not help — the cache holds the **compressed** image,
 and a decoded 240×240 RGB565 is 115 KB against ~40 KB for a 512 px JPEG. The
 only way to store less is to ask for less.

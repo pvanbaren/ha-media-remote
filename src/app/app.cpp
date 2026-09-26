@@ -242,6 +242,31 @@ void showMessageScreen() {
   g_message_recheck_ms = millis();
 }
 
+/** The picture a repaint last waited for, and since when. A picture is
+ *  waited for once: a repaint after the wait gave up, or after the cover
+ *  arrived, goes ahead. Loop only. */
+char g_cover_hold_picture[sizeof(PlayerState::picture)] = {};
+unsigned long g_cover_hold_since_ms = 0;
+
+/** Whether the pending repaint should wait for the cover still loading for
+ *  what is now playing -- up to config::kCoverArtHoldMs, and only on the now
+ *  playing screen, where the cover is drawn. */
+bool holdForCover() {
+  if (g_screen != Screen::kNowPlaying && g_screen != Screen::kMessage) {
+    return false;
+  }
+  PlayerState snapshot;
+  if (!snapshotState(snapshot) || !ui::artworkPending(snapshot.picture)) {
+    return false;
+  }
+  if (strcmp(g_cover_hold_picture, snapshot.picture) != 0) {
+    snprintf(g_cover_hold_picture, sizeof(g_cover_hold_picture), "%s",
+             snapshot.picture);
+    g_cover_hold_since_ms = millis();
+  }
+  return millis() - g_cover_hold_since_ms < config::kCoverArtHoldMs;
+}
+
 /** True while the player has reported no title for less than
  *  config::kUntitledLabelDelayMs. */
 bool untitledBriefly() {
@@ -927,9 +952,10 @@ void haPollTask(void*) {
       }
 
       if (got) {
-        // Cache the art before publishing, so the repaint the main loop does
-        // in response already has something to draw.
-        ui::prepareArtwork(fresh.picture);
+        // Asked for, not fetched: the artwork worker downloads it while this
+        // task goes back to the stream. The loop holds the repaint a moment
+        // for it (see kCoverArtHoldMs).
+        ui::requestArtwork(fresh.picture);
         publishState(fresh);
 
         handlePlayerWake(g_last_playback, fresh.playback);
@@ -1068,7 +1094,16 @@ void loop() {
   // fetch is a TLS connection, which on a slow or contended link is seconds
   // each and ten of them before the first frame. The boot symptom was the
   // Loading card staying up long after Home Assistant had answered.
-  if (g_state_dirty && !ui::isBlanked()) {
+  // A cover the worker has finished was not in the frame on screen: repaint
+  // it in. Checked first, so a cover landing while the repaint below is held
+  // for it costs one frame, not two.
+  if (ui::takeArtworkFinished() && g_screen == Screen::kNowPlaying) {
+    g_state_dirty = true;
+  }
+
+  if (g_state_dirty && !ui::isBlanked() && holdForCover()) {
+    // Waiting on this track's cover, briefly: nothing drawn this pass.
+  } else if (g_state_dirty && !ui::isBlanked()) {
     g_state_dirty = false;
     // Neither the list nor the search screen may be replaced by a poll
     // landing underneath someone who is reading or typing.

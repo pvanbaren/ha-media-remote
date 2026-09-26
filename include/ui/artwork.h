@@ -57,4 +57,27 @@ uint32_t update(Kind kind, int count, UrlFn url_for);
  *  and the caller should use the space for something else. */
 bool draw(Kind kind, int index, lgfx::LovyanGFX& gfx, int x, int y);
 
+// --- The now-playing cover ----------------------------------------------------
+// Fetched on the same worker, ahead of any thumbnail, so the task servicing
+// the state stream never waits out a download. A one-deep slot: a request made
+// while another is loading replaces whatever was waiting behind it.
+
+/** Ask for the cover at `picture` (an entity_picture path or an absolute URL).
+ *  From any task, and cheap to repeat: the same picture asked for again is
+ *  ignored. Empty drops the cover at once. Without a worker, fetches here and
+ *  now, as before. */
+void requestCover(const char* picture);
+
+/** True while `picture` has been asked for and the worker has not finished
+ *  it -- what a repaint waiting for its cover checks. */
+bool coverPending(const char* picture);
+
+/** True once after the worker finishes a cover, arrived or failed: the frame
+ *  on screen was drawn without it. */
+bool takeCoverFinished();
+
+/** Forget what has been asked for, alongside cover::clear(), so the same
+ *  picture asked for again is fetched again. */
+void forgetCover();
+
 }  // namespace ui::artwork

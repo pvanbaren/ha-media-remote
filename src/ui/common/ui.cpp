@@ -612,9 +612,18 @@ void wake() {
 
 // --- Artwork ---------------------------------------------------------------
 
-void prepareArtwork(const char* picture) { cover::prepare(picture); }
+void requestArtwork(const char* picture) { artwork::requestCover(picture); }
 
-void clearArtwork() { cover::clear(); }
+bool artworkPending(const char* picture) {
+  return artwork::coverPending(picture);
+}
+
+bool takeArtworkFinished() { return artwork::takeCoverFinished(); }
+
+void clearArtwork() {
+  cover::clear();
+  artwork::forgetCover();
+}
 
 bool idleWork(Screen screen) {
   // Thumbnails are fetched by artwork's own worker now, so nothing here

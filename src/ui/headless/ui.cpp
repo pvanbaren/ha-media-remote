@@ -109,7 +109,9 @@ void wake() {
 
 // Artwork is pixels, and there are none. The app still calls these on every
 // track change, which costs nothing here and keeps the call sites honest.
-void prepareArtwork(const char*) {}
+void requestArtwork(const char*) {}
+bool artworkPending(const char*) { return false; }
+bool takeArtworkFinished() { return false; }
 void clearArtwork() {}
 
 bool idleWork(Screen) { return false; }

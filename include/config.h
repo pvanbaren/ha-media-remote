@@ -49,6 +49,14 @@ constexpr size_t kEntityIdMaxLen = 64;
  *  the music stopping; until this has passed the title area is left blank. */
 constexpr unsigned long kUntitledLabelDelayMs = 3000;
 
+/** How long a track change's repaint waits for its cover. The cover is
+ *  fetched on the artwork worker, off the task that services the state
+ *  stream; a quick one lands in time and the title and the art appear
+ *  together, as they did when the fetch came first, and a slow one no longer
+ *  holds up the title -- it shows over the plain backdrop, and the cover drops
+ *  in when it arrives. */
+constexpr unsigned long kCoverArtHoldMs = 1000;
+
 /** The room's history is written to NVS at once when an artist new to it is
  *  added, and otherwise -- an artist moving back to the front -- at most this
  *  often: a reordering lost to a power cut is worth less than the flash. */
@@ -323,7 +331,7 @@ constexpr unsigned long kHaStreamSilentMs = 75000;
 constexpr unsigned long kHaStreamSettleMs = 150;
 /** How long another task waits for the stream's owner to take a service call
  *  before sending it over REST instead. The owner can be busy for seconds on
- *  a library load or a cover fetch; a button press should not wait on that. */
+ *  a library load; a button press should not wait on that. */
 constexpr unsigned long kHaStreamPickupMs = 300;
 /** Largest message the stream will hold; anything bigger is read off the
  *  wire and dropped. State is a few hundred bytes, but Music Assistant's

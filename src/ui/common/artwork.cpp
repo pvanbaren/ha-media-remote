@@ -69,6 +69,15 @@ struct Lock {
 /** How far the loop's walk has got since forget(). Loop only, so unguarded. */
 int s_next = 0;
 
+/** The cover slot, under s_lock: the picture last asked for, whether the
+ *  worker has still to fetch it, the one it last finished, and whether the
+ *  loop has been told. */
+constexpr size_t kPictureLen = sizeof(services::ha::PlayerState::picture);
+char s_cover_wanted[kPictureLen] = {};
+bool s_cover_pending = false;
+char s_cover_done[kPictureLen] = {};
+bool s_cover_finished = false;
+
 TaskHandle_t s_worker = nullptr;
 
 /** Caller holds the lock. */
@@ -164,8 +173,26 @@ void finishJob(const Job& job, bool drawn) {
   s_finished |= 1u << job.index;
 }
 
+/** Fetch the cover, if one is waiting. Worker only. */
+void serviceCover() {
+  char picture[kPictureLen];
+  {
+    Lock lock;
+    if (!s_cover_pending) {
+      return;
+    }
+    memcpy(picture, s_cover_wanted, kPictureLen);
+    s_cover_pending = false;
+  }
+  cover::prepare(picture);
+  Lock lock;
+  memcpy(s_cover_done, picture, kPictureLen);
+  s_cover_finished = true;
+}
+
 /**
- * Fetch thumbnails off the Arduino loop.
+ * Fetch thumbnails off the Arduino loop -- and the now-playing cover off the
+ * task that owns the state stream, ahead of any thumbnail.
  *
  * Each one used to run on the loop itself, and each is a network fetch --
  * 560 to 860 ms measured, most of it a TLS handshake -- during which touch
@@ -182,9 +209,13 @@ void workerTask(void*) {
   for (;;) {
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
 
+    serviceCover();
     bool fetched = false;
     Job job;
     while (takeJob(job, last_host)) {
+      // A cover asked for mid-batch goes before the next thumbnail: it is
+      // what is on screen, and at most one thumbnail's fetch is in its way.
+      serviceCover();
       fetched = true;
       hostOf(job.url, last_host, sizeof(last_host));
       // Cleared first: the image is fitted inside the square, so anything not
@@ -227,7 +258,7 @@ void init() {
       s_px = 0;
       LOG_WARN("Artwork: no room for %d %dpx thumbnails, names only",
                     kSlots, scaledPx());
-      return;
+      break;  // the worker still carries the cover
     }
   }
 
@@ -244,8 +275,10 @@ void init() {
     LOG_ERROR("Artwork: no worker task, names only");
     return;
   }
-  LOG_INFO("Artwork: %d %dpx thumbnails in PSRAM (%u bytes)", kSlots,
-                s_px, static_cast<unsigned>(kSlots * s_px * s_px * 2));
+  if (s_px > 0) {
+    LOG_INFO("Artwork: %d %dpx thumbnails in PSRAM (%u bytes)", kSlots,
+                  s_px, static_cast<unsigned>(kSlots * s_px * s_px * 2));
+  }
 }
 
 int size() { return s_worker != nullptr ? s_px : 0; }
@@ -262,7 +295,7 @@ void forget(Kind kind) {
 }
 
 uint32_t update(Kind kind, int count, UrlFn url_for) {
-  if (s_worker == nullptr || url_for == nullptr) {
+  if (s_worker == nullptr || s_px == 0 || url_for == nullptr) {
     return 0;
   }
   if (count > kSlots) {
@@ -316,7 +349,7 @@ uint32_t update(Kind kind, int count, UrlFn url_for) {
 }
 
 bool draw(Kind kind, int index, lgfx::LovyanGFX& gfx, int x, int y) {
-  if (index < 0 || index >= kSlots || s_worker == nullptr) {
+  if (index < 0 || index >= kSlots || s_worker == nullptr || s_px == 0) {
     return false;
   }
   Lock lock;
@@ -325,6 +358,59 @@ bool draw(Kind kind, int index, lgfx::LovyanGFX& gfx, int x, int y) {
   }
   s_sprites[index].pushSprite(&gfx, x, y);
   return true;
+}
+
+void requestCover(const char* picture) {
+  if (picture == nullptr || picture[0] == '\0' || s_worker == nullptr) {
+    // Nothing to fetch, or nobody to fetch it: prepare() clears at once for
+    // an empty picture, and without a worker the fetch is made here.
+    cover::prepare(picture != nullptr ? picture : "");
+    if (s_lock != nullptr) {
+      Lock lock;
+      s_cover_wanted[0] = '\0';
+      s_cover_done[0] = '\0';
+      s_cover_pending = false;
+    }
+    return;
+  }
+  {
+    Lock lock;
+    if (strcmp(s_cover_wanted, picture) == 0 &&
+        (s_cover_pending || strcmp(s_cover_done, picture) == 0)) {
+      return;  // on its way, or already fetched
+    }
+    snprintf(s_cover_wanted, sizeof(s_cover_wanted), "%s", picture);
+    s_cover_pending = true;
+  }
+  xTaskNotifyGive(s_worker);
+}
+
+bool coverPending(const char* picture) {
+  if (s_lock == nullptr || picture == nullptr) {
+    return false;
+  }
+  Lock lock;
+  return s_cover_pending && strcmp(s_cover_wanted, picture) == 0;
+}
+
+bool takeCoverFinished() {
+  if (s_lock == nullptr) {
+    return false;
+  }
+  Lock lock;
+  const bool finished = s_cover_finished;
+  s_cover_finished = false;
+  return finished;
+}
+
+void forgetCover() {
+  if (s_lock == nullptr) {
+    return;
+  }
+  Lock lock;
+  s_cover_wanted[0] = '\0';
+  s_cover_done[0] = '\0';
+  s_cover_pending = false;
 }
 
 }  // namespace ui::artwork

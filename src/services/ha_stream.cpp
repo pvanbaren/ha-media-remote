@@ -582,9 +582,8 @@ StreamCall streamCall(const char* domain, const char* service,
   s_handoff.state = Handoff::kQueued;
   taskEXIT_CRITICAL(&s_handoff_lock);
 
-  // Picked up promptly, or not at all: an owner deep in a library load or a
-  // cover fetch would leave a button press waiting seconds, and REST can
-  // carry it now.
+  // Picked up promptly, or not at all: an owner deep in a library load would
+  // leave a button press waiting seconds, and REST can carry it now.
   const unsigned long started = millis();
   bool taken = false;
   while (millis() - started < config::kHaStreamPickupMs) {

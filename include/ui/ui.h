@@ -124,9 +124,15 @@ void wake();
 
 // --- Artwork ---------------------------------------------------------------
 
-/** Fetch and cache the art at `picture` -- an entity_picture path or an
- *  absolute URL. Called from the poll task, off the drawing path. */
-void prepareArtwork(const char* picture);
+/** Ask for the art at `picture` -- an entity_picture path or an absolute
+ *  URL -- to be fetched and cached on the artwork worker. Returns at once, so
+ *  the poll task can go straight back to the state stream; cheap to repeat. */
+void requestArtwork(const char* picture);
+/** True while that picture is still being fetched: a track change's repaint
+ *  waits on it, up to config::kCoverArtHoldMs. */
+bool artworkPending(const char* picture);
+/** True once after a fetch finishes, for the repaint that puts it on screen. */
+bool takeArtworkFinished();
 /** Drop it, when what is playing is about to change. */
 void clearArtwork();
 

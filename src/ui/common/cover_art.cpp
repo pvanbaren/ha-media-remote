@@ -22,8 +22,8 @@ namespace {
 
 enum class Format : uint8_t { kUnknown, kJpeg, kPng };
 
-// prepare() runs on the HA poll task while draw() runs on the Arduino loop, so
-// everything below is guarded. The lock is only held across the decode and the
+// prepare() runs on the artwork worker while draw() runs on the Arduino loop,
+// so everything below is guarded. The lock is only held across the decode and the
 // short install step -- never across the download, which would stall a repaint
 // for as long as the fetch takes.
 SemaphoreHandle_t s_mutex = nullptr;
@@ -41,9 +41,9 @@ bool s_stream_only = false;
 uint16_t s_src_w = 0;
 uint16_t s_src_h = 0;
 
-/** The mutex is made in init(), on the Arduino task before the poll task
- *  exists, and deliberately never here. prepare() runs on the poll task and
- *  draw() on the Arduino loop, either can be first, and two tasks that each
+/** The mutex is made in init(), on the Arduino task before the worker
+ *  exists, and deliberately never here. prepare() runs on the artwork worker
+ *  and draw() on the Arduino loop, either can be first, and two tasks that each
  *  make their own mutex end up locking different ones -- which would leave
  *  both s_buffer and LovyanGFX's single global PNG decoder unguarded. */
 void lock() {
