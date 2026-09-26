@@ -1145,11 +1145,18 @@ Orchestra".
 
 The keyboard is four rows of seven keys plus a wide SEARCH bar, laid out
 against the chord of the circle at each row — the narrowest, the top row,
-allows 205 px and the row needs 201. Keys are 27×26 px. It is **alphabetical,
-not QWERTY**: this is a keyboard used a few times a year, where hunting for a
+allows 205 px and the row needs 201. Keys are 27×26 px. It is **alphabetical**
+by default: this is a keyboard used a few times a year, where hunting for a
 letter in a familiar-but-scrambled layout is slower than reading down the
 alphabet. The last two keys of the bottom row are space and backspace, drawn as
 glyphs rather than labelled.
+
+**Search keyboard** in the portal switches it to **QWERTY**, for fingers that
+already know one: QWERTYUIOP, ASDFGHJKL, ZXCVBNM with backspace beside the M,
+and a five-key space bar on a row of its own, SEARCH below as before. Ten keys
+across the top row, in the same 205 px, makes every key 18 px wide rather than
+27, with its letter a size down. It is stored with the screen rotation, so a
+BOOT reset keeps it, and applies the next time search opens.
 
 Results are the browse list's rows -- same shape, same artwork, same
 finger-following scroll and glide -- and **the artwork is fetched on a worker

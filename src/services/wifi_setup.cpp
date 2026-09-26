@@ -215,6 +215,26 @@ void buildRotationSelect() {
   s_param_rotation.setValue(value, 2);
 }
 
+/** The search keyboard's layout, a dropdown over a hidden input like the
+ *  rotation's, and rebuilt the same way with the current choice marked.
+ *  Unlike the rotation it needs no restart: the search screen reads it each
+ *  time it opens. */
+char s_keyboard_attrs[320] = " type=\"hidden\"";
+WiFiManagerParameter s_param_keyboard("keyboard", "Search keyboard", "0", 2,
+                                      s_keyboard_attrs);
+
+void buildKeyboardSelect() {
+  const bool qwerty = services::display::keyboardLayout() ==
+                      services::display::KeyboardLayout::kQwerty;
+  snprintf(s_keyboard_attrs, sizeof(s_keyboard_attrs),
+           " type=\"hidden\"><select id=\"keyboard_sel\" "
+           "onchange='document.getElementById(\"keyboard\").value=this.value'>"
+           "<option value=\"0\"%s>Alphabetical</option>"
+           "<option value=\"1\"%s>QWERTY</option></select",
+           qwerty ? "" : " selected", qwerty ? " selected" : "");
+  s_param_keyboard.setValue(qwerty ? "1" : "0", 2);
+}
+
 /** Rough worst case per option: entity_id, escaped name and the markup. */
 constexpr size_t kPlayerOptionBytes = 160;
 constexpr size_t kPlayerHtmlOverhead = 320;
@@ -488,6 +508,7 @@ void refreshPortalParamDefaults() {
   }
   refreshMaTokenField();
   buildRotationSelect();
+  buildKeyboardSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
            config::kPortalHostname);
@@ -594,6 +615,18 @@ void onPortalParamsSaved() {
                              s_param_ma_token.getValue());
   refreshMaTokenField();
 
+  const char* keyboard = s_param_keyboard.getValue();
+  if (keyboard != nullptr && (keyboard[0] == '0' || keyboard[0] == '1') &&
+      keyboard[1] == '\0') {
+    const services::display::KeyboardLayout chosen =
+        keyboard[0] == '1' ? services::display::KeyboardLayout::kQwerty
+                           : services::display::KeyboardLayout::kAlphabetical;
+    if (chosen != services::display::keyboardLayout()) {
+      services::display::saveKeyboardLayout(chosen);
+    }
+  }
+  buildKeyboardSelect();  // the choice just saved, marked
+
   const char* rotation = s_param_rotation.getValue();
   if (rotation != nullptr && rotation[0] >= '0' && rotation[0] <= '3' &&
       rotation[1] == '\0') {
@@ -647,6 +680,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ma_token);
   wm.addParameter(&s_param_ma_forget);
   wm.addParameter(&s_param_rotation);
+  wm.addParameter(&s_param_keyboard);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 

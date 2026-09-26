@@ -171,7 +171,8 @@ constexpr int kListScrollBarInset = px(6);
 constexpr int kListScrollBarMinLength = px(16);
 
 // --- Artist search: keyboard, then results ---
-// Four rows of seven keys, sized against the chord at each row: the narrowest
+// The alphabetical layout is four rows of seven keys, sized against the chord
+// at each row (QWERTY's are below, with its key width): the narrowest
 // (y=72) allows 205 px and the row needs 201. The fifth row is one wide key,
 // down where the circle has only 149 px to give at its bottom edge.
 //
@@ -188,8 +189,14 @@ constexpr int kKeyHeight = px(26);
 constexpr int kKeyGap = px(2);
 constexpr int kKeyRadius = px(5);
 constexpr int kKeyTextPx = textPx(17);
+/** Rows either layout may use; the SEARCH key sits below the last. */
 constexpr int kKeyRows = 4;
-constexpr int kKeyCols = 7;
+/** QWERTY puts ten keys across its top row, at the same y=72 where the chord
+ *  allows 205 px: 10 x 18 + 9 x 2 is 198. Its space bar is five keys wide on
+ *  a row of its own, and its letters a size down to sit inside the key. */
+constexpr int kQwertyKeyWidth = px(18);
+constexpr int kQwertySpaceKeys = 5;
+constexpr int kQwertyKeyTextPx = textPx(15);
 constexpr int kSearchGoY = px(200);
 constexpr int kSearchGoWidth = px(130);
 constexpr int kSearchGoHeight = px(28);

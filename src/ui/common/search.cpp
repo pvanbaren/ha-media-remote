@@ -7,6 +7,7 @@
 #include "board/board.h"
 #include "config.h"
 #include "hardware/display_font.h"
+#include "services/display_settings.h"
 #include "services/ha_client.h"
 #include "services/search.h"
 #include "ui/canvas.h"
@@ -16,19 +17,62 @@
 namespace ui::search {
 namespace {
 
-/** Alphabetical rather than QWERTY. This is a keyboard someone uses a few
- *  times a year, where hunting for a letter in a familiar-but-scrambled
- *  layout is slower than reading straight down the alphabet.
- *
- *  The last two keys are space and backspace, drawn as glyphs. */
-constexpr char kKeys[theme::kKeyRows][theme::kKeyCols + 1] = {
+/** In a layout's rows, backspace. A space is the space bar. Both are drawn as
+ *  glyphs. */
+constexpr char kBackspace = '\b';
+
+/** One keyboard: its rows of keys, each row centred, and how big a key is.
+ *  The space bar spans `space_keys` keys' width, gaps included. */
+struct Layout {
+  const char* const* rows;
+  int row_count;
+  int key_width;
+  int space_keys;
+  int text_px;
+};
+
+/** Alphabetical, the default. This is a keyboard someone uses a few times a
+ *  year, where hunting for a letter in a familiar-but-scrambled layout is
+ *  slower than reading straight down the alphabet. Seven to a row, the last
+ *  two keys space and backspace. */
+constexpr const char* kAlphabeticalRows[] = {
     "ABCDEFG",
     "HIJKLMN",
     "OPQRSTU",
-    "VWXYZ  ",
+    "VWXYZ \b",
 };
-constexpr int kSpaceCol = 5;      // row 3
-constexpr int kBackspaceCol = 6;  // row 3
+/** QWERTY, for fingers that already know it: the three letter rows of a
+ *  computer keyboard, backspace where it would be beside M, and the space
+ *  bar on a row of its own. */
+constexpr const char* kQwertyRows[] = {
+    "QWERTYUIOP",
+    "ASDFGHJKL",
+    "ZXCVBNM\b",
+    " ",
+};
+static_assert(sizeof(kAlphabeticalRows) / sizeof(kAlphabeticalRows[0]) <=
+                  theme::kKeyRows,
+              "rows would reach the SEARCH key");
+static_assert(sizeof(kQwertyRows) / sizeof(kQwertyRows[0]) <= theme::kKeyRows,
+              "rows would reach the SEARCH key");
+
+constexpr Layout kAlphabetical = {
+    kAlphabeticalRows,
+    sizeof(kAlphabeticalRows) / sizeof(kAlphabeticalRows[0]), theme::kKeyWidth,
+    1, theme::kKeyTextPx};
+constexpr Layout kQwerty = {kQwertyRows,
+                            sizeof(kQwertyRows) / sizeof(kQwertyRows[0]),
+                            theme::kQwertyKeyWidth, theme::kQwertySpaceKeys,
+                            theme::kQwertyKeyTextPx};
+
+/** The layout chosen in the portal, read each time so a change applies the
+ *  next time search opens. */
+const Layout& layout() {
+  return services::display::keyboardLayout() ==
+                 services::display::KeyboardLayout::kQwerty
+             ? kQwerty
+             : kAlphabetical;
+}
 
 bool s_showing_results = false;
 /** Pixels the result list is scrolled by. Results can outnumber the rows that
@@ -37,12 +81,19 @@ int s_scroll_px = 0;
 
 int rowY(int row) { return theme::kKeyRow0Y + row * theme::kKeyRowPitch; }
 
-/** Left edge of column `col` in a centred row of kKeyCols keys. */
-int keyX(int col) {
-  constexpr int kRowWidth =
-      theme::kKeyCols * theme::kKeyWidth + (theme::kKeyCols - 1) * theme::kKeyGap;
-  return theme::kCenterX - kRowWidth / 2 +
-         col * (theme::kKeyWidth + theme::kKeyGap);
+int keyWidth(const Layout& l, char key) {
+  return key == ' ' ? l.space_keys * l.key_width +
+                          (l.space_keys - 1) * theme::kKeyGap
+                    : l.key_width;
+}
+
+/** Left edge of a centred row's first key. */
+int rowLeft(const Layout& l, const char* keys) {
+  int width = 0;
+  for (const char* k = keys; *k != '\0'; ++k) {
+    width += keyWidth(l, *k) + (k == keys ? 0 : theme::kKeyGap);
+  }
+  return theme::kCenterX - width / 2;
 }
 
 void drawBackspaceGlyph(lgfx::LovyanGFX& gfx, int cx, int cy, uint16_t colour) {
@@ -58,33 +109,23 @@ void drawSpaceGlyph(lgfx::LovyanGFX& gfx, int cx, int cy, uint16_t colour) {
   gfx.fillRect(cx - w / 2, cy + theme::px(3), w, t, colour);
 }
 
-void drawKey(lgfx::LovyanGFX& gfx, int row, int col) {
-  const int x = keyX(col);
-  const int y = rowY(row);
-  const char label = kKeys[row][col];
+void drawKey(lgfx::LovyanGFX& gfx, const Layout& l, char label, int x, int y,
+             int w) {
+  gfx.fillRoundRect(x, y, w, theme::kKeyHeight, theme::kKeyRadius,
+                    theme::kSurface);
 
-  // The two blanks on the bottom row are space and backspace.
-  const bool is_space = row == theme::kKeyRows - 1 && col == kSpaceCol;
-  const bool is_backspace = row == theme::kKeyRows - 1 && col == kBackspaceCol;
-  if (label == ' ' && !is_space && !is_backspace) {
-    return;
-  }
-
-  gfx.fillRoundRect(x, y, theme::kKeyWidth, theme::kKeyHeight,
-                    theme::kKeyRadius, theme::kSurface);
-
-  const int cx = x + theme::kKeyWidth / 2;
+  const int cx = x + w / 2;
   const int cy = y + theme::kKeyHeight / 2;
-  if (is_backspace) {
+  if (label == kBackspace) {
     drawBackspaceGlyph(gfx, cx, cy, theme::kTextSecondary);
     return;
   }
-  if (is_space) {
+  if (label == ' ') {
     drawSpaceGlyph(gfx, cx, cy, theme::kTextSecondary);
     return;
   }
 
-  displayFontApplyHeight(gfx, theme::kKeyTextPx);
+  displayFontApplyHeight(gfx, l.text_px);
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(theme::kTextPrimary);
   const char text[2] = {label, '\0'};
@@ -111,9 +152,13 @@ void drawQuery(lgfx::LovyanGFX& gfx) {
 void drawKeyboard(lgfx::LovyanGFX& gfx) {
   drawQuery(gfx);
 
-  for (int row = 0; row < theme::kKeyRows; ++row) {
-    for (int col = 0; col < theme::kKeyCols; ++col) {
-      drawKey(gfx, row, col);
+  const Layout& l = layout();
+  for (int row = 0; row < l.row_count; ++row) {
+    int x = rowLeft(l, l.rows[row]);
+    for (const char* k = l.rows[row]; *k != '\0'; ++k) {
+      const int w = keyWidth(l, *k);
+      drawKey(gfx, l, *k, x, rowY(row), w);
+      x += w + theme::kKeyGap;
     }
   }
 
@@ -551,30 +596,25 @@ Result handleTap(int x, int y, int& index) {
                                                 : Result::kNone;
   }
 
-  for (int row = 0; row < theme::kKeyRows; ++row) {
+  const Layout& l = layout();
+  for (int row = 0; row < l.row_count; ++row) {
     const int top = rowY(row);
     if (y < top || y >= top + theme::kKeyHeight) {
       continue;
     }
-    for (int col = 0; col < theme::kKeyCols; ++col) {
-      const int left = keyX(col);
-      // The gap between keys belongs to whichever key is nearer, so a tap
-      // landing between two still does something.
-      if (x < left || x >= left + theme::kKeyWidth + theme::kKeyGap) {
-        continue;
+    int left = rowLeft(l, l.rows[row]);
+    for (const char* k = l.rows[row]; *k != '\0'; ++k) {
+      const int w = keyWidth(l, *k);
+      // The gap after a key belongs to it, so a tap landing between two
+      // still does something.
+      if (x >= left && x < left + w + theme::kKeyGap) {
+        if (*k == kBackspace) {
+          return services::search::backspace() ? Result::kChanged
+                                               : Result::kNone;
+        }
+        return services::search::append(*k) ? Result::kChanged : Result::kNone;
       }
-      const bool last_row = row == theme::kKeyRows - 1;
-      if (last_row && col == kBackspaceCol) {
-        return services::search::backspace() ? Result::kChanged : Result::kNone;
-      }
-      if (last_row && col == kSpaceCol) {
-        return services::search::append(' ') ? Result::kChanged : Result::kNone;
-      }
-      const char c = kKeys[row][col];
-      if (c == ' ') {
-        return Result::kNone;
-      }
-      return services::search::append(c) ? Result::kChanged : Result::kNone;
+      left += w + theme::kKeyGap;
     }
     return Result::kNone;
   }
