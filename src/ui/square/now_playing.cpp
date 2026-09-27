@@ -203,15 +203,24 @@ void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
 // These live here rather than in ui/theme.h because they are the one piece of
 // layout the two shapes genuinely do not share.
 
-/** Inset from the panel edge. Generous: this is the widest control on screen
- *  and it is used without looking. */
-constexpr int kBarInset = theme::px(24);
-constexpr int kBarY = theme::px(30);
-constexpr int kBarHeight = theme::px(10);
+/** Inset from the panel edge, the same at the sides as above it, so the bar
+ *  sits evenly in the corner. Close to the edge: it only has to be seen, not
+ *  grabbed (see volumeSwipeRegion), and every row it gives up goes to the
+ *  track text below it. */
+constexpr int kBarInset = theme::px(14);
+constexpr int kBarY = theme::px(14);
+/** Slim, and a small knob: the bar is on screen the whole time a track
+ *  plays, and it does not have to be grabbed -- a swipe anywhere in the top
+ *  half moves it -- so it only has to read as a level. About the round
+ *  build's arc and knob, which are px(7) thick and px(6) in radius. */
+constexpr int kBarHeight = theme::px(6);
 constexpr int kBarRadius = kBarHeight / 2;
 constexpr int kBarLeft = kBarInset;
 constexpr int kBarWidth = theme::kSize - 2 * kBarInset;
-constexpr int kKnobRadius = theme::px(11);
+constexpr int kKnobRadius = theme::px(7);
+/** Light grey rather than white, so the level sits behind the title instead
+ *  of competing with it across the full width of the glass. */
+constexpr uint16_t kBarFill = theme::kTextSecondary;
 
 /** The rectangle a volume repaint touches, knob included, for the present. */
 constexpr int kBarBandTop = kBarY - kKnobRadius - theme::px(2);
@@ -274,8 +283,7 @@ void drawVolumeBar(lgfx::LovyanGFX& gfx, const PlayerState& state,
   gfx.fillRoundRect(kBarLeft, kBarY, kBarWidth, kBarHeight, kBarRadius,
                     theme::kArcTrack);
 
-  const uint16_t fill =
-      state.muted ? theme::kVolumeMutedFill : theme::kVolumeFill;
+  const uint16_t fill = state.muted ? theme::kVolumeMutedFill : kBarFill;
   const int filled = static_cast<int>(kBarWidth * level + 0.5f);
   if (filled > 0) {
     gfx.fillRoundRect(kBarLeft, kBarY, filled, kBarHeight, kBarRadius, fill);
@@ -331,6 +339,18 @@ int drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
 
 // --- Text -------------------------------------------------------------------
 
+/** The round layout's text heights, raised into the room the bar gave up at
+ *  the top. The round panel keeps its artist clear of the bezel's curve; a
+ *  square has no curve, and at the round heights the block sat low, with a
+ *  wide gap under the bar and a two-line title close over the transport row.
+ *  Raised this far, the gap under the bar and the gap above the buttons come
+ *  out about even whether the title takes one line or two. */
+constexpr int kTextRaise = theme::px(10);
+constexpr int kSubtitleY = theme::kSubtitleY - kTextRaise;
+constexpr int kTitleBlockCenterY = theme::kTitleBlockCenterY - kTextRaise;
+/** The scrim's stronger ramp starts under the text, so it moves up with it. */
+constexpr int kScrimGradientTop = theme::kScrimGradientTop - kTextRaise;
+
 void drawTrackText(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   const bool has_title = state.title[0] != '\0';
   if (!has_title && state.hold_label) {
@@ -342,7 +362,7 @@ void drawTrackText(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   gfx.setTextColor(theme::kTextPrimary);
 
   const int title_width =
-      theme::usableWidthAt(theme::kTitleBlockCenterY, theme::kTextEdgeInset);
+      theme::usableWidthAt(kTitleBlockCenterY, theme::kTextEdgeInset);
 
   char lines[theme::kTitleMaxLines][text::kMaxLineLen] = {};
   const int count =
@@ -351,7 +371,7 @@ void drawTrackText(lgfx::LovyanGFX& gfx, const PlayerState& state) {
 
   // Centre the block of lines on kTitleBlockCenterY rather than growing down
   // from it, so one- and two-line titles both sit in the same optical place.
-  const int block_top = theme::kTitleBlockCenterY -
+  const int block_top = kTitleBlockCenterY -
                         ((count - 1) * theme::kTitleLineHeight) / 2;
   for (int i = 0; i < count; ++i) {
     gfx.drawString(lines[i], theme::kCenterX,
@@ -364,10 +384,10 @@ void drawTrackText(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   displayFontApplyHeight(gfx, theme::kSubtitleTextPx);
   gfx.setTextColor(theme::kTextSecondary);
   const int sub_width =
-      theme::usableWidthAt(theme::kSubtitleY, theme::kTextEdgeInset);
+      theme::usableWidthAt(kSubtitleY, theme::kTextEdgeInset);
   char subtitle[text::kMaxLineLen];
   text::ellipsize(gfx, state.subtitle, sub_width, subtitle, sizeof(subtitle));
-  gfx.drawString(subtitle, theme::kCenterX, theme::kSubtitleY);
+  gfx.drawString(subtitle, theme::kCenterX, kSubtitleY);
 }
 
 /** Backdrop when there is no art: a flat surface, so the text still reads.
@@ -392,8 +412,8 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
     // row where contrast matters most.
     ui::dim(0, 0, board::kDisplayWidth, board::kDisplayHeight,
             theme::kScrimBaseAlpha);
-    ui::dimGradient(theme::kScrimGradientTop,
-                    board::kDisplayHeight - theme::kScrimGradientTop, 0,
+    ui::dimGradient(kScrimGradientTop,
+                    board::kDisplayHeight - kScrimGradientTop, 0,
                     theme::kScrimGradientAlpha);
   } else {
     drawPlainBackdrop(gfx);
@@ -489,7 +509,7 @@ float volumeLevelPerPx() {
 bool volumeSwipeRegion(int x, int y) {
   (void)x;
   // The upper half, as on the round panel -- not the bar itself. Landing a
-  // fingertip on a 30 px bar is a precision task, and this is the control most
+  // fingertip on an 18 px bar is a precision task, and this is the control most
   // used without looking. The whole top of the screen is the target.
   return y < theme::kCenterY;
 }
