@@ -68,4 +68,9 @@ void dim(int x, int y, int w, int h, uint8_t alpha);
  *  `alpha_bottom` at row `y + h - 1`. */
 void dimGradient(int y, int h, uint8_t alpha_top, uint8_t alpha_bottom);
 
+/** As dim(), with each pixel's alpha from `mask`: `w` x `h` bytes, row-major,
+ *  laid over the frame at (x, y) in drawing coordinates. What a soft shadow
+ *  under text is made of -- the text's own shape, blurred. */
+void dimMask(int x, int y, int w, int h, const uint8_t* mask);
+
 }  // namespace ui

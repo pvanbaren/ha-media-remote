@@ -226,6 +226,30 @@ void dim(int x, int y, int w, int h, uint8_t alpha) {
   }
 }
 
+void dimMask(int x, int y, int w, int h, const uint8_t* mask) {
+  if (!s_ready || mask == nullptr || w <= 0 || h <= 0) {
+    return;
+  }
+  uint16_t* buffer = frameBuffer();
+  if (buffer == nullptr) {
+    return;
+  }
+  for (int my = 0; my < h; ++my) {
+    const int py = y + my;
+    if (py < 0 || py >= kSide) {
+      continue;
+    }
+    const uint8_t* row = mask + static_cast<size_t>(my) * w;
+    uint16_t* line = buffer + static_cast<size_t>(py) * kSide;
+    for (int mx = 0; mx < w; ++mx) {
+      const int px = x + mx;
+      if (px >= 0 && px < kSide) {
+        dimPixel(line[px], row[mx]);
+      }
+    }
+  }
+}
+
 void dimGradient(int y, int h, uint8_t alpha_top, uint8_t alpha_bottom) {
   if (!s_ready || h <= 0) {
     return;

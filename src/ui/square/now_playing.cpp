@@ -34,6 +34,7 @@
 #include "ui/cover_art.h"
 #include "ui/canvas.h"
 #include "ui/text.h"
+#include "ui/text_glow.h"
 #include "ui/theme.h"
 
 namespace ui::now_playing {
@@ -351,43 +352,72 @@ constexpr int kTitleBlockCenterY = theme::kTitleBlockCenterY - kTextRaise;
 /** The scrim's stronger ramp starts under the text, so it moves up with it. */
 constexpr int kScrimGradientTop = theme::kScrimGradientTop - kTextRaise;
 
-void drawTrackText(lgfx::LovyanGFX& gfx, const PlayerState& state) {
+/** The rows the glow covers: from above the artist to below a two-line
+ *  title, with room for the blur to spread both ways. See ui/text_glow.h. */
+constexpr int kGlowTop =
+    kSubtitleY - theme::kSubtitleTextPx / 2 - ui::glow::kMargin;
+constexpr int kGlowBottom =
+    kTitleBlockCenterY +
+    ((theme::kTitleMaxLines - 1) * theme::kTitleLineHeight) / 2 +
+    theme::kTitleTextPx / 2 + ui::glow::kMargin;
+
+/** The track text as laid out once, so the glow and the text share it. */
+struct TrackText {
+  char lines[theme::kTitleMaxLines][text::kMaxLineLen] = {};
+  int count = 0;
+  char subtitle[text::kMaxLineLen] = {};
+};
+
+/** Draw `text` onto `gfx`, `dy` rows up from where it sits on the frame. With
+ *  `mask`, everything in white, for the glow. */
+void drawTrackLines(lgfx::LGFXBase& gfx, const TrackText& text, int dy,
+                    bool mask) {
+  gfx.setTextDatum(textdatum_t::middle_center);
+  displayFontApplyHeight(gfx, theme::kTitleTextPx);
+  gfx.setTextColor(theme::kTextPrimary);
+  // Centre the block of lines on kTitleBlockCenterY rather than growing down
+  // from it, so one- and two-line titles both sit in the same optical place.
+  const int block_top = kTitleBlockCenterY -
+                        ((text.count - 1) * theme::kTitleLineHeight) / 2;
+  for (int i = 0; i < text.count; ++i) {
+    gfx.drawString(text.lines[i], theme::kCenterX,
+                   block_top + i * theme::kTitleLineHeight - dy);
+  }
+  if (text.subtitle[0] != '\0') {
+    displayFontApplyHeight(gfx, theme::kSubtitleTextPx);
+    gfx.setTextColor(mask ? theme::kTextPrimary : theme::kTextSecondary);
+    gfx.drawString(text.subtitle, theme::kCenterX, kSubtitleY - dy);
+  }
+}
+
+void drawTrackText(lgfx::LovyanGFX& gfx, const PlayerState& state,
+                   bool over_art) {
   const bool has_title = state.title[0] != '\0';
   if (!has_title && state.hold_label) {
     return;  // most likely between tracks: blank, not "Nothing playing"
   }
 
+  TrackText text;
   displayFontApplyHeight(gfx, theme::kTitleTextPx);
-  gfx.setTextDatum(textdatum_t::middle_center);
-  gfx.setTextColor(theme::kTextPrimary);
-
-  const int title_width =
-      theme::usableWidthAt(kTitleBlockCenterY, theme::kTextEdgeInset);
-
-  char lines[theme::kTitleMaxLines][text::kMaxLineLen] = {};
-  const int count =
-      text::wrap(gfx, has_title ? state.title : idleLabel(state), title_width,
-                 theme::kTitleMaxLines, lines);
-
-  // Centre the block of lines on kTitleBlockCenterY rather than growing down
-  // from it, so one- and two-line titles both sit in the same optical place.
-  const int block_top = kTitleBlockCenterY -
-                        ((count - 1) * theme::kTitleLineHeight) / 2;
-  for (int i = 0; i < count; ++i) {
-    gfx.drawString(lines[i], theme::kCenterX,
-                   block_top + i * theme::kTitleLineHeight);
+  text.count = text::wrap(
+      gfx, has_title ? state.title : idleLabel(state),
+      theme::usableWidthAt(kTitleBlockCenterY, theme::kTextEdgeInset),
+      theme::kTitleMaxLines, text.lines);
+  if (state.subtitle[0] != '\0') {
+    displayFontApplyHeight(gfx, theme::kSubtitleTextPx);
+    text::ellipsize(gfx, state.subtitle,
+                    theme::usableWidthAt(kSubtitleY, theme::kTextEdgeInset),
+                    text.subtitle, sizeof(text.subtitle));
   }
 
-  if (state.subtitle[0] == '\0') {
-    return;
+  // Only over art: on the plain backdrop there is nothing to stand out from.
+  if (over_art) {
+    if (auto* mask = ui::glow::begin(kGlowTop, kGlowBottom - kGlowTop)) {
+      drawTrackLines(*mask, text, kGlowTop, true);
+      ui::glow::apply();
+    }
   }
-  displayFontApplyHeight(gfx, theme::kSubtitleTextPx);
-  gfx.setTextColor(theme::kTextSecondary);
-  const int sub_width =
-      theme::usableWidthAt(kSubtitleY, theme::kTextEdgeInset);
-  char subtitle[text::kMaxLineLen];
-  text::ellipsize(gfx, state.subtitle, sub_width, subtitle, sizeof(subtitle));
-  gfx.drawString(subtitle, theme::kCenterX, kSubtitleY);
+  drawTrackLines(gfx, text, 0, false);
 }
 
 /** Backdrop when there is no art: a flat surface, so the text still reads.
@@ -405,8 +435,9 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   gfx.fillScreen(theme::kBackground);
   // (0, 0) is the top-left of the fit box, which is the whole panel; the
   // middle_center datum positions the art inside it.
-  if (ui::cover::hasArt() &&
-      ui::cover::draw(gfx, 0, 0, theme::kSize)) {
+  const bool over_art =
+      ui::cover::hasArt() && ui::cover::draw(gfx, 0, 0, theme::kSize);
+  if (over_art) {
     // Art is the backdrop, so everything above it needs a scrim: a flat dim
     // for the whole frame, plus a stronger ramp under the text and transport
     // row where contrast matters most.
@@ -419,7 +450,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
     drawPlainBackdrop(gfx);
   }
 
-  drawTrackText(gfx, state);
+  drawTrackText(gfx, state, over_art);
   drawElapsedChip(gfx, state);
   // Whether or not the bar is shown now: volume can become available without
   // anything else changing, and the first drag must still find the backdrop.
