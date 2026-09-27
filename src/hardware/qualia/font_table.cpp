@@ -20,9 +20,10 @@ namespace {
  *  natively at those heights rather than scaled from another set, because
  *  LovyanGFX's VLW scaler is nearest-neighbour and enlarged text shows it.
  *
- *  The 34 px face measures 35 -- the generator cannot land that one exactly --
- *  which is inside the pixel of slack display_font.cpp allows before it
- *  rescales, so it is still drawn at size 1.0.
+ *  The 38 px face measures 39, and the 23 px list face 24 -- the generator
+ *  cannot land those exactly -- which is inside the pixel of slack
+ *  display_font.cpp allows before it rescales, so both are still drawn at
+ *  size 1.0.
  *
  *  Then three more for the browse and search lists, which kListScale sets
  *  smaller still: theme::listTextPx() turns 15/17/20 into 23/26/30, the same

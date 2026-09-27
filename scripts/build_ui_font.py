@@ -18,7 +18,7 @@ Charset: ASCII plus the Latin-1 accented block and a little typography, enough
 to set Spanish, Portuguese, German and French. See CHARSET below.
 
 Usage (regenerate everything the firmware embeds):
-    python scripts/build_ui_font.py assets/fonts/NotoSans-Bold.ttf \
+    python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
         --out-dir data --heights 15,17,20,24
 
 Keep the list in step with platformio.ini's board_build.embed_files and with

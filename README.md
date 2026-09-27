@@ -388,12 +388,17 @@ Not be Found" and carries on unharmed; one USB flash gives it the new table.
 Text is anti-aliased VLW, one embedded face per pixel height the UI uses on
 that board -- LovyanGFX scales VLW nearest-neighbour, so every size is
 rendered natively rather than scaled. Regenerate from the bundled Noto Sans
-Bold:
+Regular:
 
 ```bash
-python scripts/build_ui_font.py assets/fonts/NotoSans-Bold.ttf \
+python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
     --out-dir data --heights 23,26,30,36
 ```
+
+The generator solves a whole-pixel size for each height, and four land a
+pixel high: 15, 23, 36 and 38 measure 16, 24, 37 and 39. That is inside the
+pixel `display_font.cpp` allows before it rescales, so they are still drawn
+natively.
 
 Three lists must agree for a board: `--heights`, `board_build.embed_files` in
 its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
