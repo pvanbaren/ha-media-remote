@@ -62,7 +62,7 @@ constexpr int kMaEntryParamLen =
     static_cast<int>(config::kMaConfigEntryIdMaxLen);
 
 constexpr char kMaEntryAttrs[] =
-    " placeholder=\"blank = no station list\"";
+    " placeholder=\"none - no station list\"";
 
 char s_token_attrs[96] = " type=\"password\"";
 
@@ -128,6 +128,14 @@ WiFiManagerParameter* s_param_ctl_input = nullptr;
 WiFiManagerParameter s_param_ma_entry("ma_entry",
                                       "Music Assistant config entry id", "",
                                       kMaEntryParamLen, kMaEntryAttrs);
+/** Clearing the id is this box's job, not a blank field's: a blank field
+ *  keeps the stored id, as a blank URL or token does. A form that arrived
+ *  with the field empty used to switch the station list off without a word,
+ *  and one did -- the id went missing from a device whose settings were only
+ *  being saved for something else. Same checkbox pattern as ma_forget. */
+WiFiManagerParameter s_param_ma_entry_forget(
+    "ma_entry_forget", "Forget the stored config entry id<br/>", "1", 1,
+    " type=\"checkbox\" style=\"width:auto\"", WFM_LABEL_AFTER);
 
 /** Music Assistant's own API, for "Recommended": the one thing Home Assistant
  *  does not pass through is which artists are like which. The address may be
@@ -492,6 +500,7 @@ void refreshPortalParamDefaults() {
                                           : "paste token here");
   s_param_ha_token.setValue("", kTokenParamLen);
   s_param_ma_entry.setValue(services::ha::maConfigEntry(), kMaEntryParamLen);
+  s_param_ma_entry_forget.setValue("1", 1);
   {
     // The placeholder is what a blank field means: the address derived from
     // Home Assistant's, which is what effectiveUrl() gives while none is
@@ -643,11 +652,25 @@ void onPortalParamsSaved() {
                                      kPlayerParamLen);
   }
 
-  const char* ma_entry = s_param_ma_entry.getValue();
-  if (ma_entry != nullptr &&
-      strcmp(ma_entry, services::ha::maConfigEntry()) != 0) {
+  // A new id replaces the stored one; a blank field keeps it. Only the box
+  // clears it -- the field still shows the stored id when it is ticked --
+  // and a different id typed with the box ticked is what is kept.
+  const char* ma_entry =
+      submitted("ma_entry") ? s_param_ma_entry.getValue() : nullptr;
+  const char* entry_forget = s_param_ma_entry_forget.getValue();
+  const bool typed = ma_entry != nullptr && ma_entry[0] != '\0';
+  if (typed && strcmp(ma_entry, services::ha::maConfigEntry()) != 0) {
     services::ha::saveMaConfigEntry(ma_entry);
+  } else if (entry_forget != nullptr && strcmp(entry_forget, "1") == 0) {
+    services::ha::saveMaConfigEntry("");
+  } else if (!typed && services::ha::maConfigEntry()[0] != '\0') {
+    LOG_WARN("Portal: config entry id came back blank, kept %s",
+             services::ha::maConfigEntry());
   }
+  // WiFiManager left the field and the box as they were submitted; the page
+  // is rendered from them, so put back what is stored.
+  s_param_ma_entry.setValue(services::ha::maConfigEntry(), kMaEntryParamLen);
+  s_param_ma_entry_forget.setValue("1", 1);
 
   const char* forget = s_param_ma_forget.getValue();
   if (forget != nullptr && strcmp(forget, "1") == 0) {
@@ -718,6 +741,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ha_url);
   wm.addParameter(&s_param_ha_token);
   wm.addParameter(&s_param_ma_entry);
+  wm.addParameter(&s_param_ma_entry_forget);
   wm.addParameter(&s_param_ma_url);
   wm.addParameter(&s_param_ma_token);
   wm.addParameter(&s_param_ma_forget);

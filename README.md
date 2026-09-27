@@ -256,6 +256,10 @@ Without it, now playing, the buttons and the volume all work. The list shows
 the room's history only gains artists picked on the remote, since turning a
 heard name into an artist is a search.
 
+Leaving the field blank keeps the stored id, as it does for the Home Assistant
+URL and token. **Forget the stored config entry id** -- tick and save --
+removes it.
+
 **Music Assistant URL** -- where Music Assistant's own API is. Leave it blank
 for the Home Assistant add-on: blank means Home Assistant's host on port 8095,
 and the placeholder shows the address that works out to.
