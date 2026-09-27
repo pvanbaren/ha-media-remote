@@ -338,6 +338,11 @@ Each board's build embeds only the fonts it uses and compiles only its own
 `src/hardware/<board>/` and `src/ui/<shape>/` (see
 [the code](#how-the-code-is-organised)).
 
+GitHub Actions builds all four on every push and pull request
+(`.github/workflows/build.yml`). Each run's page under **Actions** has the
+images to download: `firmware.bin` for a network update and
+`firmware-merged.bin` for a blank board.
+
 ### First install, over USB
 
 ```bash
@@ -506,6 +511,7 @@ scripts/
   board_header_stamp.py    rebuilds everything when the board header changes
   merge_firmware.py        pio run -t merge
 partitions/media_remote.csv  the flash layout, shared by every board
+.github/workflows/build.yml  CI: builds every board on each push
 ```
 
 ### Tasks
