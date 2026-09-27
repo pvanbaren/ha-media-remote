@@ -15,8 +15,9 @@ uint8_t displayRotation();
  *  An SPI controller does, in its address mode, and LovyanGFX turns its
  *  touch readings to match; everything above then works in turned
  *  coordinates without knowing. An RGB panel scans a framebuffer out in one
- *  fixed order, so there the canvas has to be drawn turned, and a touch
- *  turned back -- see ui::canvasInit() and hw::mapPoint(). */
+ *  fixed order, so there the upright frame is turned as it is copied into
+ *  that buffer (displayPresentFrame), and a touch is turned back -- see
+ *  hw::mapPoint(). Either way the canvas itself is always drawn upright. */
 bool displayRotatesItself();
 
 /** Clear the panel, cut the backlight and put the controller to sleep.
@@ -35,6 +36,9 @@ bool displayIsBlanked();
 /**
  * Put a rectangle of a composed frame on the glass.
  *
+ * The frame is upright and the rectangle is in its coordinates; a panel that
+ * does not turn the picture itself turns it here, on the way through.
+ *
  * `frame` points at the whole frame, not at the rectangle, so implementations
  * walk it with the panel width as the stride. That is what lets a caller
  * repaint a volume bar without pushing the entire screen -- which matters a
@@ -48,13 +52,15 @@ void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h);
 
 /**
  * Move rows [y, y + h) of what is on the glass by `dy` pixels, positive
- * down, without being handed a frame: the pixels are the panel's own.
+ * down, without being handed a frame: the pixels are the panel's own. In the
+ * upright frame's coordinates, like displayPresentFrame().
  *
  * Only a panel that keeps its frame somewhere the CPU can reach can do this,
  * which here means the RGB panel and its framebuffer. The SPI panels hold
  * theirs in the controller, behind a bus that only writes, and return false;
  * so does any panel that is not up. The rows the move uncovers are the
  * caller's to present. Columns [keep_x, keep_x + keep_w) are left where they
- * are.
+ * are. False, too, where the picture is turned a quarter by the copy: the
+ * rows to move are then the glass's columns.
  */
 bool displayScrollFrame(int y, int h, int dy, int keep_x = 0, int keep_w = 0);

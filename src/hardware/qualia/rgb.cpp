@@ -144,16 +144,56 @@ class Pacer {
   size_t _since = 0;
 };
 
-void copyRegion(uint16_t* dst, const uint16_t* src, const Rect& r) {
+/** Copy rectangle `r` of the upright frame `src` into `dst`, turned `turn`
+ *  quarter turns clockwise, and return the rectangle of `dst` it wrote. The
+ *  map is LovyanGFX's sprite rotation: (x, y) lands at (W-1-y, x) a quarter
+ *  turn round, (W-1-x, H-1-y) upside down, and (y, W-1-x) three quarters. */
+Rect copyRegion(uint16_t* dst, const uint16_t* src, const Rect& r,
+                uint8_t turn) {
   if (r.empty()) {
-    return;
+    return r;
   }
+  static_assert(kW == kH, "turning assumes a square panel");
   const size_t row_bytes = static_cast<size_t>(r.x1 - r.x0) * sizeof(uint16_t);
   Pacer pacer;
-  for (int row = r.y0; row < r.y1; ++row) {
-    const size_t offset = static_cast<size_t>(row) * kW + r.x0;
-    memcpy(dst + offset, src + offset, row_bytes);
-    pacer.account(row_bytes);
+  switch (turn & 3) {
+    case 2:
+      for (int row = r.y0; row < r.y1; ++row) {
+        const uint16_t* from = src + static_cast<size_t>(row) * kW;
+        uint16_t* to = dst + static_cast<size_t>(kH - 1 - row) * kW + (kW - 1);
+        for (int x = r.x0; x < r.x1; ++x) {
+          *(to - x) = from[x];
+        }
+        pacer.account(row_bytes);
+      }
+      return Rect{kW - r.x1, kH - r.y1, kW - r.x0, kH - r.y0};
+    case 1:
+      for (int row = r.y0; row < r.y1; ++row) {
+        const uint16_t* from = src + static_cast<size_t>(row) * kW;
+        uint16_t* to = dst + (kW - 1 - row);
+        for (int x = r.x0; x < r.x1; ++x) {
+          to[static_cast<size_t>(x) * kW] = from[x];
+        }
+        pacer.account(row_bytes);
+      }
+      return Rect{kW - r.y1, r.x0, kW - r.y0, r.x1};
+    case 3:
+      for (int row = r.y0; row < r.y1; ++row) {
+        const uint16_t* from = src + static_cast<size_t>(row) * kW;
+        uint16_t* to = dst + row;
+        for (int x = r.x0; x < r.x1; ++x) {
+          to[static_cast<size_t>(kW - 1 - x) * kW] = from[x];
+        }
+        pacer.account(row_bytes);
+      }
+      return Rect{r.y0, kH - r.x1, r.y1, kH - r.x0};
+    default:
+      for (int row = r.y0; row < r.y1; ++row) {
+        const size_t offset = static_cast<size_t>(row) * kW + r.x0;
+        memcpy(dst + offset, src + offset, row_bytes);
+        pacer.account(row_bytes);
+      }
+      return r;
   }
 }
 
@@ -279,7 +319,8 @@ void rgbFill(uint16_t colour) {
   flushRows(0, kH);
 }
 
-void rgbPresent(const uint16_t* src, int x, int y, int w, int h) {
+void rgbPresent(const uint16_t* src, int x, int y, int w, int h,
+                uint8_t turn) {
   if (s_fb == nullptr || src == nullptr) {
     return;
   }
@@ -290,8 +331,8 @@ void rgbPresent(const uint16_t* src, int x, int y, int w, int h) {
   if (r.empty()) {
     return;
   }
-  copyRegion(s_fb, src, r);
-  flushRows(r.y0, r.y1);
+  const Rect written = copyRegion(s_fb, src, r, turn);
+  flushRows(written.y0, written.y1);
 }
 
 bool rgbScroll(int y, int h, int dy, int keep_x, int keep_w) {

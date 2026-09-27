@@ -74,20 +74,35 @@ bool displayIsBlanked() { return s_blanked; }
 
 uint8_t displayRotation() { return s_rotation; }
 
-// The scan-out order is fixed, so the canvas is drawn turned instead.
+// The scan-out order is fixed, so the frame is turned as it is copied in.
 bool displayRotatesItself() { return false; }
 
 void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h) {
   if (!s_up) {
     return;
   }
-  hw::qualia::rgbPresent(frame, x, y, w, h);
+  hw::qualia::rgbPresent(frame, x, y, w, h, s_rotation);
 }
 
 bool displayScrollFrame(int y, int h, int dy, int keep_x, int keep_w) {
   // Nothing to move while blanked: the buffer holds black, not the frame.
   if (!s_up || s_blanked) {
     return false;
+  }
+  switch (s_rotation) {
+    case 0:
+      break;
+    case 2:
+      // Upside down: the same rows from the other end, moving the other way,
+      // and the kept columns mirrored.
+      y = board::kDisplayHeight - (y + h);
+      dy = -dy;
+      if (keep_w > 0) {
+        keep_x = board::kDisplayWidth - (keep_x + keep_w);
+      }
+      break;
+    default:
+      return false;  // a quarter turn: the rows are the glass's columns
   }
   return hw::qualia::rgbScroll(y, h, dy, keep_x, keep_w);
 }

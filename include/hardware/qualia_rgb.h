@@ -44,10 +44,17 @@ bool rgbInit();
  * a spare buffer to hide in, because every one of these rows is being read by
  * the DMA while it is written.
  *
+ * `src` is upright and the rectangle is in its coordinates. The copy turns it
+ * `turn` quarter turns clockwise onto the glass -- the screen rotation, since
+ * the scan-out order is fixed -- by the same map LovyanGFX's sprite rotation
+ * uses. Upside down costs what upright does; a quarter turn writes down the
+ * buffer's columns and costs more.
+ *
  * Returns once the rows are copied and their cache lines flushed. The panel
  * shows them whenever the scan reaches them, which may already have happened.
  */
-void rgbPresent(const uint16_t* src, int x, int y, int w, int h);
+void rgbPresent(const uint16_t* src, int x, int y, int w, int h,
+                uint8_t turn = 0);
 
 /** Flood the screen with one colour. Blanking needs this: there is no
  *  controller to put to sleep, so a dark screen means a dark framebuffer.

@@ -815,9 +815,13 @@ changed, and position alone does not.
 
 **Rotation** is below the seam. The round SPI panels turn in their own
 controller, with LovyanGFX turning the touch to match, at no cost. The Qualia
-scans out a framebuffer in a fixed order, so there the frame is drawn turned
-and every touch is turned back; at ±90° its list scroll repaints instead of
-moving rows, and the full-screen cover decode is slower than upright.
+scans out a framebuffer in a fixed order, so there the frame is drawn upright
+and turned as it is copied into the scan-out buffer (`rgbPresent()`), and every
+touch is turned back. Upside down costs nothing extra; at ±90° the copy writes
+down columns, a full present is slower, and a list scroll repaints instead of
+moving rows. The frame is not drawn into a turned LovyanGFX sprite, which is
+how it used to be done: anti-aliased text drawn that way came out with every
+other row black.
 
 ### The Qualia
 

@@ -17,11 +17,21 @@ namespace {
 
 LGFX_Sprite s_frame(&tft);
 bool s_ready = false;
-/** Quarter turns the sprite itself is drawn turned by: the display's rotation
- *  where the panel cannot turn the picture, and 0 where it can. Everything
- *  that touches the buffer directly -- a present, a scroll, a scrim -- maps
- *  its rectangle through this, because LovyanGFX only turns what it draws. */
-uint8_t s_turn = 0;
+/**
+ * The frame is always drawn upright, so drawing coordinates are the buffer's
+ * own everywhere in this file.
+ *
+ * A panel that cannot turn the picture itself -- the Qualia's RGB scan-out --
+ * turns it as the frame is copied to the glass, in displayPresentFrame(),
+ * rather than by drawing into a turned sprite. It used to be the sprite, and
+ * LovyanGFX's turned sprites get anti-aliased text wrong: drawn upside down
+ * on the Qualia, every other row of every letter came out black, which read
+ * as grey text with the gaps inside letters filled in.
+ */
+
+/** Whether the panel can move rows it already shows. Not on a quarter turn
+ *  the copy makes itself: the list's rows are then the glass's columns. */
+bool s_rows_move = true;
 
 // Turning maps rows onto columns, which only keeps a frame's shape when it is
 // square. Every panel here is.
@@ -80,10 +90,8 @@ void dimRow(uint16_t* row, int x, int w, uint8_t alpha) {
   }
 }
 
-/** Clip a rectangle in drawing coordinates to the panel, and map it into the
- *  framebuffer's own. False when nothing is left of it. The forward map of
- *  LovyanGFX's sprite rotation, applied to a rectangle rather than a pixel. */
-bool toBuffer(int& x, int& y, int& w, int& h) {
+/** Clip a rectangle to the panel. False when nothing is left of it. */
+bool clipRect(int& x, int& y, int& w, int& h) {
   if (x < 0) {
     w += x;
     x = 0;
@@ -98,32 +106,7 @@ bool toBuffer(int& x, int& y, int& w, int& h) {
   if (y + h > kSide) {
     h = kSide - y;
   }
-  if (w <= 0 || h <= 0) {
-    return false;
-  }
-  switch (s_turn) {
-    case 1: {
-      const int bx = kSide - (y + h);
-      y = x;
-      x = bx;
-      std::swap(w, h);
-      break;
-    }
-    case 2:
-      x = kSide - (x + w);
-      y = kSide - (y + h);
-      break;
-    case 3: {
-      const int by = kSide - (x + w);
-      x = y;
-      y = by;
-      std::swap(w, h);
-      break;
-    }
-    default:
-      break;
-  }
-  return true;
+  return w > 0 && h > 0;
 }
 
 uint16_t* frameBuffer() {
@@ -165,8 +148,8 @@ bool canvasInit() {
 
   // Probed unturned, so pixel (0, 0) is buffer[0].
   probeByteOrder();
-  s_turn = displayRotatesItself() ? 0 : displayRotation();
-  s_frame.setRotation(s_turn);
+  s_frame.setRotation(0);
+  s_rows_move = displayRotatesItself() || (displayRotation() & 1) == 0;
   s_frame.setTextWrap(false);
   displayFontEnsureLoaded(s_frame);
   s_ready = true;
@@ -193,7 +176,7 @@ void canvasPresentRegion(int x, int y, int w, int h) {
   if (!s_ready) {
     return;  // drawing went straight to the panel; there is nothing to push
   }
-  if (!toBuffer(x, y, w, h)) {
+  if (!clipRect(x, y, w, h)) {
     return;
   }
   ++s_panel_writes;
@@ -205,19 +188,8 @@ bool canvasScrollPanel(int y, int h, int dy, int keep_x, int keep_w) {
   if (!s_ready) {
     return false;  // drawing goes straight to the panel; there is no frame
   }
-  if (s_turn & 1) {
-    // A quarter turn puts the list's rows down the framebuffer's columns,
-    // and the move shifts rows. The caller repaints instead.
-    return false;
-  }
-  if (s_turn == 2) {
-    // Upside down: the same rows from the other end, moving the other way,
-    // and the kept columns mirrored.
-    y = kSide - (y + h);
-    dy = -dy;
-    if (keep_w > 0) {
-      keep_x = kSide - (keep_x + keep_w);
-    }
+  if (!s_rows_move) {
+    return false;  // the caller repaints instead
   }
   if (!displayScrollFrame(y, h, dy, keep_x, keep_w)) {
     return false;
@@ -228,7 +200,7 @@ bool canvasScrollPanel(int y, int h, int dy, int keep_x, int keep_w) {
 
 uint32_t canvasPanelWrites() { return s_panel_writes; }
 
-bool canvasCanScroll() { return s_ready && (s_turn & 1) == 0; }
+bool canvasCanScroll() { return s_ready && s_rows_move; }
 
 lgfx::LovyanGFX& panel() {
   // Where a small repaint goes. On a panel with a command channel that is the
@@ -242,7 +214,7 @@ lgfx::LovyanGFX& panel() {
 }
 
 void dim(int x, int y, int w, int h, uint8_t alpha) {
-  if (!s_ready || alpha == 0 || !toBuffer(x, y, w, h)) {
+  if (!s_ready || alpha == 0 || !clipRect(x, y, w, h)) {
     return;
   }
   uint16_t* buffer = frameBuffer();
@@ -275,38 +247,8 @@ void dimGradient(int y, int h, uint8_t alpha_top, uint8_t alpha_bottom) {
                                     span);
   };
 
-  if ((s_turn & 1) == 0) {
-    // The ramp runs down the framebuffer's rows: from the top unturned, from
-    // the bottom upside down.
-    for (int row = first; row < last; ++row) {
-      const int at = s_turn == 2 ? kSide - 1 - row : row;
-      dimRow(buffer + static_cast<size_t>(at) * kSide, 0, kSide, alphaAt(row));
-    }
-    return;
-  }
-
-  // A quarter turn: the drawing's rows are the buffer's columns, so the ramp
-  // runs across each buffer row. Walked row by row all the same, which is
-  // the order the memory is in; alphas are worked out once per column.
-  uint8_t alphas[kSide];
-  int col_first = 0;
-  int col_last = 0;
   for (int row = first; row < last; ++row) {
-    const int col = s_turn == 1 ? kSide - 1 - row : row;
-    alphas[col] = alphaAt(row);
-  }
-  if (s_turn == 1) {
-    col_first = kSide - last;
-    col_last = kSide - first;
-  } else {
-    col_first = first;
-    col_last = last;
-  }
-  for (int row = 0; row < kSide; ++row) {
-    uint16_t* line = buffer + static_cast<size_t>(row) * kSide;
-    for (int col = col_first; col < col_last; ++col) {
-      dimPixel(line[col], alphas[col]);
-    }
+    dimRow(buffer + static_cast<size_t>(row) * kSide, 0, kSide, alphaAt(row));
   }
 }
 
