@@ -529,7 +529,49 @@ bool submitted(const char* id) {
   return s_wm.server != nullptr && s_wm.server->hasArg(id);
 }
 
+/**
+ * The script WiFiManager puts in the head of every page it serves (it keeps
+ * the pointer, so this never moves).
+ *
+ * On the page a save answers with -- /wifisave, or /paramsave for the
+ * parameters page -- it goes back to the form after a delay, replacing the
+ * saved page in the browser's history rather than adding to it. That is the
+ * point as much as the convenience: left in history, the saved page is a
+ * reload or a Back away from asking for /wifisave again, and asked for again
+ * without the form it used to clear settings. Every other page ignores it.
+ *
+ * The delay is written in just before WiFiManager builds the saved page:
+ * config::kPortalSavedReturnMs after a save, long enough for a device that
+ * restarts to apply it to be back, and 0 for a request that brought no form,
+ * where there is nothing to read.
+ */
+char s_portal_head[240] = {};
+
+void setSavedPageReturn(unsigned long ms) {
+  snprintf(s_portal_head, sizeof(s_portal_head),
+           "<script>(function(){var p=location.pathname;"
+           "var to=p=='/wifisave'?'/wifi':p=='/paramsave'?'/param':'';"
+           "if(to)setTimeout(function(){location.replace(to);},%lu);})();"
+           "</script>",
+           ms);
+}
+
 void onPortalParamsSaved() {
+  // A save with no form behind it reaches here all the same: /wifisave or
+  // /paramsave asked for again without the fields -- a reload of the saved
+  // page, or of the error page a restart left in the browser -- and
+  // WiFiManager has read every field as blank. Nothing was asked for, so
+  // nothing is saved, and the fields it blanked are put back. It used to be
+  // taken as a save, which cleared the config entry id and the Music
+  // Assistant URL, the fields where blank is a real choice.
+  if (!submitted("dev_name") && !submitted("ha_url")) {
+    LOG_WARN("Portal: save request with no form fields, ignored");
+    refreshPortalParamDefaults();
+    setSavedPageReturn(0);  // straight back to the form: nothing was saved
+    return;
+  }
+  setSavedPageReturn(config::kPortalSavedReturnMs);
+
   char old_url[config::kHaBaseUrlMaxLen + 1];
   snprintf(old_url, sizeof(old_url), "%s", services::ha::storedBaseUrl());
   const char* token = s_param_ha_token.getValue();
@@ -788,6 +830,8 @@ void ensureWifiManager() {
   if (s_wm_configured) {
     return;
   }
+  setSavedPageReturn(config::kPortalSavedReturnMs);
+  s_wm.setCustomHeadElement(s_portal_head);
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));

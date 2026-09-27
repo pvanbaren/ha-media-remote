@@ -216,7 +216,11 @@ A few rules hold for every field:
 
 ### The fields
 
-In the order the page shows them.
+In the order the page shows them. After a save the confirmation page goes
+back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
+long enough for a setting that restarts the device to have taken effect. A
+reload of the confirmation page, or of an error page a restart left behind,
+changes nothing and goes straight back to the form.
 
 **Device name** *(restarts to apply)* -- what the device is called on the
 network: its hostname, so a router lists it by name, mDNS answers for

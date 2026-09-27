@@ -19,6 +19,10 @@ constexpr char kPortalIp[] = "192.168.4.1";
  *  host (no ".local" suffix) -- http://media-remote.local. See
  *  services::device::name(). */
 constexpr char kPortalHostname[] = "media-remote";
+/** How long the portal's "saved" page stays before going back to the form.
+ *  Long enough for a device that restarts to apply a setting -- rotation, or
+ *  its name -- to be answering again when the form reloads. */
+constexpr unsigned long kPortalSavedReturnMs = 15000;
 
 /** Per-attempt STA connect wait (ms); retried kWifiConnectAttempts times. */
 constexpr unsigned long kWifiConnectAttemptMs = 15000;
