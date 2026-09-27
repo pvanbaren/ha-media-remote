@@ -31,6 +31,11 @@ constexpr char kPrefsSelectedKey[] = "sel";
 constexpr char kPrefsMaEntryKey[] = "maid";
 constexpr char kPrefsControlKey[] = "ctl";
 constexpr char kPrefsControlInputKey[] = "ctlin";
+/** The player's wake volume in percent: -1 off, 0..100 on. Absent until the
+ *  portal first saves one, which is what lets the build's default stand. */
+constexpr char kPrefsWakeVolumeKey[] = "wakevol";
+/** Read back when nothing is stored. */
+constexpr int32_t kWakeVolumeUnset = -2;
 
 // Records come back from the template API delimited by ASCII unit (\037) and
 // record (\036) separators rather than tabs or newlines, so a track title
@@ -135,6 +140,8 @@ char s_base_url[config::kHaBaseUrlMaxLen + 1] = {};
 char s_token[config::kHaTokenMaxLen + 1] = {};
 char s_selected[config::kEntityIdMaxLen] = {};
 char s_ma_entry[config::kMaConfigEntryIdMaxLen + 1] = {};
+/** -1 off, 0..100 percent; see playerWakeVolume(). */
+int s_wake_volume_pct = -1;
 /** Empty means "whatever is playing also carries the volume and the power",
  *  which is the ordinary case; controlEntity() resolves that. */
 char s_control[config::kEntityIdMaxLen] = {};
@@ -841,7 +848,17 @@ void init() {
   prefs.getString(kPrefsControlKey, s_control, sizeof(s_control));
   prefs.getString(kPrefsControlInputKey, s_control_input,
                   sizeof(s_control_input));
+  const int32_t wake = prefs.getInt(kPrefsWakeVolumeKey, kWakeVolumeUnset);
   prefs.end();
+
+  if (wake == kWakeVolumeUnset) {
+    s_wake_volume_pct =
+        config::kPlayerWakeVolume >= 0.0f
+            ? static_cast<int>(config::kPlayerWakeVolume * 100.0f + 0.5f)
+            : -1;
+  } else {
+    s_wake_volume_pct = wake >= 0 && wake <= 100 ? static_cast<int>(wake) : -1;
+  }
 
   if (s_selected[0] == '\0' && config::kDefaultPlayerEntityId[0] != '\0') {
     // Held in RAM only, not written back: a device that has never been through
@@ -1228,6 +1245,27 @@ void selectControlInput(const char* input) {
   LOG_INFO("HA: player's input on the volume device: %s",
                 s_control_input[0] != '\0' ? s_control_input
                                             : "the one named after it");
+}
+
+float playerWakeVolume() {
+  return s_wake_volume_pct >= 0 ? s_wake_volume_pct / 100.0f : -1.0f;
+}
+
+int playerWakeVolumePercent() { return s_wake_volume_pct; }
+
+void savePlayerWakeVolumePercent(int percent) {
+  s_wake_volume_pct = percent >= 0 && percent <= 100 ? percent : -1;
+  Preferences prefs;
+  if (!prefs.begin(kPrefsNamespace, false)) {
+    return;
+  }
+  prefs.putInt(kPrefsWakeVolumeKey, s_wake_volume_pct);
+  prefs.end();
+  if (s_wake_volume_pct >= 0) {
+    LOG_INFO("HA: player volume on wake: %d%%", s_wake_volume_pct);
+  } else {
+    LOG_INFO("HA: player volume on wake: left alone");
+  }
 }
 
 int fetchSources(const char* entity_id, char (*out)[config::kSourceNameMaxLen],

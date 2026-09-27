@@ -481,7 +481,8 @@ bool playerIsActive(PlaybackState playback) {
  *  Two things, and they belong together because they are two halves of the
  *  same handoff. The amplifier is switched on, because nothing the player does
  *  is audible until it is. And the *player's* own volume is pinned to
- *  config::kPlayerWakeVolume, because with the real knob elsewhere that value
+ *  services::ha::playerWakeVolume() -- the portal's setting, or
+ *  config::kPlayerWakeVolume until one is saved -- because with the real knob elsewhere that value
  *  is a source gain rather than a volume, and leaving it wherever it drifted
  *  means the amplifier's setting stops meaning the same thing session to
  *  session.
@@ -511,10 +512,10 @@ void handlePlayerWake(PlaybackState before, PlaybackState now) {
   LOG_INFO("HA: %s woke from standby", player);
   powerOnControl();
 
-  if (config::kPlayerWakeVolume >= 0.0f) {
-    LOG_INFO("HA: pinning %s to %.2f", player,
-                  config::kPlayerWakeVolume);
-    services::ha::setVolume(player, config::kPlayerWakeVolume);
+  const float wake_volume = services::ha::playerWakeVolume();
+  if (wake_volume >= 0.0f) {
+    LOG_INFO("HA: pinning %s to %.2f", player, wake_volume);
+    services::ha::setVolume(player, wake_volume);
   }
 }
 

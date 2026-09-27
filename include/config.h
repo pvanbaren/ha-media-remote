@@ -286,10 +286,16 @@ constexpr bool kHaKeepAlive = true;
  *  way up makes the amplifier's setting mean something from one session to the
  *  next.
  *
- *  0.70 rather than 1.00 because a little headroom costs nothing audible and
- *  leaves room for a player that applies replaygain above unity. Negative
- *  disables it. */
-constexpr float kPlayerWakeVolume = 0.70f;
+ *  Off by default: whether a player's gain wants pinning, and where, depends
+ *  on the player and the amplifier, and a volume changed on its own when
+ *  playback starts is a surprise to anyone who did not ask for it. The
+ *  portal's "Player volume on wake" field, shown when the volume device is a
+ *  separate one, turns it on at a level of its own -- 70% is a sensible one:
+ *  a little headroom costs nothing audible and leaves room for a player that
+ *  applies replaygain above unity. A reset of the Home Assistant settings
+ *  comes back here. Negative is off; 0..1 would pin every device that has not
+ *  been through the portal. */
+constexpr float kPlayerWakeVolume = -1.0f;
 
 constexpr uint16_t kHaHttpTimeoutMs = 6000;
 

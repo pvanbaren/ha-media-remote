@@ -161,6 +161,14 @@ void selectControlEntity(const char* entity_id);
  *  empty means the input named after the player, where there is one. */
 const char* storedControlInput();
 void selectControlInput(const char* input);
+/** The player's own volume, 0..1, set when it wakes from standby while a
+ *  separate entity carries volume and power; negative when that is off. What
+ *  the portal stored, or config::kPlayerWakeVolume until it has stored one. */
+float playerWakeVolume();
+/** The same as a whole percent for the portal: 0..100, or -1 for off. */
+int playerWakeVolumePercent();
+/** Store `percent`, 0..100, or -1 to turn the pin off. */
+void savePlayerWakeVolumePercent(int percent);
 /** Every input `entity_id` lists (source_list), for the portal. Returns the
  *  count, or -1 on failure. */
 int fetchSources(const char* entity_id,

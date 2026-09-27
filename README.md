@@ -300,6 +300,14 @@ zone amplifier lists its players; a receiver needs the input chosen here.
 Changing **Volume & power** keeps it when the new device has an input by the
 same name, and clears it otherwise.
 
+**Player volume on wake** *(only with a separate volume device)* -- the level,
+in percent, the *player's* own volume is set to each time it wakes from
+standby; blank, the default, leaves it alone (`config::kPlayerWakeVolume`).
+70 is a sensible level to try. With the real knob on the amplifier, the
+player's volume is the gain on the signal it hands over, and pinning it keeps
+the amplifier's setting meaning the same thing from one session to the next;
+see [Powering the volume device](#powering-the-volume-device).
+
 ### What a reset clears
 
 Holding **BOOT** for three seconds -- the **DOWN** button on the Qualia, whose
@@ -309,7 +317,7 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Setting | BOOT held | Erase WiFi config |
 |---|---|---|
 | Wi-Fi network | cleared | cleared |
-| Home Assistant URL, token, player, volume device, input, Music Assistant entry id | cleared | kept |
+| Home Assistant URL, token, player, volume device, input, player volume on wake, Music Assistant entry id | cleared | kept |
 | Music Assistant URL and token | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
 | The room's history | kept | kept |
@@ -666,7 +674,8 @@ the source. `kSelectControlSource` turns this off.
 
 **When the player wakes from standby** -- idle, off, unavailable or unknown
 becoming playing or paused -- the volume device is switched on, and the
-*player's* volume is pinned to `kPlayerWakeVolume` (0.70). With a separate
+*player's* volume is pinned to the portal's **Player volume on wake**, if a
+level is set there; by default it is left alone. With a separate
 amplifier the player's `volume_level` is the gain on the signal it hands over;
 left to drift, a quiet source gets the amplifier turned up and the next
 correctly-set track is deafening. Only when the volume device is separate,

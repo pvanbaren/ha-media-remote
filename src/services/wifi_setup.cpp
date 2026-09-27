@@ -4,6 +4,7 @@
 #include <WiFiManager.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <Preferences.h>
@@ -413,6 +414,48 @@ bool listsInput(const char* entity_id, const char* input) {
   return false;
 }
 
+/**
+ * "Player volume on wake": the level the player's own volume is set to when
+ * it wakes from standby, in percent, blank for off (see handlePlayerWake()).
+ *
+ * Shown only while a separate entity carries volume and power. The pin is
+ * for that setup -- the player's volume is then a source gain, and the knob
+ * is the amplifier's -- and with one entity the level last chosen is the one
+ * wanted back, so the pin does nothing and neither should the field. Hidden
+ * rather than left out, label and line break too, because a field WiFiManager
+ * was given cannot be taken back; it still submits the stored value, which
+ * saves as no change.
+ *
+ * The label and the attributes are buffers WiFiManager keeps pointers to,
+ * rewritten in place to show or hide it.
+ */
+char s_wake_label[112] = {};
+char s_wake_attrs[112] = {};
+WiFiManagerParameter* s_param_wake = nullptr;
+constexpr int kWakeParamLen = 3;
+
+void refreshWakeVolumeField() {
+  if (services::ha::controlIsSeparate()) {
+    snprintf(s_wake_label, sizeof(s_wake_label),
+             "Player volume on wake, %% (blank = leave it alone)");
+    snprintf(s_wake_attrs, sizeof(s_wake_attrs),
+             " type=\"number\" min=\"0\" max=\"100\" step=\"1\" "
+             "placeholder=\"off\"");
+  } else {
+    snprintf(s_wake_label, sizeof(s_wake_label),
+             "<style>label[for=wake_vol]+br{display:none}</style>");
+    snprintf(s_wake_attrs, sizeof(s_wake_attrs), " type=\"hidden\"");
+  }
+  if (s_param_wake != nullptr) {
+    char value[kWakeParamLen + 1] = {};
+    const int pct = services::ha::playerWakeVolumePercent();
+    if (pct >= 0) {
+      snprintf(value, sizeof(value), "%d", pct);
+    }
+    s_param_wake->setValue(value, kWakeParamLen);
+  }
+}
+
 void buildInputSelect() {
   const char* stored = services::ha::storedControlInput();
   String html;
@@ -471,12 +514,20 @@ void buildInputSelect() {
   if (s_param_ctl_input != nullptr) {
     s_param_ctl_input->setValue(
         stored, static_cast<int>(config::kSourceNameMaxLen) - 1);
+    refreshWakeVolumeField();
     return;
   }
   s_param_ctl_input = new WiFiManagerParameter(
       "ctl_input", "Player's input on the volume device", stored,
       static_cast<int>(config::kSourceNameMaxLen) - 1, s_input_attrs);
   s_wm.addParameter(s_param_ctl_input);
+  // Registered here, the first time the input dropdown is, so it sits just
+  // under it on the page.
+  refreshWakeVolumeField();
+  s_param_wake = new WiFiManagerParameter("wake_vol", s_wake_label, "",
+                                          kWakeParamLen, s_wake_attrs);
+  s_wm.addParameter(s_param_wake);
+  refreshWakeVolumeField();
 }
 
 void buildPlayerSelects() {
@@ -637,6 +688,28 @@ void onPortalParamsSaved() {
     if (input != nullptr &&
         strcmp(input, services::ha::storedControlInput()) != 0) {
       services::ha::selectControlInput(input);
+    }
+  }
+
+  // Player volume on wake: blank is off, a whole number 0..100 the level.
+  // Anything else keeps what is stored rather than guessing.
+  if (s_param_wake != nullptr && submitted("wake_vol")) {
+    const char* raw = s_param_wake->getValue();
+    int pct = -2;
+    if (raw == nullptr || raw[0] == '\0') {
+      pct = -1;
+    } else {
+      char* end = nullptr;
+      const long v = strtol(raw, &end, 10);
+      if (end != raw && *end == '\0' && v >= 0 && v <= 100) {
+        pct = static_cast<int>(v);
+      }
+    }
+    if (pct == -2) {
+      LOG_WARN("Portal: player volume on wake \"%s\" is not 0-100, kept",
+               raw);
+    } else if (pct != services::ha::playerWakeVolumePercent()) {
+      services::ha::savePlayerWakeVolumePercent(pct);
     }
   }
 
