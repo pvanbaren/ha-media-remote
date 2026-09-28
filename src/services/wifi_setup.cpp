@@ -1000,10 +1000,19 @@ void logLinkQuality() {
  * answer it: that is what this device hears from the access point, and the
  * access point was never the quiet end. A link lopsided that way reads as a
  * strong signal and drops packets anyway.
+ *
+ * Every channel is scanned before joining, and the strongest access point
+ * with the network's name is the one joined. The core's default is a fast
+ * scan, which joins the first match it comes to -- in a house with more
+ * than one access point, whichever answers first on the lowest channel,
+ * however far away. The full scan costs a second or two at connect.
  */
 void prepareSta() {
-  WiFi.setTxPower(WIFI_POWER_11dBm);
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.mode(WIFI_STA);
+  // After mode(): the core refuses it before the station runs.
+  WiFi.setTxPower(WIFI_POWER_11dBm);
   WiFi.setSleep(WIFI_PS_NONE);
   WiFi.setAutoReconnect(true);
 }
