@@ -494,9 +494,20 @@ Input poll(Screen screen, const PlayerState* state) {
     // worth taking as "someone is here", which waking above already did.
     return out;
   }
+  if (screen == Screen::kStatus) {
+    // Nothing on it to press: any tap or swipe goes back.
+    if (report.event != hw::TouchEvent::kNone) {
+      out.intent = Intent::kBackToNowPlaying;
+    }
+    return out;
+  }
 
   if (report.event == hw::TouchEvent::kSwipeUp) {
     out.intent = Intent::kOpenBrowse;
+    return out;
+  }
+  if (report.event == hw::TouchEvent::kSwipeDown) {
+    out.intent = Intent::kOpenStatus;
     return out;
   }
   if (report.event != hw::TouchEvent::kTap) {
@@ -530,6 +541,8 @@ void showBrowse() {
   s_list_velocity = 0.0f;
   browse_list::draw();
 }
+
+void showStatus(const DeviceStatus& status) { statusScreenDevice(status); }
 
 void showSearch() {
   hw::touchCancel();

@@ -1354,6 +1354,21 @@ bool wifiShowsSetupScreenOnBoot() {
 
 bool wifiBootButtonPressed() { return hw::bootButtonPressed(); }
 
+void wifiLinkStatus(WifiLinkStatus& out) {
+  out = WifiLinkStatus{};
+  out.connected = wifiLinkUp();
+  if (!out.connected) {
+    return;
+  }
+  snprintf(out.ssid, sizeof(out.ssid), "%s", WiFi.SSID().c_str());
+  snprintf(out.ip, sizeof(out.ip), "%s", WiFi.localIP().toString().c_str());
+  out.channel = WiFi.channel();
+  out.rssi = WiFi.RSSI();
+  int8_t tx_quarter_dbm = 0;
+  esp_wifi_get_max_tx_power(&tx_quarter_dbm);
+  out.tx_dbm = tx_quarter_dbm / 4.0f;
+}
+
 void wifiSetObserver(const WifiObserver& observer) {
   s_observer = observer;
 }

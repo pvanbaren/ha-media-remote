@@ -130,7 +130,10 @@ constexpr char kStateTemplateFmt[] =
     // since that is what the room is hearing.
     "{{state_attr(m,'media_artist') or ''}}\037"
     "{{state_attr(m,'media_content_id') or ''}}\037"
-    "{{m if m != e else ''}}\036";
+    "{{m if m != e else ''}}\037"
+    // Both configured entities by name, for the status page.
+    "{{state_attr(e,'friendly_name') or e}}\037"
+    "{{state_attr(c,'friendly_name') or c}}\036";
 
 // Every input on one entity, for the portal's dropdown.
 constexpr char kSourcesTemplateFmt[] =
@@ -1066,6 +1069,8 @@ void parseState(const String& body, PlayerState& out) {
   const String artist = nextField(body, pos);
   const String track = nextField(body, pos);
   const String media_entity = nextField(body, pos);
+  const String player_name = nextField(body, pos);
+  const String control_name = nextField(body, pos);
 
   out = PlayerState{};
   out.playback = parsePlaybackState(state);
@@ -1088,6 +1093,8 @@ void parseState(const String& body, PlayerState& out) {
   copyField(out.artist, sizeof(out.artist), artist);
   copyField(out.track, sizeof(out.track), track);
   copyField(out.media_entity, sizeof(out.media_entity), media_entity);
+  copyField(out.player_name, sizeof(out.player_name), player_name);
+  copyField(out.control_name, sizeof(out.control_name), control_name);
 
   // media_position is a snapshot taken at media_position_updated_at; the
   // template reports how stale that is so the bar starts in the right place.

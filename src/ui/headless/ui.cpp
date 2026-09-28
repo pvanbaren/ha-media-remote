@@ -72,6 +72,13 @@ void showNowPlaying(const services::ha::PlayerState& state) {
 
 void showBrowse() { say("browse list"); }
 void showSearch() { say("search"); }
+void showStatus(const DeviceStatus& s) {
+  say("status: %s, player %s%s%s%s%s, %s up %lu s, %s ch %d, %d dBm, "
+      "tx %.1f dBm",
+      s.hostname, s.player, s.control[0] ? ", volume " : "", s.control,
+      s.input[0] ? ", input " : "", s.input, s.ip,
+      s.uptime_s, s.ssid, s.channel, s.rssi, s.tx_dbm);
+}
 void showSearchResults() { say("search results"); }
 void showSearching() { say("searching..."); }
 void showLoadingList() { say("loading library"); }

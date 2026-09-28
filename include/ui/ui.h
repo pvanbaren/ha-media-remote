@@ -36,6 +36,7 @@ enum class Screen : uint8_t {
   kNowPlaying,
   kBrowse,      // the library list
   kSearch,      // artist search, reached from the list
+  kStatus,      // the device's own status, a swipe down from now playing
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -52,6 +53,7 @@ enum class Intent : uint8_t {
   kRunSearch,         // the typed query is in services::search
   kPlaySearchResult,  // `index` is a result
   kWokeFromTouch,     // a tap landed on a blanked panel and only woke it
+  kOpenStatus,
 };
 
 struct Input {
@@ -82,6 +84,27 @@ void showNowPlaying(const services::ha::PlayerState& state);
 void showBrowse();
 /** The artist search, on an empty query. */
 void showSearch();
+
+/** What the status page shows. The app gathers it, the display lays it out. */
+struct DeviceStatus {
+  const char* hostname = "";
+  bool connected = false;
+  const char* ip = "";
+  unsigned long uptime_s = 0;
+  const char* ssid = "";
+  int channel = 0;
+  int rssi = 0;
+  float tx_dbm = 0.0f;
+  /** The media player's name; empty when none is chosen. */
+  const char* player = "";
+  /** The Volume & power device's name, empty when that is the player. */
+  const char* control = "";
+  /** The player's input on that device as chosen in the portal; empty when it
+   *  is the input named after the player. Shown in the player's place. */
+  const char* input = "";
+};
+/** The status page, or its next refresh: it is redrawn whole each time. */
+void showStatus(const DeviceStatus& status);
 /** Results for whatever services::search now holds. */
 void showSearchResults();
 /** A frame before a blocking call, so the panel does not simply stop. */

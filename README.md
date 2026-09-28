@@ -130,6 +130,32 @@ the top.
 the query kept, so a near miss can be edited), then the keyboard to the list.
 A tap on the results that misses every result does the same.
 
+### The status page
+
+**Swipe down** on now playing for the remote's own details:
+
+```
+living-room
+Living Room Speaker
+Living Room Receiver
+192.168.1.40
+Up 2h 13m
+HomeNet (ch 6)
+Rx -61 dBm
+Tx 11.0 dBm
+```
+
+Under the remote's name are the player and, when Volume & power is a separate
+device, that device, both by their names in Home Assistant. When the player's
+input on that device is chosen in the portal, the input takes the player's
+line. Then come the address, the time since the remote started, the Wi-Fi
+network and its channel, the signal the remote hears (**Rx**) and the power it
+transmits with (**Tx**).
+
+The page refreshes every second. Any tap or swipe goes back to now playing,
+and it goes back by itself after a minute untouched (`kListIdleReturnMs`), as
+the list does.
+
 ### Status cards
 
 When there is nothing to play yet, a card says why:
@@ -167,6 +193,8 @@ the same time. Details in
 | Now playing | Tap a transport button | Previous / play-pause / next |
 | Now playing | Swipe sideways, top half | Volume |
 | Now playing | Swipe up | Open the list |
+| Now playing | Swipe down | Open the status page |
+| Status page | Tap or swipe | Back to now playing |
 | List | Drag up / down | Scroll; it glides on release |
 | List | Tap a row | Play it |
 | List | Tap the title strip, or swipe right | Back to now playing |
@@ -962,7 +990,8 @@ which shows as lost pings and stalled updates while the signal looks fine --
 and **Scan for access points** lists every access point in range, strongest
 first, with the one it joined marked. The device scans every channel before
 joining and takes the strongest access point with the network's name, rather
-than the first one it finds.
+than the first one it finds. The [status page](#the-status-page) shows the
+same two numbers, Rx and Tx, on the remote itself.
 
 The status card has room for one line, so the serial log is the place to
 look:

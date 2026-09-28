@@ -49,6 +49,30 @@ void drawCentredLine(lgfx::LovyanGFX& gfx, const char* str, int y, int text_px,
   gfx.drawString(line, ui::theme::kCenterX, y);
 }
 
+/** One "label value" line, centred as a pair: the label grey, the value
+ *  white, the value ellipsised to what the chord at `y` leaves it. An empty
+ *  label leaves the value alone on its line. */
+void drawPairLine(lgfx::LovyanGFX& gfx, const char* label, const char* value,
+                  int y, int text_px) {
+  if (label[0] == '\0') {
+    drawCentredLine(gfx, value, y, text_px, ui::theme::kTextPrimary);
+    return;
+  }
+  displayFontApplyHeight(gfx, text_px);
+  gfx.setTextDatum(textdatum_t::middle_left);
+  const int gap = gfx.textWidth(" ");
+  const int label_w = gfx.textWidth(label);
+  const int room = ui::theme::usableWidthAt(y, ui::theme::kTextEdgeInset);
+  char shown[ui::text::kMaxLineLen];
+  ui::text::ellipsize(gfx, value, room - label_w - gap, shown, sizeof(shown));
+  const int total = label_w + gap + gfx.textWidth(shown);
+  const int x = ui::theme::kCenterX - total / 2;
+  gfx.setTextColor(ui::theme::kTextMuted);
+  gfx.drawString(label, x, y);
+  gfx.setTextColor(ui::theme::kTextPrimary);
+  gfx.drawString(shown, x + label_w + gap, y);
+}
+
 void resetSpinner() {
   s_spinner_angle_deg = -90.0f;
   s_spinner_head = 0;
@@ -100,6 +124,80 @@ void statusScreenMessage(const char* title, const char* line1,
   if (line2 != nullptr && line2[0] != '\0') {
     y += gap + body_h / 2;
     drawCentredLine(gfx, line2, y, ui::theme::kStatusBodyTextPx, foreground);
+  }
+
+  ui::canvasPresent();
+}
+
+void statusScreenDevice(const ui::DeviceStatus& status) {
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  displayFontEnsureLoaded(gfx);
+  gfx.fillScreen(ui::theme::kBackground);
+
+  char up[24];
+  const unsigned long s = status.uptime_s;
+  if (s >= 86400UL) {
+    snprintf(up, sizeof(up), "%lud %luh %lum", s / 86400UL, s / 3600UL % 24UL,
+             s / 60UL % 60UL);
+  } else if (s >= 3600UL) {
+    snprintf(up, sizeof(up), "%luh %lum", s / 3600UL, s / 60UL % 60UL);
+  } else {
+    snprintf(up, sizeof(up), "%lum %lus", s / 60UL, s % 60UL);
+  }
+  // The channel rides on the network's line rather than taking one of its
+  // own: with a separate volume device there are eight lines under the name,
+  // and the 240 px circle has room for about that many.
+  char wifi[48];
+  char signal[16];
+  char tx[16];
+  snprintf(wifi, sizeof(wifi), "%s (ch %d)", status.ssid, status.channel);
+  snprintf(signal, sizeof(signal), "%d dBm", status.rssi);
+  snprintf(tx, sizeof(tx), "%.1f dBm", status.tx_dbm);
+
+  struct Pair {
+    const char* label;
+    const char* value;
+  };
+  Pair pairs[8];
+  int n = 0;
+  // What it controls first, then the device and its link. With a separate
+  // volume device and an input chosen for the player, the input is what the
+  // room is switched to, so it takes the player's line; the input named
+  // after the player needs no line of its own. The names, the input, the
+  // address and the network say what they are, so they go unlabelled.
+  if (status.control[0] != '\0' && status.input[0] != '\0') {
+    pairs[n++] = {"", status.input};
+  } else {
+    pairs[n++] = {"", status.player[0] != '\0' ? status.player : "No player"};
+  }
+  if (status.control[0] != '\0') {
+    pairs[n++] = {"", status.control};
+  }
+  if (status.connected) {
+    pairs[n++] = {"", status.ip};
+    pairs[n++] = {"Up", up};
+    pairs[n++] = {"", wifi};
+    pairs[n++] = {"Rx", signal};
+    pairs[n++] = {"Tx", tx};
+  } else {
+    pairs[n++] = {"Up", up};
+    pairs[n++] = {"", "No Wi-Fi"};
+  }
+
+  // The name and the lines under it, stacked around the centre, as the
+  // cards are: the block sits in the same optical place however many lines
+  // it has.
+  const int title_h = ui::theme::textPx(30);
+  const int line_h = ui::theme::textPx(22);
+  const int total = title_h + ui::theme::kStatusLineGap + n * line_h;
+  int y = ui::theme::kCenterY - total / 2 + title_h / 2;
+  drawCentredLine(gfx, status.hostname, y, ui::theme::kStatusTitleTextPx,
+                  ui::theme::kTextPrimary);
+  y += title_h / 2 + ui::theme::kStatusLineGap + line_h / 2;
+  for (int i = 0; i < n; ++i) {
+    drawPairLine(gfx, pairs[i].label, pairs[i].value, y,
+                 ui::theme::kStatusBodyTextPx);
+    y += line_h;
   }
 
   ui::canvasPresent();

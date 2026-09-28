@@ -37,6 +37,19 @@ bool wifiReconnect();
 /** Keeps the LAN config portal alive; call every loop() iteration. */
 void wifiLoop();
 
+/** The station link as it is now, for the status page. */
+struct WifiLinkStatus {
+  bool connected = false;
+  char ssid[33] = {};
+  char ip[16] = {};
+  int channel = 0;
+  /** What this device hears from the access point, dBm. */
+  int rssi = 0;
+  /** What it transmits with, dBm. */
+  float tx_dbm = 0.0f;
+};
+void wifiLinkStatus(WifiLinkStatus& out);
+
 /** GPIO setup; call once early in setup(). Touch is the primary input, so
  *  BOOT exists only as the escape hatch that clears Wi-Fi and HA settings. */
 void bootButtonInit();

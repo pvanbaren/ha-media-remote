@@ -26,6 +26,7 @@
 #include "config.h"
 #include "log.h"
 #include "services/browse.h"
+#include "services/device_name.h"
 #include "services/display_settings.h"
 #include "services/history.h"
 #include "services/ma_api.h"
@@ -602,6 +603,62 @@ void openBrowse() {
   g_list_opened_ms = millis();
 }
 
+/** When the status page was last drawn, for its once-a-second refresh.
+ *  Loop only. */
+unsigned long g_status_drawn_ms = 0;
+
+/** Draw the status page from what the device and its link say now. */
+void drawStatus() {
+  WifiLinkStatus link;
+  wifiLinkStatus(link);
+  ui::DeviceStatus status;
+  status.hostname = services::device::name();
+  status.connected = link.connected;
+  status.ip = link.ip;
+  status.uptime_s = millis() / 1000UL;
+  status.ssid = link.ssid;
+  status.channel = link.channel;
+  status.rssi = link.rssi;
+  status.tx_dbm = link.tx_dbm;
+  // The media player, and where they differ the Volume & power device and
+  // the player's input on it as chosen in the portal -- empty for the input
+  // named after the player. By their names in Home Assistant, from the last
+  // state; the entity ids until there is one.
+  char player[config::kEntityIdMaxLen];
+  char control[config::kEntityIdMaxLen];
+  services::ha::copySelectedEntity(player, sizeof(player));
+  services::ha::copyControlEntity(control, sizeof(control));
+  PlayerState state;
+  const bool named = snapshotState(state);
+  status.player = named && state.player_name[0] != '\0'
+                      ? state.player_name
+                      : services::ha::entityLabel(player);
+  if (services::ha::controlIsSeparate()) {
+    status.control = named && state.control_name[0] != '\0'
+                         ? state.control_name
+                         : services::ha::entityLabel(control);
+    status.input = services::ha::storedControlInput();
+  }
+  ui::showStatus(status);
+  g_status_drawn_ms = millis();
+}
+
+/** Open the status page, a swipe down from now playing: the device's name,
+ *  address, uptime and Wi-Fi link, on the device itself. */
+void openStatus() {
+  g_screen = Screen::kStatus;
+  drawStatus();
+  g_list_opened_ms = millis();
+}
+
+/** Once a second while it is showing: uptime and signal both move. */
+void handleStatusRefresh() {
+  if (g_screen == Screen::kStatus && !ui::isBlanked() &&
+      millis() - g_status_drawn_ms >= 1000UL) {
+    drawStatus();
+  }
+}
+
 /** Go back to now playing from a list or search screen nobody is using.
  *
  *  Measured from the later of the last touch and the screen opening, so the
@@ -609,7 +666,8 @@ void openBrowse() {
  *  must not be sent straight back. */
 void handleListTimeout() {
   if (config::kListIdleReturnMs == 0 ||
-      (g_screen != Screen::kBrowse && g_screen != Screen::kSearch)) {
+      (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
+       g_screen != Screen::kStatus)) {
     return;
   }
   unsigned long since = ui::lastInteractionMs();
@@ -620,7 +678,9 @@ void handleListTimeout() {
     return;
   }
   LOG_DEBUG("UI: %s untouched for %lu s, back to now playing",
-                g_screen == Screen::kBrowse ? "list" : "search",
+                g_screen == Screen::kBrowse   ? "list"
+                : g_screen == Screen::kSearch ? "search"
+                                              : "status",
                 config::kListIdleReturnMs / 1000);
   showNowPlaying();
 }
@@ -802,6 +862,10 @@ void handleInput() {
 
     case Intent::kOpenSearch:
       openSearch();
+      break;
+
+    case Intent::kOpenStatus:
+      openStatus();
       break;
 
     case Intent::kBackToNowPlaying:
@@ -1106,9 +1170,10 @@ void loop() {
     // Waiting on this track's cover, briefly: nothing drawn this pass.
   } else if (g_state_dirty && !ui::isBlanked()) {
     g_state_dirty = false;
-    // Neither the list nor the search screen may be replaced by a poll
-    // landing underneath someone who is reading or typing.
-    if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch) {
+    // Neither the list, the search nor the status page may be replaced by a
+    // poll landing underneath someone who is reading or typing.
+    if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
+        g_screen != Screen::kStatus) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");
@@ -1130,6 +1195,7 @@ void loop() {
   // Thumbnails are fetched on artwork's own worker; this only queues what the
   // screen wants and repaints when some of it has arrived.
   ui::idleWork(g_screen);
+  handleStatusRefresh();
 
   if (!ui::isBlanked() && g_screen == Screen::kNowPlaying &&
       !g_volume_dragging && millis() - g_last_elapsed_ms >= 1000) {

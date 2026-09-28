@@ -74,6 +74,10 @@ struct PlayerState {
    *  features, artist) is that entity's, and play/pause and skip go to it.
    *  Empty when it is the player. */
   char media_entity[config::kEntityIdMaxLen] = {};
+  /** The friendly names of the player and of the volume/power entity -- the
+   *  configured ones, whatever the room is hearing -- for the status page. */
+  char player_name[config::kFriendlyNameMaxLen] = {};
+  char control_name[config::kFriendlyNameMaxLen] = {};
   /** Set by the app, not the server: there has been no title for less than
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */

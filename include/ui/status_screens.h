@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "ui/ui.h"
+
 /** Full-screen messages shown before -- or instead of -- the remote UI.
  *
  *  These compose into ui::canvas() and present, exactly like every other
@@ -27,6 +29,10 @@ void statusScreenNeedsHaSetup();
 void statusScreenHaUnreachable(const char* detail);
 /** Connected and configured, but no media_player has been chosen. */
 void statusScreenNoPlayer();
+
+/** The status page: the device's name, what it controls, then its address,
+ *  uptime and link. */
+void statusScreenDevice(const ui::DeviceStatus& status);
 
 /** Generic centred card, used by the screens above. */
 void statusScreenMessage(const char* title, const char* line1,
