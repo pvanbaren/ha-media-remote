@@ -42,6 +42,8 @@ void notify(void (*fn)()) {
  *  handle. */
 constexpr char kWifiPrefsNamespace[] = "wifi";
 constexpr char kPrefsForcePortalKey[] = "portal";
+/** The portal's Wi-Fi transmit power, quarter dBm. Absent until one is saved. */
+constexpr char kPrefsTxPowerKey[] = "txpow";
 
 bool s_force_config_portal = false;
 WiFiManager s_wm;
@@ -242,6 +244,110 @@ void buildKeyboardSelect() {
            "<option value=\"1\"%s>QWERTY</option></select",
            qwerty ? "" : " selected", qwerty ? " selected" : "");
   s_param_keyboard.setValue(qwerty ? "1" : "0", 2);
+}
+
+/**
+ * Wi-Fi transmit power, chosen in the portal: the steps offered, in the
+ * quarter-dBm units esp_wifi_set_max_tx_power() takes.
+ *
+ * Low by default (config::kWifiTxPowerQuarterDbm, 11 dBm). Raising it is for a
+ * remote far from its access point: there the device can hear the access
+ * point well enough while the access point cannot hear the device -- pings
+ * lost, updates stalling -- and /link shows both ends. Applied as soon as it
+ * is saved, and cleared by a reset, so a setting too low to reconnect with
+ * can always be undone.
+ */
+struct TxPowerStep {
+  int8_t quarter_dbm;
+  const char* label;
+};
+constexpr TxPowerStep kTxPowerSteps[] = {
+    {78, "19.5 dBm (the most)"}, {68, "17 dBm"}, {60, "15 dBm"},
+    {52, "13 dBm"},              {44, "11 dBm"}, {34, "8.5 dBm"},
+};
+
+bool validTxPower(int quarter_dbm) {
+  for (const TxPowerStep& step : kTxPowerSteps) {
+    if (step.quarter_dbm == quarter_dbm) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int8_t s_tx_power = config::kWifiTxPowerQuarterDbm;
+bool s_tx_power_loaded = false;
+
+int8_t txPower() {
+  if (!s_tx_power_loaded) {
+    s_tx_power_loaded = true;
+    Preferences prefs;
+    if (prefs.begin(kWifiPrefsNamespace, true)) {
+      const int8_t stored =
+          prefs.getChar(kPrefsTxPowerKey, config::kWifiTxPowerQuarterDbm);
+      prefs.end();
+      if (validTxPower(stored)) {
+        s_tx_power = stored;
+      }
+    }
+  }
+  return s_tx_power;
+}
+
+/** Only takes once the station or the access point is running; before that
+ *  the core refuses it. */
+void applyTxPower() { WiFi.setTxPower(static_cast<wifi_power_t>(txPower())); }
+
+void saveTxPower(int8_t quarter_dbm) {
+  s_tx_power = quarter_dbm;
+  s_tx_power_loaded = true;
+  Preferences prefs;
+  if (prefs.begin(kWifiPrefsNamespace, false)) {
+    prefs.putChar(kPrefsTxPowerKey, quarter_dbm);
+    prefs.end();
+  }
+  LOG_WARN("WiFi: transmit power %.1f dBm", quarter_dbm / 4.0f);
+}
+
+void clearTxPower() {
+  s_tx_power = config::kWifiTxPowerQuarterDbm;
+  s_tx_power_loaded = true;
+  Preferences prefs;
+  if (prefs.begin(kWifiPrefsNamespace, false)) {
+    prefs.remove(kPrefsTxPowerKey);
+    prefs.end();
+  }
+}
+
+/** A dropdown over a hidden input, like the rotation's. */
+char s_txpow_attrs[640] = " type=\"hidden\"";
+WiFiManagerParameter s_param_txpow("txpow", "Wi-Fi transmit power", "44", 3,
+                                   s_txpow_attrs);
+
+void buildTxPowerSelect() {
+  const int8_t current = txPower();
+  int n = snprintf(s_txpow_attrs, sizeof(s_txpow_attrs),
+                   " type=\"hidden\"><select id=\"txpow_sel\" "
+                   "onchange='document.getElementById(\"txpow\")"
+                   ".value=this.value'>");
+  for (const TxPowerStep& step : kTxPowerSteps) {
+    if (n <= 0 || static_cast<size_t>(n) >= sizeof(s_txpow_attrs)) {
+      break;
+    }
+    n += snprintf(s_txpow_attrs + n, sizeof(s_txpow_attrs) - n,
+                  "<option value=\"%d\"%s>%s%s</option>",
+                  static_cast<int>(step.quarter_dbm),
+                  step.quarter_dbm == current ? " selected" : "", step.label,
+                  step.quarter_dbm == config::kWifiTxPowerQuarterDbm
+                      ? " - the default"
+                      : "");
+  }
+  if (n > 0 && static_cast<size_t>(n) < sizeof(s_txpow_attrs)) {
+    snprintf(s_txpow_attrs + n, sizeof(s_txpow_attrs) - n, "</select");
+  }
+  char value[4];
+  snprintf(value, sizeof(value), "%d", static_cast<int>(current));
+  s_param_txpow.setValue(value, 3);
 }
 
 /** Rough worst case per option: entity_id, escaped name and the markup. */
@@ -569,6 +675,7 @@ void refreshPortalParamDefaults() {
   refreshMaTokenField();
   buildRotationSelect();
   buildKeyboardSelect();
+  buildTxPowerSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
            config::kPortalHostname);
@@ -765,6 +872,18 @@ void onPortalParamsSaved() {
   }
   buildKeyboardSelect();  // the choice just saved, marked
 
+  const char* txpow = submitted("txpow") ? s_param_txpow.getValue() : nullptr;
+  if (txpow != nullptr && txpow[0] != '\0') {
+    char* end = nullptr;
+    const long chosen = strtol(txpow, &end, 10);
+    if (end != txpow && *end == '\0' && validTxPower(static_cast<int>(chosen)) &&
+        chosen != txPower()) {
+      saveTxPower(static_cast<int8_t>(chosen));
+      applyTxPower();  // no restart: the radio takes it as it runs
+    }
+  }
+  buildTxPowerSelect();  // the choice just saved, marked
+
   const char* rotation = s_param_rotation.getValue();
   if (rotation != nullptr && rotation[0] >= '0' && rotation[0] <= '3' &&
       rotation[1] == '\0') {
@@ -809,7 +928,10 @@ void attachPortalParams(WiFiManager& wm) {
   refreshPortalParamDefaults();
   // The two entity dropdowns register themselves from buildEntitySelect(),
   // whenever the list first becomes available. The page lists fields in the
-  // order they are added: the device's own name first, then what it talks to.
+  // order they are added: the transmit power first, straight under the
+  // network and its password it belongs with, then the device's own name,
+  // then what it talks to.
+  wm.addParameter(&s_param_txpow);
   wm.addParameter(&s_param_device_name);
   wm.addParameter(&s_param_ha_url);
   wm.addParameter(&s_param_ha_token);
@@ -897,13 +1019,14 @@ void resetWifiCredentials() {
   eraseWifiCredentials();
   services::ha::clearCredentials();
   services::ma::clear();
+  clearTxPower();  // a power too low to reconnect with must not survive
   LOG_INFO("WiFi credentials and Home Assistant settings cleared");
 }
 
 void onConfigPortalApStarted(WiFiManager*) {
   // Matched to the station path below, so the portal is reachable from
   // wherever the device will actually sit.
-  WiFi.setTxPower(WIFI_POWER_11dBm);
+  applyTxPower();
   notify(s_observer.portalStarted);
 #ifdef WM_MDNS
   if (MDNS.begin(services::device::name())) {
@@ -923,12 +1046,103 @@ bool wifiLinkUp() {
          WiFi.localIP() != IPAddress(0, 0, 0, 0);
 }
 
+/**
+ * /link: how this device's Wi-Fi link is doing, readable where the remote
+ * actually lives rather than on a serial console at a desk.
+ *
+ * The signal it hears and the power it answers with, side by side, because a
+ * link can be strong one way and weak the other (see prepareSta()). With
+ * ?scan=1 it also lists every access point in range, strongest first, the
+ * one joined marked -- which says whether a nearer one was there to be had.
+ * The scan is on request only: it takes a few seconds, and the screen waits
+ * for it.
+ */
+void handleLinkPage() {
+  auto& server = *s_wm.server;
+  const bool scan = server.hasArg("scan");
+
+  String page;
+  page.reserve(2048);
+  page += "<!DOCTYPE html><html><head><meta name='viewport' "
+          "content='width=device-width,initial-scale=1'><title>";
+  appendHtmlEscaped(page, services::device::name());
+  page += " - Wi-Fi link</title></head><body style='font-family:verdana'>"
+          "<h3>Wi-Fi link</h3><pre>";
+
+  char line[160];
+  if (wifiLinkUp()) {
+    int8_t tx_quarter_dbm = 0;
+    esp_wifi_get_max_tx_power(&tx_quarter_dbm);
+    page += "Network       ";
+    appendHtmlEscaped(page, WiFi.SSID().c_str());
+    snprintf(line, sizeof(line),
+             "\nAccess point  %s, channel %d\n"
+             "Signal        %d dBm  (what this device hears)\n"
+             "Transmit      %.1f dBm  (what it answers with)\n",
+             WiFi.BSSIDstr().c_str(), static_cast<int>(WiFi.channel()),
+             static_cast<int>(WiFi.RSSI()), tx_quarter_dbm / 4.0f);
+    page += line;
+  } else {
+    page += "Not connected\n";
+  }
+  snprintf(line, sizeof(line), "Up            %lu s\n", millis() / 1000UL);
+  page += line;
+  page += "</pre>";
+
+  if (scan) {
+    const int n = WiFi.scanNetworks(false, false);
+    if (n < 0) {
+      page += "<p>Scan failed.</p>";
+    } else {
+      // Strongest first; the core does not promise an order.
+      int order[64];
+      const int count = n < 64 ? n : 64;
+      for (int i = 0; i < count; ++i) {
+        order[i] = i;
+      }
+      for (int i = 1; i < count; ++i) {
+        for (int j = i; j > 0 && WiFi.RSSI(order[j]) > WiFi.RSSI(order[j - 1]);
+             --j) {
+          const int t = order[j];
+          order[j] = order[j - 1];
+          order[j - 1] = t;
+        }
+      }
+      const String joined = wifiLinkUp() ? WiFi.BSSIDstr() : String();
+      snprintf(line, sizeof(line),
+               "<h3>In range: %d</h3><pre>   signal  ch  access point        "
+               "network\n",
+               n);
+      page += line;
+      for (int k = 0; k < count; ++k) {
+        const int i = order[k];
+        const String bssid = WiFi.BSSIDstr(i);
+        snprintf(line, sizeof(line), "%s %4d dBm %3d  %s  ",
+                 bssid == joined ? "*" : " ", static_cast<int>(WiFi.RSSI(i)),
+                 static_cast<int>(WiFi.channel(i)), bssid.c_str());
+        page += line;
+        appendHtmlEscaped(page, WiFi.SSID(i).c_str());
+        page += "\n";
+      }
+      page += "</pre><p>* the access point this device is on</p>";
+      WiFi.scanDelete();
+    }
+  }
+  page += "<p><a href='/link?scan=1'>Scan for access points</a> (a few "
+          "seconds) &middot; <a href='/link'>Refresh</a> &middot; "
+          "<a href='/'>Menu</a></p></body></html>";
+  server.send(200, "text/html", page);
+}
+
 void ensureWifiManager() {
   if (s_wm_configured) {
     return;
   }
   setSavedPageReturn(config::kPortalSavedReturnMs);
   s_wm.setCustomHeadElement(s_portal_head);
+  // Pages of the firmware's own, registered as WiFiManager builds its web
+  // server, alongside its pages.
+  s_wm.setWebServerCallback([] { s_wm.server->on("/link", handleLinkPage); });
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));
@@ -983,7 +1197,8 @@ void logLinkQuality() {
 }
 
 /**
- * Transmit at 11 dBm.
+ * Transmit at the portal's "Wi-Fi transmit power", 11 dBm until one is chosen
+ * (config::kWifiTxPowerQuarterDbm). Why the default is low:
  *
  * Above the 8.5 dBm this started at, and well below the 19.5 dBm an
  * ESP32-S3 is specified for. The low end was costing packets: on the Qualia
@@ -999,7 +1214,8 @@ void logLinkQuality() {
  * code, which is what logLinkQuality() above is for. RSSI alone will not
  * answer it: that is what this device hears from the access point, and the
  * access point was never the quiet end. A link lopsided that way reads as a
- * strong signal and drops packets anyway.
+ * strong signal and drops packets anyway. The portal's /link page shows the
+ * signal and the power in force, and the access points in range.
  *
  * Every channel is scanned before joining, and the strongest access point
  * with the network's name is the one joined. The core's default is a fast
@@ -1011,8 +1227,7 @@ void prepareSta() {
   WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.mode(WIFI_STA);
-  // After mode(): the core refuses it before the station runs.
-  WiFi.setTxPower(WIFI_POWER_11dBm);
+  applyTxPower();  // after mode(): the core refuses it before the station runs
   WiFi.setSleep(WIFI_PS_NONE);
   WiFi.setAutoReconnect(true);
 }

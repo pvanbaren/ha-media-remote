@@ -222,6 +222,14 @@ long enough for a setting that restarts the device to have taken effect. A
 reload of the confirmation page, or of an error page a restart left behind,
 changes nothing and goes straight back to the form.
 
+**Wi-Fi transmit power** -- straight under the network and its password. 11
+dBm unless changed, well below the 19.5 dBm the chip can do. Raise it for a
+remote far from its access point: there the device can hear the access point
+while the access point struggles to hear it back, which shows as lost pings
+and stalled updates with a signal that looks fine. `/link` shows both ends
+(see [Troubleshooting](#troubleshooting)). It takes effect as soon as it is
+saved.
+
 **Device name** *(restarts to apply)* -- what the device is called on the
 network: its hostname, so a router lists it by name, mDNS answers for
 **`<name>.local`**, and the portal's heading carries it. Default
@@ -319,6 +327,7 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Wi-Fi network | cleared | cleared |
 | Home Assistant URL, token, player, volume device, input, player volume on wake, Music Assistant entry id | cleared | kept |
 | Music Assistant URL and token | cleared | kept |
+| Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
 | The room's history | kept | kept |
 
@@ -945,6 +954,15 @@ to the header rebuilt nothing.
 ---
 
 ## Troubleshooting
+
+**A weak or dropping Wi-Fi link** is easiest to judge where the remote lives:
+open `http://<name>.local/link`. It shows the signal the device hears and the
+power it transmits with -- a link can be strong one way and weak the other,
+which shows as lost pings and stalled updates while the signal looks fine --
+and **Scan for access points** lists every access point in range, strongest
+first, with the one it joined marked. The device scans every channel before
+joining and takes the strongest access point with the network's name, rather
+than the first one it finds.
 
 The status card has room for one line, so the serial log is the place to
 look:

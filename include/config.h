@@ -28,6 +28,11 @@ constexpr unsigned long kPortalSavedReturnMs = 15000;
 constexpr unsigned long kWifiConnectAttemptMs = 15000;
 constexpr uint8_t kWifiConnectAttempts = 3;
 constexpr unsigned long kWifiPortalTimeoutSec = 0;  // 0 = no timeout while configuring
+/** Wi-Fi transmit power until one is chosen in the portal, in the quarter-dBm
+ *  steps esp_wifi uses: 44 is 11 dBm. Well below the 19.5 dBm the ESP32-S3
+ *  can do; see prepareSta() in wifi_setup.cpp for why, and the portal's
+ *  "Wi-Fi transmit power" for a remote that is far from its access point. */
+constexpr int8_t kWifiTxPowerQuarterDbm = 44;
 constexpr unsigned long kWifiConnectingFrameMs = 50;
 /** Wait after disconnect before reconnecting (avoids portal on brief drops). */
 constexpr unsigned long kWifiDownGraceMs = 4000;
