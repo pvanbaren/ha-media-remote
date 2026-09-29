@@ -28,9 +28,9 @@ jobs:
         env: [headless, waveshare-s3, round360-s3, qualia-720]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -40,7 +40,7 @@ jobs:
       # cache allowance. A new platformio.ini (a platform bump, a library
       # change) starts a fresh one.
       - name: Cache PlatformIO packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.platformio
           key: platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
@@ -56,7 +56,7 @@ jobs:
         if: matrix.env != 'headless'
         run: pio run -e ${{ matrix.env }} -t merge
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: firmware-${{ matrix.env }}
           path: |
