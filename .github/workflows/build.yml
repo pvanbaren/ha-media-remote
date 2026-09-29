@@ -4,6 +4,10 @@
 # flashed that day; this is the check that all four still compile. Each
 # run's firmware is downloadable from its page under Actions:
 # firmware.bin for a network update, firmware-merged.bin for a blank board.
+#
+# Pushing a v* tag also drafts a GitHub release with every board's images
+# attached, named for the board. The draft takes its notes from the tag's
+# message; check it and publish it by hand.
 
 name: Build
 
@@ -63,3 +67,42 @@ jobs:
             .pio/build/${{ matrix.env }}/firmware.bin
             .pio/build/${{ matrix.env }}/firmware-merged.bin
           if-no-files-found: error
+
+  release:
+    name: Draft the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # For the tag's message, which a shallow checkout leaves behind.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Only the boards with a panel: headless is for development.
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: firmware-*-*
+          path: artifacts
+
+      # Every board's images are firmware.bin and firmware-merged.bin; on a
+      # release they sit side by side, so each takes its board's name.
+      - name: Name the images for their boards
+        run: |
+          mkdir release
+          for dir in artifacts/firmware-*; do
+            env="${dir#artifacts/firmware-}"
+            cp "$dir/firmware.bin" "release/firmware-$env.bin"
+            cp "$dir/firmware-merged.bin" "release/firmware-$env-merged.bin"
+          done
+          ls -l release
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" release/*
+          --draft --verify-tag --notes-from-tag
+          --title "$GITHUB_REF_NAME"
