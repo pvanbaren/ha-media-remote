@@ -81,6 +81,10 @@ Details worth knowing:
   track change often passes through a second or so with no title. The screen
   only says "Nothing playing", "Idle", "Paused" and so on once there has been
   no title for three seconds (`kUntitledLabelDelayMs`).
+- **An app that does not say what it is playing is titled with its name.**
+  A Roku reports the show only on its TV tuner; in Apple TV, Netflix and the
+  rest Home Assistant has the app's name and nothing more, so the title reads
+  "Apple TV" while it plays or is paused, rather than "Nothing playing".
 - **The title and the cover arrive together** when the cover is quick: a
   track change's repaint waits up to a second (`kCoverArtHoldMs`) for its art.
   A slow one shows the title over a plain backdrop, and the art drops in when

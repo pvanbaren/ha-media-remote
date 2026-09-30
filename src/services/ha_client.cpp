@@ -108,10 +108,18 @@ constexpr char kStateTemplateFmt[] =
     "{%% set m = sp if sp else (c if other and "
     "states(c) in ['playing','paused'] and state_attr(c,'entity_picture') "
     "else e) %%}"
+    // An app that says what it is but not what it is playing -- a Roku does
+    // that for every app but its TV tuner -- is titled with its own name
+    // while it plays, rather than as nothing playing, and the name is then
+    // not repeated underneath.
+    "{%% set mt = state_attr(m,'media_title') or '' %%}"
+    "{%% set an = state_attr(m,'app_name') or '' %%}"
+    "{%% set at = an if not mt and states(m) in ['playing','paused'] "
+    "else '' %%}"
     "{{states(m)}}\037"
-    "{{state_attr(m,'media_title') or ''}}\037"
+    "{{mt or at}}\037"
     "{{state_attr(m,'media_artist') or state_attr(m,'media_album_name') or "
-    "state_attr(m,'media_series_title') or state_attr(m,'app_name') or ''}}\037"
+    "state_attr(m,'media_series_title') or ('' if at else an)}}\037"
     "{{state_attr(m,'entity_picture') or ''}}\037"
     "{{state_attr(m,'supported_features')|int(0)}}\037"
     "{{(state_attr(m,'media_duration') or 0)|float(0)|round(1)}}\037"
