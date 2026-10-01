@@ -31,6 +31,7 @@
 #include "services/ha_link.h"
 #include "services/history.h"
 #include "services/ma_api.h"
+#include "services/player_list.h"
 #include "services/recommend.h"
 #include "services/ha_client.h"
 #include "services/search.h"
@@ -284,6 +285,8 @@ void showNeedsHa() {
   }
 }
 
+void openPlayers();
+
 void showNowPlaying() {
   if (!services::ha::configured()) {
     LOG_INFO("UI: now playing skipped, Home Assistant not configured");
@@ -293,8 +296,9 @@ void showNowPlaying() {
   }
   if (services::ha::selectedEntity()[0] == '\0') {
     LOG_INFO("UI: now playing skipped, no player selected");
-    ui::showNoPlayer();
-    showMessageScreen();
+    if (g_screen != Screen::kPlayers) {
+      openPlayers();
+    }
     return;
   }
 
@@ -661,17 +665,45 @@ void handleListTimeout() {
   showNowPlaying();
 }
 
-/** No player is selected, and the device cannot choose one: the picker lives
- *  in the setup portal now. Say where to go and keep rechecking -- the portal
- *  stores the choice in NVS, and handleMessageRecheck() notices within a
- *  couple of seconds without a reboot. */
+/** No player is selected: the list of players to choose one from, once Home
+ *  Assistant is linked, or the card that says how to link it. The portal can
+ *  still choose one too; handleMessageRecheck() notices that within a couple
+ *  of seconds. */
 void showNeedsPlayer() {
   if (!services::ha::configured()) {
     showNeedsHa();
+    showMessageScreen();
   } else {
-    ui::showNoPlayer();
+    openPlayers();
   }
+}
+
+/** Fetch Home Assistant's media players and show them to choose from. The
+ *  fetch blocks for a round trip, so a card goes up first. */
+void openPlayers() {
+  ui::showLoading("players");
+  const bool fetched = services::players::refresh();
+  g_screen = Screen::kPlayers;
+  ui::showPlayers(fetched || services::players::entryCount() > 0
+                      ? ""
+                      : "Could not load players");
+  g_list_opened_ms = millis();
+}
+
+/** A player tapped on the list: store it, as the portal would, and start
+ *  following it. */
+void choosePlayer() {
+  char entity[config::kEntityIdMaxLen];
+  snprintf(entity, sizeof(entity), "%s", ui::playerChosen());
+  if (entity[0] == '\0') {
+    return;
+  }
+  services::ha::selectEntity(entity);
+  ui::clearArtwork();
+  LOG_INFO("Player selected on the device: %s", entity);
+  ui::showLoading(services::ha::entityLabel(entity));
   showMessageScreen();
+  g_poll_now = true;
 }
 
 
@@ -779,11 +811,23 @@ void handleWifiState() {
 /** Re-evaluate a status card periodically: the settings it complains about can
  *  be fixed from the LAN portal while it is on screen. */
 void handleMessageRecheck() {
-  if (g_screen != Screen::kMessage ||
+  if ((g_screen != Screen::kMessage && g_screen != Screen::kPlayers) ||
       millis() - g_message_recheck_ms < 2000) {
     return;
   }
   g_message_recheck_ms = millis();
+
+  // The player list is up and the portal has chosen one meanwhile: on to it,
+  // as a tap on the list would have.
+  if (g_screen == Screen::kPlayers) {
+    if (services::ha::selectedEntity()[0] != '\0') {
+      ui::showLoading(
+          services::ha::entityLabel(services::ha::selectedEntity()));
+      showMessageScreen();
+      g_poll_now = true;
+    }
+    return;
+  }
 
   if (!services::ha::configured() || WiFi.status() != WL_CONNECTED) {
     return;
@@ -909,6 +953,9 @@ void handleWifiIntent(const ui::Input& in) {
       // card is about Home Assistant, and a tap there does nothing.
       if (wifiPortalActive() || WiFi.status() != WL_CONNECTED) {
         openWifi(nullptr);
+      } else if (services::ha::configured() &&
+                 services::ha::selectedEntity()[0] == '\0') {
+        openPlayers();  // a card left up while there is no player
       }
       break;
     case Intent::kOpenWifi:
@@ -1026,6 +1073,14 @@ void handleInput() {
       ui::clearArtwork();
       powerOnControl();
       startPlaying(services::search::play(in.index));
+      break;
+
+    case Intent::kChoosePlayer:
+      choosePlayer();
+      break;
+
+    case Intent::kPlayersRefresh:
+      openPlayers();
       break;
 
     case Intent::kTapCard:
@@ -1311,7 +1366,8 @@ void loop() {
     // Neither the list, the search nor the status page may be replaced by a
     // poll landing underneath someone who is reading or typing.
     if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
-        g_screen != Screen::kStatus && g_screen != Screen::kWifi) {
+        g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
+        g_screen != Screen::kPlayers) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");

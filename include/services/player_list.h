@@ -5,11 +5,10 @@
 /**
  * Cached list of the instance's media_player entities.
  *
- * This is not a screen. The player is chosen in the **setup portal**, not on
- * the device: a dropdown in a browser is a better list than forty rows on a
- * 240 px circle, and it is reachable when the panel is not. The list lives
- * here so the portal can render it, and so a page reload does not re-ask Home
- * Assistant for something that changes on the order of never.
+ * Two readers: the setup portal's dropdown, and the list the device shows
+ * when no player has been chosen yet (ui/player_pick.h). Cached so a page
+ * reload does not re-ask Home Assistant for something that changes on the
+ * order of never.
  */
 namespace services::players {
 

@@ -89,6 +89,11 @@ void showWifiNetworks(const WifiNetwork*, int count) {
 // Nothing is ever chosen without a screen to choose on.
 const char* wifiChosenSsid() { return ""; }
 const char* wifiPassword() { return ""; }
+void showPlayers(const char* note) {
+  say("choose a player%s%s", note[0] ? ": " : "", note);
+}
+// Nothing is ever chosen without a screen to choose on.
+const char* playerChosen() { return ""; }
 void showSearchResults() { say("search results"); }
 void showSearching() { say("searching..."); }
 void showLoadingList() { say("loading library"); }

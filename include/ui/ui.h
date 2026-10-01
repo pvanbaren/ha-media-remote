@@ -39,6 +39,7 @@ enum class Screen : uint8_t {
   kSearch,      // artist search, reached from the list
   kStatus,      // the device's own status, a swipe down from now playing
   kWifi,        // choosing a Wi-Fi network and typing its password
+  kPlayers,     // choosing the media player, when none is chosen
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -61,6 +62,8 @@ enum class Intent : uint8_t {
   kWifiRescan,        // scan again
   kWifiJoin,          // join wifiChoice()'s network
   kWifiLeave,         // back out of the network list
+  kChoosePlayer,      // store playerChosen() as the media player
+  kPlayersRefresh,    // fetch the player list again
 };
 
 struct Input {
@@ -120,6 +123,12 @@ void showWifiNetworks(const WifiNetwork* networks, int count);
 /** The network chosen and the password typed for it ("" for an open one). */
 const char* wifiChosenSsid();
 const char* wifiPassword();
+
+/** The media players services::players holds, to choose one from, with
+ *  `note` in place of the title when it is not empty. */
+void showPlayers(const char* note);
+/** The entity id of the player tapped. */
+const char* playerChosen();
 
 /** Results for whatever services::search now holds. */
 void showSearchResults();

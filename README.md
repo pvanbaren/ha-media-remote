@@ -199,7 +199,7 @@ When there is nothing to play yet, a card says why:
 | **Link to HA** | Wi-Fi works and Home Assistant has not been found; set its URL and token in the portal |
 | **Scan to link** -- a QR code | Home Assistant found; scan the code and sign in to link the remote |
 | **Home Assistant** -- not reachable | Requests are failing; the last line is the reason |
-| **No player** -- Choose one at `<name>.local` | No media player chosen; choose one in the portal |
+| **Choose a player** -- a list | Linked, but no media player chosen; tap one, or choose it in the portal |
 | **Reset** | Settings are being cleared (BOOT held) |
 
 Cards are not interactive. Everything they complain about is fixed in the
@@ -232,6 +232,7 @@ wakes the screen leave it alone. Details in
 | Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
 | Wi-Fi networks | Tap a network | Join it, or type its password |
 | Wi-Fi networks | Swipe right | Back one step |
+| Player list | Drag up / down, then tap a player | Choose it; the last row fetches the list again |
 | List | Drag up / down | Scroll; it glides on release |
 | List | Tap a row | Play it |
 | List | Tap the title strip, or swipe right | Back to now playing |
@@ -300,7 +301,8 @@ beneath it. A URL already typed into the portal is used instead of looking.
    fills in the **Music Assistant config entry id** if that is blank, and
    stores the URL and the token.
 
-The player is then the only thing left to choose, in the portal. The token
+The player is then the only thing left to choose: the remote lists Home
+Assistant's media players, and a tap chooses one. The token
 is listed in Home Assistant under your profile → **Security** →
 **Long-lived access tokens**; deleting it there unlinks the remote.
 
@@ -397,8 +399,10 @@ search opens.
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the
 device connect, and reload the page. Until a player is chosen the screen
-shows **No player** and the dropdown reads *Choose a player…*; a build of
-your own can name a default in `config::kDefaultPlayerEntityId`.
+lists Home Assistant's media players by name, unavailable ones greyed, and a
+tap on one chooses it, just as the dropdown does; the dropdown reads *Choose
+a player…* meanwhile. A build of your own can name a default in
+`config::kDefaultPlayerEntityId`.
 
 **Volume & power** -- the entity that carries the volume and is switched on
 and off, when that is not the player itself: a Music Assistant player

@@ -17,6 +17,7 @@
 #include "ui/canvas.h"
 #include "ui/cover_art.h"
 #include "ui/now_playing.h"
+#include "ui/player_pick.h"
 #include "ui/search.h"
 #include "ui/status_screens.h"
 #include "ui/theme.h"
@@ -89,6 +90,9 @@ constexpr ScrollableList kSearchResults{search::scrollByPx,
 constexpr ScrollableList kWifiNetworks{wifi_join::scrollByPx,
                                        wifi_join::atScrollLimit,
                                        wifi_join::draw};
+constexpr ScrollableList kPlayerList{player_pick::scrollByPx,
+                                     player_pick::atScrollLimit,
+                                     player_pick::draw};
 
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
@@ -339,6 +343,8 @@ void driveListScrolling(Screen screen) {
     driveList(kSearchResults, search::showingResults());
   } else if (screen == Screen::kWifi) {
     driveList(kWifiNetworks, wifi_join::onList());
+  } else if (screen == Screen::kPlayers) {
+    driveList(kPlayerList, true);
   } else {
     driveList(kBrowseList, false);
   }
@@ -488,6 +494,25 @@ Input wifiTouch(const hw::TouchReport& report) {
   return out;
 }
 
+Input playersTouch(const hw::TouchReport& report) {
+  Input out;
+  // Nothing to back out to: with no player there is nothing else to show.
+  if (report.event != hw::TouchEvent::kTap || !listTapAllowed(report)) {
+    return out;
+  }
+  switch (player_pick::handleTap(report.x, report.y)) {
+    case player_pick::Result::kChosen:
+      out.intent = Intent::kChoosePlayer;
+      break;
+    case player_pick::Result::kRefresh:
+      out.intent = Intent::kPlayersRefresh;
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
 }  // namespace
 
 bool init(uint8_t rotation) {
@@ -533,6 +558,9 @@ Input poll(Screen screen, const PlayerState* state) {
   }
   if (screen == Screen::kWifi) {
     return wifiTouch(report);
+  }
+  if (screen == Screen::kPlayers) {
+    return playersTouch(report);
   }
   if (screen == Screen::kMessage) {
     // Most of what the cards complain about is fixed in the portal, and the
@@ -610,6 +638,16 @@ void showWifiNetworks(const WifiNetwork* networks, int count) {
     wifi_join::draw();
   }
 }
+
+void showPlayers(const char* note) {
+  hw::touchCancel();
+  player_pick::open(note);
+  s_list_dragging = false;
+  s_list_velocity = 0.0f;
+  player_pick::draw();
+}
+
+const char* playerChosen() { return player_pick::chosenEntity(); }
 
 const char* wifiChosenSsid() { return wifi_join::chosenSsid(); }
 
