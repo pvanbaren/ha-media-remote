@@ -252,8 +252,11 @@ A few rules hold for every field:
 In the order the page shows them. After a save the confirmation page goes
 back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
 long enough for a setting that restarts the device to have taken effect. A
-reload of the confirmation page, or of an error page a restart left behind,
-changes nothing and goes straight back to the form.
+save is only acted on when the request carries the form, which includes a
+hidden field for the purpose: a request to `/wifisave` or `/paramsave`
+without it -- a reload of the confirmation page, a Back to it, or a reload
+of an error page a restart left behind -- changes nothing and goes straight
+back to the form.
 
 **Wi-Fi transmit power** -- straight under the network and its password. 11
 dBm unless changed, well below the 19.5 dBm the chip can do. Raise it for a

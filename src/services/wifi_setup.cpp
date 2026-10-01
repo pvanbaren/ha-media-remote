@@ -46,13 +46,38 @@ constexpr char kPrefsForcePortalKey[] = "portal";
 constexpr char kPrefsTxPowerKey[] = "txpow";
 
 bool s_force_config_portal = false;
-WiFiManager s_wm;
+
+/** WiFiManager with its two save handlers reachable, so the routes can be
+ *  claimed ahead of it and handed on (see claimSaveRoutes()). */
+class PortalWiFiManager : public WiFiManager {
+ public:
+  using WiFiManager::handleParamSave;
+  using WiFiManager::handleWifiSave;
+};
+
+PortalWiFiManager s_wm;
 bool s_wm_configured = false;
 
 void ensureWifiManager();
 void startLanWebPortal();
 void stopLanWebPortal();
 bool wifiLinkUp();
+
+// Names the hidden field that marks a request as carrying the portal's form.
+// A macro so the rendered HTML and the lookup cannot drift apart; undefined
+// again once both have used it.
+#define PORTAL_FORM_MARKER "mr_form"
+
+constexpr char kPortalFormMarker[] = PORTAL_FORM_MARKER;
+
+/** Hidden field proving a save request came from the portal's form, so a
+ *  request without one is turned away rather than read as every field
+ *  blank. On both forms: WiFiManager puts the parameters on the Wi-Fi page
+ *  too, and saves them from /wifisave as well as /paramsave. */
+WiFiManagerParameter s_param_form_marker(
+    "<input type=\"hidden\" name=\"" PORTAL_FORM_MARKER "\" value=\"1\">");
+
+#undef PORTAL_FORM_MARKER
 
 constexpr int kUrlParamLen = static_cast<int>(config::kHaBaseUrlMaxLen);
 constexpr int kTokenParamLen = static_cast<int>(config::kHaTokenMaxLen);
@@ -709,44 +734,79 @@ bool submitted(const char* id) {
  * the pointer, so this never moves).
  *
  * On the page a save answers with -- /wifisave, or /paramsave for the
- * parameters page -- it goes back to the form after a delay, replacing the
- * saved page in the browser's history rather than adding to it. That is the
- * point as much as the convenience: left in history, the saved page is a
- * reload or a Back away from asking for /wifisave again, and asked for again
- * without the form it used to clear settings. Every other page ignores it.
- *
- * The delay is written in just before WiFiManager builds the saved page:
- * config::kPortalSavedReturnMs after a save, long enough for a device that
- * restarts to apply it to be back, and 0 for a request that brought no form,
- * where there is nothing to read.
+ * parameters page -- it goes back to the form it came from after
+ * config::kPortalSavedReturnMs, long enough for a device that restarts to
+ * apply the save to be back, replacing the saved page in the browser's
+ * history rather than adding to it. Every other page ignores it. /0wifi
+ * rather than /wifi for the same reason as redirectToForm().
  */
-char s_portal_head[240] = {};
+char s_portal_head[224] = {};
 
-void setSavedPageReturn(unsigned long ms) {
-  snprintf(s_portal_head, sizeof(s_portal_head),
-           "<script>(function(){var p=location.pathname;"
-           "var to=p=='/wifisave'?'/wifi':p=='/paramsave'?'/param':'';"
-           "if(to)setTimeout(function(){location.replace(to);},%lu);})();"
-           "</script>",
-           ms);
+void buildPortalHeadScript() {
+  const int written =
+      snprintf(s_portal_head, sizeof(s_portal_head),
+               "<script>(function(){var p=location.pathname;"
+               "var to=p=='/wifisave'?'/0wifi':p=='/paramsave'?'/param':'';"
+               "if(to)setTimeout(function(){location.replace(to);},%lu);})();"
+               "</script>",
+               config::kPortalSavedReturnMs);
+  if (written < 0 || static_cast<size_t>(written) >= sizeof(s_portal_head)) {
+    s_portal_head[0] = '\0';
+    LOG_WARN("Portal: head script does not fit s_portal_head; saved page will "
+             "not return on its own");
+  }
+}
+
+/** True when this request carries the portal form's hidden marker. */
+bool portalFormSubmitted() {
+  return s_wm.server != nullptr && s_wm.server->hasArg(kPortalFormMarker);
+}
+
+/**
+ * Send the caller to a settings form rather than acting on the request.
+ *
+ * /0wifi rather than /wifi: the two render the same form, but /wifi scans
+ * for networks first, and a request that has just been turned away should
+ * not cost a scan. /0wifi still carries a link to scan.
+ */
+void redirectToForm(const char* path) {
+  s_wm.server->sendHeader("Location", path);
+  s_wm.server->send(303, "text/plain", "");
+}
+
+/**
+ * Claim the two save routes ahead of WiFiManager's own. Called from its web
+ * server callback, which runs before it adds any route, and the server
+ * dispatches to the first handler that matches, so these answer instead.
+ *
+ * WiFiManager runs a save for any request to /wifisave or /paramsave, form
+ * or none, and reads a field the request did not send as blank -- so a
+ * reload of the page a save answers with, or a Back to it, cleared the
+ * config entry id and the Music Assistant URL, the fields where blank is a
+ * real choice. A request without the form's marker is turned away here,
+ * before a field is read, so nothing is saved and nothing needs putting
+ * back. One with it goes to the stock handler untouched.
+ */
+void claimSaveRoutes() {
+  s_wm.server->on("/wifisave", [] {
+    if (!portalFormSubmitted()) {
+      LOG_WARN("Portal: /wifisave with no form, ignored");
+      redirectToForm("/0wifi");
+      return;
+    }
+    s_wm.handleWifiSave();
+  });
+  s_wm.server->on("/paramsave", [] {
+    if (!portalFormSubmitted()) {
+      LOG_WARN("Portal: /paramsave with no form, ignored");
+      redirectToForm("/param");
+      return;
+    }
+    s_wm.handleParamSave();
+  });
 }
 
 void onPortalParamsSaved() {
-  // A save with no form behind it reaches here all the same: /wifisave or
-  // /paramsave asked for again without the fields -- a reload of the saved
-  // page, or of the error page a restart left in the browser -- and
-  // WiFiManager has read every field as blank. Nothing was asked for, so
-  // nothing is saved, and the fields it blanked are put back. It used to be
-  // taken as a save, which cleared the config entry id and the Music
-  // Assistant URL, the fields where blank is a real choice.
-  if (!submitted("dev_name") && !submitted("ha_url")) {
-    LOG_WARN("Portal: save request with no form fields, ignored");
-    refreshPortalParamDefaults();
-    setSavedPageReturn(0);  // straight back to the form: nothing was saved
-    return;
-  }
-  setSavedPageReturn(config::kPortalSavedReturnMs);
-
   char old_url[config::kHaBaseUrlMaxLen + 1];
   snprintf(old_url, sizeof(old_url), "%s", services::ha::storedBaseUrl());
   const char* token = s_param_ha_token.getValue();
@@ -937,9 +997,10 @@ void attachPortalParams(WiFiManager& wm) {
   refreshPortalParamDefaults();
   // The two entity dropdowns register themselves from buildEntitySelect(),
   // whenever the list first becomes available. The page lists fields in the
-  // order they are added: the transmit power first, straight under the
-  // network and its password it belongs with, then the device's own name,
-  // then what it talks to.
+  // order they are added: the form's hidden marker, which shows nothing,
+  // then the transmit power, straight under the network and its password it
+  // belongs with, then the device's own name, then what it talks to.
+  wm.addParameter(&s_param_form_marker);
   wm.addParameter(&s_param_txpow);
   wm.addParameter(&s_param_device_name);
   wm.addParameter(&s_param_ha_url);
@@ -1147,11 +1208,14 @@ void ensureWifiManager() {
   if (s_wm_configured) {
     return;
   }
-  setSavedPageReturn(config::kPortalSavedReturnMs);
+  buildPortalHeadScript();
   s_wm.setCustomHeadElement(s_portal_head);
-  // Pages of the firmware's own, registered as WiFiManager builds its web
-  // server, alongside its pages.
-  s_wm.setWebServerCallback([] { s_wm.server->on("/link", handleLinkPage); });
+  // Registered as WiFiManager builds its web server, before its own routes:
+  // the guards on its save routes, and pages of the firmware's own.
+  s_wm.setWebServerCallback([] {
+    claimSaveRoutes();
+    s_wm.server->on("/link", handleLinkPage);
+  });
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));
