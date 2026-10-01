@@ -9,6 +9,7 @@
 #include "config.h"
 #include "hardware/display_font.h"
 #include "services/device_name.h"
+#include "ui/back_button.h"
 #include "ui/canvas.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -129,6 +130,47 @@ void statusScreenMessage(const char* title, const char* line1,
   ui::canvasPresent();
 }
 
+namespace {
+
+/** The gear under the status page's lines, which opens the settings: at the
+ *  foot of the panel, where a round one still has the width for it and a
+ *  thumb reaches it without covering the lines. */
+constexpr int kGearY = ui::theme::kSize - ui::theme::px(26);
+constexpr int kGearRadius = ui::theme::px(12);
+/** Generous, as a tap target on glass should be. */
+constexpr int kGearHitRadius = ui::theme::px(26);
+
+void drawGear(lgfx::LovyanGFX& gfx, int cx, int cy, int r, uint16_t color,
+              uint16_t background) {
+  constexpr int kTeeth = 8;
+  const float body = r * 0.74f;
+  const float tooth_half = r * 0.2f;
+  for (int i = 0; i < kTeeth; ++i) {
+    // Each tooth a rectangle from inside the body out to `r`, as two
+    // triangles about the spoke at its angle.
+    const float a = i * (2.0f * PI / kTeeth);
+    const float ux = cosf(a);
+    const float uy = sinf(a);
+    const float nx = -uy * tooth_half;  // across the spoke
+    const float ny = ux * tooth_half;
+    const float in = body - 1.0f;
+    const int x0 = cx + static_cast<int>(lroundf(ux * in + nx));
+    const int y0 = cy + static_cast<int>(lroundf(uy * in + ny));
+    const int x1 = cx + static_cast<int>(lroundf(ux * in - nx));
+    const int y1 = cy + static_cast<int>(lroundf(uy * in - ny));
+    const int x2 = cx + static_cast<int>(lroundf(ux * r - nx));
+    const int y2 = cy + static_cast<int>(lroundf(uy * r - ny));
+    const int x3 = cx + static_cast<int>(lroundf(ux * r + nx));
+    const int y3 = cy + static_cast<int>(lroundf(uy * r + ny));
+    gfx.fillTriangle(x0, y0, x1, y1, x2, y2, color);
+    gfx.fillTriangle(x0, y0, x2, y2, x3, y3, color);
+  }
+  gfx.fillCircle(cx, cy, static_cast<int>(lroundf(body)), color);
+  gfx.fillCircle(cx, cy, static_cast<int>(lroundf(r * 0.34f)), background);
+}
+
+}  // namespace
+
 void statusScreenDevice(const ui::DeviceStatus& status) {
   lgfx::LovyanGFX& gfx = ui::canvas();
   displayFontEnsureLoaded(gfx);
@@ -144,15 +186,15 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
   } else {
     snprintf(up, sizeof(up), "%lum %lus", s / 60UL, s % 60UL);
   }
-  // The channel rides on the network's line rather than taking one of its
-  // own: with a separate volume device there are eight lines under the name,
-  // and the 240 px circle has room for about that many.
+  // The channel rides on the network's line, and what the device hears and
+  // sends share one, rather than each taking a line of its own: with a
+  // separate volume device there are six lines under the name, and the
+  // 240 px circle has room for about that many above the gear.
   char wifi[48];
-  char signal[16];
-  char tx[16];
+  char signal[24];
   snprintf(wifi, sizeof(wifi), "%s (ch %d)", status.ssid, status.channel);
-  snprintf(signal, sizeof(signal), "%d dBm", status.rssi);
-  snprintf(tx, sizeof(tx), "%.1f dBm", status.tx_dbm);
+  snprintf(signal, sizeof(signal), "%d / %.1f dBm", status.rssi,
+           status.tx_dbm);
 
   struct Pair {
     const char* label;
@@ -177,8 +219,7 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
     pairs[n++] = {"", status.ip};
     pairs[n++] = {"Up", up};
     pairs[n++] = {"", wifi};
-    pairs[n++] = {"Rx", signal};
-    pairs[n++] = {"Tx", tx};
+    pairs[n++] = {"Rx/Tx", signal};
   } else {
     pairs[n++] = {"Up", up};
     pairs[n++] = {"", "No Wi-Fi"};
@@ -186,13 +227,29 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
 
   // The name and the lines under it, stacked around the centre, as the
   // cards are: the block sits in the same optical place however many lines
-  // it has.
+  // it has -- unless that would reach the gear, when it rises clear of it.
   const int title_h = ui::theme::textPx(30);
   const int line_h = ui::theme::textPx(22);
   const int total = title_h + ui::theme::kStatusLineGap + n * line_h;
-  int y = ui::theme::kCenterY - total / 2 + title_h / 2;
-  drawCentredLine(gfx, status.hostname, y, ui::theme::kStatusTitleTextPx,
-                  ui::theme::kTextPrimary);
+  const int lowest = kGearY - kGearRadius - ui::theme::kStatusLineGap;
+  int top = ui::theme::kCenterY - total / 2;
+  if (top + total > lowest) {
+    top = lowest - total;
+  }
+  int y = top + title_h / 2;
+  // The name is the line that can come up beside the back button, and is
+  // then centred in what the button leaves of its row.
+  {
+    int name_x = 0;
+    int name_w = 0;
+    ui::back_button::lineSpan(y, title_h, name_x, name_w);
+    displayFontApplyHeight(gfx, ui::theme::kStatusTitleTextPx);
+    gfx.setTextDatum(textdatum_t::middle_center);
+    gfx.setTextColor(ui::theme::kTextPrimary);
+    char name[ui::text::kMaxLineLen];
+    ui::text::ellipsize(gfx, status.hostname, name_w, name, sizeof(name));
+    gfx.drawString(name, name_x, y);
+  }
   y += title_h / 2 + ui::theme::kStatusLineGap + line_h / 2;
   for (int i = 0; i < n; ++i) {
     drawPairLine(gfx, pairs[i].label, pairs[i].value, y,
@@ -200,7 +257,16 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
     y += line_h;
   }
 
+  drawGear(gfx, ui::theme::kCenterX, kGearY, kGearRadius,
+           ui::theme::kTextSecondary, ui::theme::kBackground);
+  ui::back_button::draw(gfx);
   ui::canvasPresent();
+}
+
+bool statusScreenGearHit(int x, int y) {
+  const int dx = x - ui::theme::kCenterX;
+  const int dy = y - kGearY;
+  return dx * dx + dy * dy <= kGearHitRadius * kGearHitRadius;
 }
 
 void statusScreenPortal() {

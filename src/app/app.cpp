@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -646,7 +647,8 @@ void handleStatusRefresh() {
 void handleListTimeout() {
   if (config::kListIdleReturnMs == 0 ||
       (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
-       g_screen != Screen::kStatus && g_screen != Screen::kWifi)) {
+       g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
+       g_screen != Screen::kSettings)) {
     return;
   }
   unsigned long since = ui::lastInteractionMs();
@@ -657,10 +659,11 @@ void handleListTimeout() {
     return;
   }
   LOG_DEBUG("UI: %s untouched for %lu s, back to now playing",
-                g_screen == Screen::kBrowse   ? "list"
-                : g_screen == Screen::kSearch ? "search"
-                : g_screen == Screen::kWifi   ? "wifi"
-                                              : "status",
+                g_screen == Screen::kBrowse     ? "list"
+                : g_screen == Screen::kSearch   ? "search"
+                : g_screen == Screen::kWifi     ? "wifi"
+                : g_screen == Screen::kSettings ? "settings"
+                                                : "status",
                 config::kListIdleReturnMs / 1000);
   showNowPlaying();
 }
@@ -943,6 +946,404 @@ void onPortalStarted() {
   g_screen = Screen::kMessage;
 }
 
+// --- Settings on the device -----------------------------------------------------
+
+/** The settings page's rows, in the order they may be shown. The input and
+ *  the player volume at switch-on only while a separate device carries
+ *  volume and power, as in the portal. */
+enum class Setting : uint8_t {
+  kWifi,
+  kPlayer,
+  kControl,
+  kInput,
+  kWakeVolume,
+  kTxPower,
+  kKeyboard,
+  kRotation,
+  kRestart,
+  kPortal,  // where the rest is set: a hint, and a tap does nothing
+};
+
+constexpr int kMaxSettingRows = 10;
+/** What each row of the page on screen is. Loop only, as is all of this. */
+Setting g_setting_rows[kMaxSettingRows];
+int g_setting_row_count = 0;
+/** True while one setting's choices are up, rather than the page. */
+bool g_settings_choosing = false;
+/** Which setting they are, and its row on the page, to come back to. */
+Setting g_setting_open = Setting::kWifi;
+int g_setting_open_row = -1;
+/** The network list was opened from the settings page, and goes back to it. */
+bool g_wifi_from_settings = false;
+
+/** The values behind a short list of choices, by row. The player and input
+ *  lists are read by row from services::players and g_sources instead. */
+constexpr int kMaxChoiceValues = 16;
+int g_choice_values[kMaxChoiceValues];
+int g_choice_count = 0;
+
+/** The volume device's inputs, for its list of choices: PSRAM, claimed on
+ *  first use and kept. */
+char (*g_sources)[config::kSourceNameMaxLen] = nullptr;
+int g_source_count = 0;
+
+const char* const kRotationNames[4] = {"Upright", "+90 (clockwise)", "180",
+                                       "-90 (counter-clockwise)"};
+
+/** The player's name from the last state, as the status page shows it, or
+ *  its entity id until there is one. */
+const char* playerName(char* out, size_t out_len, bool control) {
+  char entity[config::kEntityIdMaxLen];
+  if (control) {
+    services::ha::copyControlEntity(entity, sizeof(entity));
+  } else {
+    services::ha::copySelectedEntity(entity, sizeof(entity));
+  }
+  PlayerState state;
+  const char* name = snapshotState(state)
+                         ? (control ? state.control_name : state.player_name)
+                         : "";
+  snprintf(out, out_len, "%s",
+           name[0] != '\0' ? name : services::ha::entityLabel(entity));
+  return out;
+}
+
+void formatTxPower(char* out, size_t out_len, int quarter_dbm) {
+  snprintf(out, out_len, "%g dBm%s", quarter_dbm / 4.0,
+           quarter_dbm == config::kWifiTxPowerQuarterDbm ? " (default)" : "");
+}
+
+void formatWakeVolume(char* out, size_t out_len, int percent) {
+  if (percent < 0) {
+    snprintf(out, out_len, "Off");
+  } else {
+    snprintf(out, out_len, "%d%%", percent);
+  }
+}
+
+void addSettingRow(Setting setting, const char* label, const char* value) {
+  if (g_setting_row_count >= kMaxSettingRows) {
+    return;
+  }
+  g_setting_rows[g_setting_row_count++] = setting;
+  ui::settingsAdd(label, value);
+}
+
+/** The settings page, from what is stored now, with row `focus` in view. */
+void showSettingsPage(int focus) {
+  g_screen = Screen::kSettings;
+  g_settings_choosing = false;
+  g_setting_row_count = 0;
+  ui::settingsBegin("Settings", "");
+
+  WifiLinkStatus link;
+  wifiLinkStatus(link);
+  addSettingRow(Setting::kWifi, "Wi-Fi network",
+                link.connected ? link.ssid : "Not connected");
+
+  char value[config::kSourceNameMaxLen];
+  addSettingRow(Setting::kPlayer, "Media player",
+                services::ha::selectedEntity()[0] != '\0'
+                    ? playerName(value, sizeof(value), false)
+                    : "None");
+  const bool separate = services::ha::controlIsSeparate();
+  addSettingRow(Setting::kControl, "Volume & power",
+                separate ? playerName(value, sizeof(value), true)
+                         : "The media player");
+  if (separate) {
+    const char* input = services::ha::storedControlInput();
+    addSettingRow(Setting::kInput, "Player's input",
+                  input[0] != '\0' ? input : "Named after the player");
+    formatWakeVolume(value, sizeof(value),
+                     services::ha::playerWakeVolumePercent());
+    addSettingRow(Setting::kWakeVolume, "Player volume at switch-on", value);
+  }
+  formatTxPower(value, sizeof(value), wifiTxPower());
+  addSettingRow(Setting::kTxPower, "Wi-Fi transmit power", value);
+  addSettingRow(Setting::kKeyboard, "Search keyboard",
+                services::display::keyboardLayout() ==
+                        services::display::KeyboardLayout::kQwerty
+                    ? "QWERTY"
+                    : "Alphabetical");
+  addSettingRow(Setting::kRotation, "Screen rotation",
+                kRotationNames[services::display::rotation() & 3]);
+  addSettingRow(Setting::kRestart, "Restart", "");
+  // The name, the Home Assistant link and Music Assistant stay in the
+  // portal: typed text, which the portal does better.
+  snprintf(value, sizeof(value), "%s.local", services::device::name());
+  addSettingRow(Setting::kPortal, "More at", value);
+
+  ui::showSettings(focus);
+  g_list_opened_ms = millis();
+}
+
+/** Open the settings page, the gear on the status page. */
+void openSettings() { showSettingsPage(-1); }
+
+void addChoice(const char* text, int value, bool current) {
+  if (g_choice_count >= kMaxChoiceValues) {
+    return;
+  }
+  g_choice_values[g_choice_count++] = value;
+  ui::settingsAdd(text, "",
+                  current ? ui::SettingStyle::kCurrent
+                          : ui::SettingStyle::kNormal);
+}
+
+/** The list of choices behind one row of the page. */
+void openSettingChoices(Setting setting, int row) {
+  g_setting_open = setting;
+  g_setting_open_row = row;
+  g_choice_count = 0;
+  char text[48];
+
+  switch (setting) {
+    case Setting::kWifi:
+      openWifi(nullptr);
+      g_wifi_from_settings = true;
+      return;
+
+    case Setting::kPlayer:
+    case Setting::kControl: {
+      if (services::players::stale()) {
+        ui::showLoading("players");
+      }
+      const bool have = services::players::ensureEntries();
+      const bool control = setting == Setting::kControl;
+      ui::settingsBegin(control ? "Volume & power" : "Media player",
+                        have ? "" : "Could not load players");
+      const char* current = control ? services::ha::storedControlEntity()
+                                    : services::ha::selectedEntity();
+      if (control) {
+        // First, as in the portal: the player carrying its own volume.
+        ui::settingsAdd("The media player", "",
+                        current[0] == '\0' ? ui::SettingStyle::kCurrent
+                                           : ui::SettingStyle::kNormal);
+      }
+      for (int i = 0; i < services::players::entryCount(); ++i) {
+        const services::ha::PlayerEntry* entry = services::players::entryAt(i);
+        if (entry == nullptr) {
+          continue;
+        }
+        // Unavailable ones are still offered -- one that is off now may well
+        // be on later -- but greyed, so the live ones stand out.
+        ui::settingsAdd(entry->name[0] != '\0' ? entry->name : entry->entity_id,
+                        "",
+                        strcmp(entry->entity_id, current) == 0
+                            ? ui::SettingStyle::kCurrent
+                        : entry->available ? ui::SettingStyle::kNormal
+                                           : ui::SettingStyle::kMuted);
+      }
+      break;
+    }
+
+    case Setting::kInput: {
+      ui::showLoading("inputs");
+      if (g_sources == nullptr) {
+        g_sources = static_cast<char (*)[config::kSourceNameMaxLen]>(
+            heap_caps_calloc(config::kMaxSources, config::kSourceNameMaxLen,
+                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      }
+      const int n = g_sources != nullptr
+                        ? services::ha::fetchSources(
+                              services::ha::controlEntity(), g_sources,
+                              config::kMaxSources)
+                        : -1;
+      g_source_count = n > 0 ? n : 0;
+      const char* current = services::ha::storedControlInput();
+      ui::settingsBegin("Player's input",
+                        n < 0 ? "Could not load inputs" : "");
+      ui::settingsAdd("Named after the player", "",
+                      current[0] == '\0' ? ui::SettingStyle::kCurrent
+                                         : ui::SettingStyle::kNormal);
+      for (int i = 0; i < g_source_count; ++i) {
+        ui::settingsAdd(g_sources[i], "",
+                        strcmp(g_sources[i], current) == 0
+                            ? ui::SettingStyle::kCurrent
+                            : ui::SettingStyle::kNormal);
+      }
+      break;
+    }
+
+    case Setting::kWakeVolume: {
+      ui::settingsBegin("Switch-on volume", "");
+      const int current = services::ha::playerWakeVolumePercent();
+      addChoice("Off - leave it alone", -1, current < 0);
+      for (int pct = 10; pct <= 100; pct += 10) {
+        // One set in the portal off the steps is kept on offer, where it
+        // would come in order.
+        if (current >= pct - 10 && current < pct &&
+            (current % 10 != 0 || current == 0)) {
+          formatWakeVolume(text, sizeof(text), current);
+          addChoice(text, current, true);
+        }
+        formatWakeVolume(text, sizeof(text), pct);
+        addChoice(text, pct, current == pct);
+      }
+      break;
+    }
+
+    case Setting::kTxPower: {
+      ui::settingsBegin("Transmit power", "");
+      const WifiTxPowerStep* steps = nullptr;
+      const int n = wifiTxPowerSteps(&steps);
+      const int8_t current = wifiTxPower();
+      for (int i = 0; i < n; ++i) {
+        formatTxPower(text, sizeof(text), steps[i].quarter_dbm);
+        addChoice(text, steps[i].quarter_dbm,
+                  steps[i].quarter_dbm == current);
+      }
+      break;
+    }
+
+    case Setting::kKeyboard: {
+      ui::settingsBegin("Search keyboard", "");
+      const bool qwerty = services::display::keyboardLayout() ==
+                          services::display::KeyboardLayout::kQwerty;
+      addChoice("Alphabetical", 0, !qwerty);
+      addChoice("QWERTY", 1, qwerty);
+      break;
+    }
+
+    case Setting::kRotation: {
+      ui::settingsBegin("Rotation", "");
+      for (int r = 0; r < 4; ++r) {
+        addChoice(kRotationNames[r], r, r == services::display::rotation());
+      }
+      break;
+    }
+
+    case Setting::kRestart:
+      ui::settingsBegin("Restart?", "");
+      addChoice("Restart now", 1, false);
+      addChoice("Cancel", 0, false);
+      break;
+
+    case Setting::kPortal:
+      return;
+  }
+
+  g_screen = Screen::kSettings;
+  g_settings_choosing = true;
+  ui::showSettings();
+  g_list_opened_ms = millis();
+}
+
+void restartNow(const char* why) {
+  ui::showRestarting(why);
+  LOG_WARN("Restarting from the settings page: %s", why);
+  delay(800);  // long enough to read the card
+  ESP.restart();
+}
+
+/** Store the choice tapped on row `row` of the list that is up. */
+void applySettingChoice(int row) {
+  const int value = row >= 0 && row < g_choice_count ? g_choice_values[row] : 0;
+  bool changed = false;
+  switch (g_setting_open) {
+    case Setting::kPlayer: {
+      const services::ha::PlayerEntry* entry = services::players::entryAt(row);
+      if (entry == nullptr) {
+        return;
+      }
+      if (strcmp(entry->entity_id, services::ha::selectedEntity()) != 0) {
+        services::ha::selectEntity(entry->entity_id);
+        // The new player has its own art, and the old one's is on screen.
+        ui::clearArtwork();
+        LOG_INFO("Player selected on the device: %s", entry->entity_id);
+        g_poll_now = true;
+        changed = true;
+      }
+      break;
+    }
+    case Setting::kControl: {
+      // Row 0 is the player itself; the players follow it.
+      const services::ha::PlayerEntry* entry =
+          row > 0 ? services::players::entryAt(row - 1) : nullptr;
+      if (row > 0 && entry == nullptr) {
+        return;
+      }
+      const char* chosen = entry != nullptr ? entry->entity_id : "";
+      if (strcmp(chosen, services::ha::storedControlEntity()) != 0) {
+        ui::showLoading("Volume & power");
+        wifiSelectControl(chosen);
+        LOG_INFO("Volume & power selected on the device: %s",
+                 chosen[0] != '\0' ? chosen : "the media player");
+        g_poll_now = true;
+        changed = true;
+      }
+      break;
+    }
+    case Setting::kInput: {
+      if (row < 0 || row > g_source_count) {
+        return;
+      }
+      const char* chosen = row == 0 ? "" : g_sources[row - 1];
+      if (strcmp(chosen, services::ha::storedControlInput()) != 0) {
+        services::ha::selectControlInput(chosen);
+        changed = true;
+      }
+      break;
+    }
+    case Setting::kWakeVolume:
+      if (value != services::ha::playerWakeVolumePercent()) {
+        services::ha::savePlayerWakeVolumePercent(value);
+        changed = true;
+      }
+      break;
+    case Setting::kTxPower:
+      changed = value != wifiTxPower() &&
+                wifiSetTxPower(static_cast<int8_t>(value));
+      break;
+    case Setting::kKeyboard: {
+      const auto chosen = value == 1
+                              ? services::display::KeyboardLayout::kQwerty
+                              : services::display::KeyboardLayout::kAlphabetical;
+      if (chosen != services::display::keyboardLayout()) {
+        services::display::saveKeyboardLayout(chosen);
+        changed = true;
+      }
+      break;
+    }
+    case Setting::kRotation:
+      if (value != services::display::rotation()) {
+        services::display::saveRotation(static_cast<uint8_t>(value));
+        restartNow("Turning the screen");
+      }
+      break;
+    case Setting::kRestart:
+      if (value == 1) {
+        restartNow("");
+      }
+      break;
+    case Setting::kWifi:
+    case Setting::kPortal:
+      break;
+  }
+  if (changed) {
+    wifiSettingsChanged();
+  }
+  showSettingsPage(g_setting_open_row);
+}
+
+void handleSettingsTap(int row) {
+  if (g_settings_choosing) {
+    applySettingChoice(row);
+  } else if (row >= 0 && row < g_setting_row_count) {
+    openSettingChoices(g_setting_rows[row], row);
+  }
+}
+
+/** A swipe right: from a list of choices to the page, unchanged, and from
+ *  the page back to the status page it was opened from. */
+void handleSettingsBack() {
+  if (g_settings_choosing) {
+    showSettingsPage(g_setting_open_row);
+  } else {
+    openStatus();
+  }
+}
+
 /** What the Wi-Fi screens and the cards that lead to them ask for. The same
  *  from the setup portal's loop and from the running remote; only the join
  *  differs, since in the portal it is the portal's loop that makes it. */
@@ -952,6 +1353,7 @@ void handleWifiIntent(const ui::Input& in) {
       // The Setup card, or No Wi-Fi: a tap opens the network list. Any other
       // card is about Home Assistant, and a tap there does nothing.
       if (wifiPortalActive() || WiFi.status() != WL_CONNECTED) {
+        g_wifi_from_settings = false;  // from a card
         openWifi(nullptr);
       } else if (services::ha::configured() &&
                  services::ha::selectedEntity()[0] == '\0') {
@@ -959,6 +1361,9 @@ void handleWifiIntent(const ui::Input& in) {
       }
       break;
     case Intent::kOpenWifi:
+      g_wifi_from_settings = false;  // from the status page
+      openWifi(nullptr);
+      break;
     case Intent::kWifiRescan:
       openWifi(nullptr);
       break;
@@ -986,6 +1391,9 @@ void handleWifiIntent(const ui::Input& in) {
     case Intent::kWifiLeave:
       if (wifiPortalActive()) {
         onPortalStarted();
+      } else if (g_wifi_from_settings) {
+        g_wifi_from_settings = false;
+        showSettingsPage(g_setting_open_row);
       } else if (WiFi.status() == WL_CONNECTED) {
         openStatus();
       } else {
@@ -1081,6 +1489,18 @@ void handleInput() {
 
     case Intent::kPlayersRefresh:
       openPlayers();
+      break;
+
+    case Intent::kOpenSettings:
+      openSettings();
+      break;
+
+    case Intent::kSettingsTap:
+      handleSettingsTap(in.index);
+      break;
+
+    case Intent::kSettingsBack:
+      handleSettingsBack();
       break;
 
     case Intent::kTapCard:
@@ -1367,7 +1787,7 @@ void loop() {
     // poll landing underneath someone who is reading or typing.
     if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
         g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
-        g_screen != Screen::kPlayers) {
+        g_screen != Screen::kPlayers && g_screen != Screen::kSettings) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");

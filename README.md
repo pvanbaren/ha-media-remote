@@ -148,18 +148,19 @@ Living Room Receiver
 192.168.1.40
 Up 2h 13m
 HomeNet (ch 6)
-Rx -61 dBm
-Tx 11.0 dBm
+Rx/Tx -61 / 11.0 dBm
+        ⚙
 ```
 
 Under the remote's name are the player and, when Volume & power is a separate
 device, that device, both by their names in Home Assistant. When the player's
 input on that device is chosen in the portal, the input takes the player's
 line. Then come the address, the time since the remote started, the Wi-Fi
-network and its channel, the signal the remote hears (**Rx**) and the power it
-transmits with (**Tx**).
+network and its channel, and on one line the signal the remote hears (**Rx**)
+and the power it transmits with (**Tx**).
 
-The page refreshes every second. A **swipe left** goes on to
+The page refreshes every second. The **gear** at its foot opens
+[the settings](#settings-on-the-device), and a **swipe left** goes on to
 [the Wi-Fi networks](#choosing-wi-fi-on-the-device); any other tap or swipe
 goes back to now playing, and it goes back by itself after a minute untouched
 (`kListIdleReturnMs`), as the list does.
@@ -186,6 +187,36 @@ A join is kept only once it connects: until then the network saved before is
 untouched, so a wrong password costs nothing. If it does not connect, the
 list comes back saying so, and a remote that was connected goes back to its
 old network. The portal's **Configure WiFi** does the same from a browser.
+
+### Settings on the device
+
+The **gear** on the status page opens the settings that need no typing, each
+row a setting's name over its value:
+
+| Row | Choices |
+|---|---|
+| Wi-Fi network | [The network list](#choosing-wi-fi-on-the-device); backing out of it comes back here |
+| Media player | Home Assistant's media players, unavailable ones greyed |
+| Volume & power | The media player itself, or another of them |
+| Player's input | The volume device's inputs, or the one named after the player |
+| Player volume at switch-on | Off, or 10% to 100% |
+| Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
+| Search keyboard | Alphabetical or QWERTY |
+| Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
+| Restart | Restart now, or cancel |
+
+**Tap** a row for its choices, the one in use marked, and **tap** one to
+choose it: it is stored at once, as a portal save would store it, and the page
+comes back showing it. **Swipe right**, or tap the **back button** at the top
+left, to back out without choosing, and again to go back to the status page.
+The status page and the Wi-Fi pages have the button too. Player's input and
+Player volume at switch-on are there only while Volume & power is a separate
+device, as in the portal, and
+a new Volume & power device keeps the player's input when it has one by the
+same name. The last row says where the rest is set: the remote's name, the
+Home Assistant link and Music Assistant are typed, so they stay in
+[the portal](#setting-it-up-the-portal), which shows what was chosen here the
+next time a page of it is opened.
 
 ### Status cards
 
@@ -227,8 +258,13 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe sideways, top half | Volume |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
+| Status page | Tap the gear | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
-| Status page | Tap, or any other swipe | Back to now playing |
+| Status page | Any other tap or swipe | Back to now playing |
+| Settings | Drag up / down, then tap a row | Its choices |
+| Settings choices | Tap one | Choose it, and back to the settings |
+| Settings | Swipe right | Back one step |
+| Status, settings, Wi-Fi | Tap the back button, top left | As a swipe right: back one step |
 | Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
 | Wi-Fi networks | Tap a network | Join it, or type its password |
 | Wi-Fi networks | Swipe right | Back one step |
@@ -636,7 +672,8 @@ src/ui/common/
   canvas.cpp               the composed frame, presenting, in-place scroll
   browse_list.cpp          the list, with section headings
   search.cpp               keyboard and results
-  status_screens.cpp       the cards
+  status_screens.cpp       the cards, and the status page
+  settings_list.cpp        the settings page and each setting's choices
   artwork.cpp              the worker: list thumbnails and the cover fetch
   cover_art.cpp            cover and thumbnail fetch, cache, decode
   text.cpp                 ellipsising and word wrap

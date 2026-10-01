@@ -7,6 +7,7 @@
 #include "board/board.h"
 #include "config.h"
 #include "hardware/display_font.h"
+#include "ui/back_button.h"
 #include "ui/canvas.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -199,11 +200,13 @@ void drawList(lgfx::LovyanGFX& gfx) {
   displayFontApplyHeight(gfx, theme::kListTitleTextPx);
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(noted ? theme::kWarning : theme::kTextPrimary);
+  int title_x = 0;
+  int title_w = 0;
+  back_button::lineSpan(kTitleY, theme::kListTitleTextPx, title_x, title_w);
   char line[text::kMaxLineLen];
-  text::ellipsize(gfx, noted ? s_note : "Choose a network",
-                  theme::usableWidthAt(kTitleY, theme::kTextEdgeInset), line,
+  text::ellipsize(gfx, noted ? s_note : "Choose a network", title_w, line,
                   sizeof(line));
-  gfx.drawString(line, theme::kCenterX, kTitleY);
+  gfx.drawString(line, title_x, kTitleY);
 }
 
 Result tapList(int x, int y) {
@@ -354,7 +357,9 @@ void drawKey(lgfx::LovyanGFX& gfx, char key, int x, int y, int w) {
 void drawPassword(lgfx::LovyanGFX& gfx) {
   displayFontApplyHeight(gfx, theme::kSearchQueryTextPx);
   gfx.setTextDatum(textdatum_t::middle_center);
-  const int room = theme::usableWidthAt(kTitleY, theme::kTextEdgeInset);
+  int line_x = 0;
+  int room = 0;
+  back_button::lineSpan(kTitleY, theme::kSearchQueryTextPx, line_x, room);
 
   if (s_password[0] == '\0') {
     char prompt[text::kMaxLineLen];
@@ -363,7 +368,7 @@ void drawPassword(lgfx::LovyanGFX& gfx) {
     char line[text::kMaxLineLen];
     text::ellipsize(gfx, prompt, room, line, sizeof(line));
     gfx.setTextColor(theme::kTextMuted);
-    gfx.drawString(line, theme::kCenterX, kTitleY);
+    gfx.drawString(line, line_x, kTitleY);
     return;
   }
 
@@ -382,7 +387,7 @@ void drawPassword(lgfx::LovyanGFX& gfx) {
     shown = tail;
   }
   gfx.setTextColor(theme::kAccent);
-  gfx.drawString(shown, theme::kCenterX, kTitleY);
+  gfx.drawString(shown, line_x, kTitleY);
 }
 
 void drawKeyboard(lgfx::LovyanGFX& gfx) {
@@ -516,6 +521,7 @@ void draw() {
   } else {
     drawKeyboard(gfx);
   }
+  back_button::draw(gfx);
   ui::canvasPresent();
 }
 

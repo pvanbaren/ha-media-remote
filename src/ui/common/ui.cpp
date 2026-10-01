@@ -13,12 +13,14 @@
 #include "services/browse.h"
 #include "services/search.h"
 #include "ui/artwork.h"
+#include "ui/back_button.h"
 #include "ui/browse_list.h"
 #include "ui/canvas.h"
 #include "ui/cover_art.h"
 #include "ui/now_playing.h"
 #include "ui/player_pick.h"
 #include "ui/search.h"
+#include "ui/settings_list.h"
 #include "ui/status_screens.h"
 #include "ui/theme.h"
 #include "ui/wifi_join.h"
@@ -93,6 +95,9 @@ constexpr ScrollableList kWifiNetworks{wifi_join::scrollByPx,
 constexpr ScrollableList kPlayerList{player_pick::scrollByPx,
                                      player_pick::atScrollLimit,
                                      player_pick::draw};
+constexpr ScrollableList kSettingsList{settings_list::scrollByPx,
+                                       settings_list::atScrollLimit,
+                                       settings_list::draw};
 
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
@@ -345,6 +350,8 @@ void driveListScrolling(Screen screen) {
     driveList(kWifiNetworks, wifi_join::onList());
   } else if (screen == Screen::kPlayers) {
     driveList(kPlayerList, true);
+  } else if (screen == Screen::kSettings) {
+    driveList(kSettingsList, true);
   } else {
     driveList(kBrowseList, false);
   }
@@ -459,6 +466,19 @@ Input searchTouch(const hw::TouchReport& report) {
 
 Input wifiTouch(const hw::TouchReport& report) {
   Input out;
+  const bool back = report.event == hw::TouchEvent::kSwipeRight ||
+                    (report.event == hw::TouchEvent::kTap &&
+                     back_button::hit(report.x, report.y));
+  if (back) {
+    // Back out one page at a time: password to list, list to wherever the
+    // list was opened from.
+    if (wifi_join::back()) {
+      wifi_join::draw();
+    } else {
+      out.intent = Intent::kWifiLeave;
+    }
+    return out;
+  }
   if (report.event == hw::TouchEvent::kTap && wifi_join::onList() &&
       !listTapAllowed(report)) {
     return out;
@@ -477,15 +497,6 @@ Input wifiTouch(const hw::TouchReport& report) {
           break;
         default:
           break;
-      }
-      break;
-    case hw::TouchEvent::kSwipeRight:
-      // Back out one page at a time: password to list, list to wherever the
-      // list was opened from.
-      if (wifi_join::back()) {
-        wifi_join::draw();
-      } else {
-        out.intent = Intent::kWifiLeave;
       }
       break;
     default:
@@ -509,6 +520,29 @@ Input playersTouch(const hw::TouchReport& report) {
       break;
     default:
       break;
+  }
+  return out;
+}
+
+Input settingsTouch(const hw::TouchReport& report) {
+  Input out;
+  if (report.event == hw::TouchEvent::kTap &&
+      back_button::hit(report.x, report.y)) {
+    out.intent = Intent::kSettingsBack;  // as a swipe right
+    return out;
+  }
+  if (report.event == hw::TouchEvent::kTap) {
+    if (!listTapAllowed(report)) {
+      return out;
+    }
+    const int row = settings_list::rowAt(report.x, report.y);
+    if (row >= 0) {
+      out.intent = Intent::kSettingsTap;
+      out.index = row;
+    }
+  } else if (report.event == hw::TouchEvent::kSwipeRight) {
+    // Back out one step at a time; the app knows which list this is.
+    out.intent = Intent::kSettingsBack;
   }
   return out;
 }
@@ -562,6 +596,9 @@ Input poll(Screen screen, const PlayerState* state) {
   if (screen == Screen::kPlayers) {
     return playersTouch(report);
   }
+  if (screen == Screen::kSettings) {
+    return settingsTouch(report);
+  }
   if (screen == Screen::kMessage) {
     // Most of what the cards complain about is fixed in the portal, and the
     // app notices on its own. A tap is passed up all the same: the Setup and
@@ -572,9 +609,14 @@ Input poll(Screen screen, const PlayerState* state) {
     return out;
   }
   if (screen == Screen::kStatus) {
-    // A swipe left goes on to the Wi-Fi networks, as one does from the list
-    // to the search; any other tap or swipe goes back.
-    if (report.event == hw::TouchEvent::kSwipeLeft) {
+    // The gear opens the settings, and a swipe left goes on to the Wi-Fi
+    // networks, as one does from the list to the search; any other tap or
+    // swipe goes back -- the back button among them, which is there to say
+    // so.
+    if (report.event == hw::TouchEvent::kTap &&
+        statusScreenGearHit(report.x, report.y)) {
+      out.intent = Intent::kOpenSettings;
+    } else if (report.event == hw::TouchEvent::kSwipeLeft) {
       out.intent = Intent::kOpenWifi;
     } else if (report.event != hw::TouchEvent::kNone) {
       out.intent = Intent::kBackToNowPlaying;
@@ -648,6 +690,29 @@ void showPlayers(const char* note) {
 }
 
 const char* playerChosen() { return player_pick::chosenEntity(); }
+
+void settingsBegin(const char* title, const char* note) {
+  if (!settings_list::begin(title, note)) {
+    LOG_WARN("UI: no memory for the settings list");
+  }
+}
+
+void settingsAdd(const char* text, const char* detail, SettingStyle style) {
+  settings_list::add(text, detail, style);
+}
+
+void showSettings(int focus) {
+  hw::touchCancel();
+  settings_list::open(focus);
+  s_list_dragging = false;
+  s_list_velocity = 0.0f;
+  settings_list::draw();
+}
+
+void showRestarting(const char* why) {
+  statusScreenMessage("Restarting", why, "", theme::kStatusPlain,
+                      theme::kStatusPlainText);
+}
 
 const char* wifiChosenSsid() { return wifi_join::chosenSsid(); }
 

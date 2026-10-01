@@ -300,10 +300,7 @@ void buildKeyboardSelect() {
  * is saved, and cleared by a reset, so a setting too low to reconnect with
  * can always be undone.
  */
-struct TxPowerStep {
-  int8_t quarter_dbm;
-  const char* label;
-};
+using TxPowerStep = WifiTxPowerStep;
 constexpr TxPowerStep kTxPowerSteps[] = {
     {78, "19.5 dBm (the most)"}, {68, "17 dBm"}, {60, "15 dBm"},
     {52, "13 dBm"},              {44, "11 dBm"}, {34, "8.5 dBm"},
@@ -820,6 +817,27 @@ void claimSaveRoutes() {
   });
 }
 
+/** Store `control` as the Volume & power device, and `input` as the player's
+ *  input on it if the new device has an input by that name -- a Triad's
+ *  outputs all share one list, so moving to another zone should not lose
+ *  it -- or none if it does not. */
+void selectControlKeepingInput(const char* control, const char* input) {
+  // Copied first: `input` may be the stored input, which the select below
+  // can overwrite.
+  char keep[config::kSourceNameMaxLen] = {};
+  snprintf(keep, sizeof(keep), "%s", input != nullptr ? input : "");
+  services::ha::selectControlEntity(control);
+  if (keep[0] != '\0' && !(services::ha::controlIsSeparate() &&
+                           listsInput(services::ha::controlEntity(), keep))) {
+    LOG_WARN("Settings: %s has no input \"%s\", cleared",
+             services::ha::controlEntity(), keep);
+    keep[0] = '\0';
+  }
+  if (strcmp(keep, services::ha::storedControlInput()) != 0) {
+    services::ha::selectControlInput(keep);
+  }
+}
+
 void onPortalParamsSaved() {
   char old_url[config::kHaBaseUrlMaxLen + 1];
   snprintf(old_url, sizeof(old_url), "%s", services::ha::storedBaseUrl());
@@ -852,26 +870,12 @@ void onPortalParamsSaved() {
       control != nullptr &&
       strcmp(control, services::ha::storedControlEntity()) != 0;
   if (control_changed) {
-    services::ha::selectControlEntity(control);
     // The dropdown listed the old device's inputs, so the choice sent with
-    // this save was made from that list. Kept if the new device has an input
-    // by that name too -- a Triad's outputs all share one list, so moving to
-    // another zone should not lose it -- and cleared if it does not.
-    const char* input = s_param_ctl_input != nullptr && submitted("ctl_input")
-                            ? s_param_ctl_input->getValue()
-                            : services::ha::storedControlInput();
-    char keep[config::kSourceNameMaxLen] = {};
-    if (input != nullptr && input[0] != '\0' &&
-        services::ha::controlIsSeparate() &&
-        listsInput(services::ha::controlEntity(), input)) {
-      snprintf(keep, sizeof(keep), "%s", input);
-    } else if (input != nullptr && input[0] != '\0') {
-      LOG_WARN("Portal: %s has no input \"%s\", cleared",
-                    services::ha::controlEntity(), input);
-    }
-    if (strcmp(keep, services::ha::storedControlInput()) != 0) {
-      services::ha::selectControlInput(keep);
-    }
+    // this save was made from that list.
+    selectControlKeepingInput(
+        control, s_param_ctl_input != nullptr && submitted("ctl_input")
+                     ? s_param_ctl_input->getValue()
+                     : services::ha::storedControlInput());
   } else if (s_param_ctl_input != nullptr && submitted("ctl_input")) {
     const char* input = s_param_ctl_input->getValue();
     if (input != nullptr &&
@@ -1543,6 +1547,36 @@ bool wifiShowsSetupScreenOnBoot() {
 }
 
 bool wifiBootButtonPressed() { return hw::bootButtonPressed(); }
+
+int wifiTxPowerSteps(const WifiTxPowerStep** steps) {
+  *steps = kTxPowerSteps;
+  return static_cast<int>(sizeof(kTxPowerSteps) / sizeof(kTxPowerSteps[0]));
+}
+
+int8_t wifiTxPower() { return txPower(); }
+
+bool wifiSetTxPower(int8_t quarter_dbm) {
+  if (!validTxPower(quarter_dbm)) {
+    return false;
+  }
+  if (quarter_dbm != txPower()) {
+    saveTxPower(quarter_dbm);
+    applyTxPower();  // no restart: the radio takes it as it runs
+  }
+  return true;
+}
+
+void wifiSelectControl(const char* entity_id) {
+  selectControlKeepingInput(entity_id, services::ha::storedControlInput());
+}
+
+void wifiSettingsChanged() {
+  // Before the portal is first set up its fields are built from what is
+  // stored when it is, so there is nothing to bring up to date.
+  if (s_wm_configured) {
+    refreshPortalParamDefaults();
+  }
+}
 
 void wifiLinkStatus(WifiLinkStatus& out) {
   out = WifiLinkStatus{};

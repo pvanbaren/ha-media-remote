@@ -39,6 +39,8 @@ void statusScreenNoPlayer();
 /** The status page: the device's name, what it controls, then its address,
  *  uptime and link. */
 void statusScreenDevice(const ui::DeviceStatus& status);
+/** Whether (x, y) is on the status page's gear, which opens the settings. */
+bool statusScreenGearHit(int x, int y);
 
 /** Generic centred card, used by the screens above. */
 void statusScreenMessage(const char* title, const char* line1,

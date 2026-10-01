@@ -40,6 +40,7 @@ enum class Screen : uint8_t {
   kStatus,      // the device's own status, a swipe down from now playing
   kWifi,        // choosing a Wi-Fi network and typing its password
   kPlayers,     // choosing the media player, when none is chosen
+  kSettings,    // the settings page, or one setting's choices, from the gear
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -64,6 +65,9 @@ enum class Intent : uint8_t {
   kWifiLeave,         // back out of the network list
   kChoosePlayer,      // store playerChosen() as the media player
   kPlayersRefresh,    // fetch the player list again
+  kOpenSettings,      // the gear on the status page
+  kSettingsTap,       // `index` is the settings row tapped
+  kSettingsBack,      // a swipe right on the settings page or its choices
 };
 
 struct Input {
@@ -129,6 +133,28 @@ const char* wifiPassword();
 void showPlayers(const char* note);
 /** The entity id of the player tapped. */
 const char* playerChosen();
+
+/** How a row on the settings page, or one of a setting's choices, is
+ *  shown. */
+enum class SettingStyle : uint8_t {
+  kNormal,
+  kCurrent,  // the choice in use, marked
+  kMuted,    // offered, but greyed: an unavailable player
+};
+/** Start building the settings page, or the list of one setting's choices,
+ *  titled `title` -- or `note` in its place when that is not empty. Rows are
+ *  added with settingsAdd() and the list shown with showSettings(); a tap on
+ *  one comes back as Intent::kSettingsTap with its index. */
+void settingsBegin(const char* title, const char* note);
+/** A row: `text` alone, or with a `detail` under it -- a setting's name over
+ *  its value. The strings are copied. */
+void settingsAdd(const char* text, const char* detail,
+                 SettingStyle style = SettingStyle::kNormal);
+/** The list just built, scrolled to row `focus` -- or when that is -1, to
+ *  its current choice if it has one, and otherwise its top. */
+void showSettings(int focus = -1);
+/** A card while the device restarts, saying `why`. */
+void showRestarting(const char* why);
 
 /** Results for whatever services::search now holds. */
 void showSearchResults();

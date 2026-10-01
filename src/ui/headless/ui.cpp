@@ -94,6 +94,13 @@ void showPlayers(const char* note) {
 }
 // Nothing is ever chosen without a screen to choose on.
 const char* playerChosen() { return ""; }
+// Nothing is tapped either, so the rows go nowhere.
+void settingsBegin(const char* title, const char* note) {
+  say("settings: %s", note[0] ? note : title);
+}
+void settingsAdd(const char*, const char*, SettingStyle) {}
+void showSettings(int) {}
+void showRestarting(const char* why) { say("restarting: %s", why); }
 void showSearchResults() { say("search results"); }
 void showSearching() { say("searching..."); }
 void showLoadingList() { say("loading library"); }

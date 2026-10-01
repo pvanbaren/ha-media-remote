@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 class WebServer;
 
 /**
@@ -92,6 +94,31 @@ struct WifiLinkStatus {
   float tx_dbm = 0.0f;
 };
 void wifiLinkStatus(WifiLinkStatus& out);
+
+// --- Settings the device's own settings page changes as well ---------------
+
+/** One Wi-Fi transmit power on offer, in the quarter-dBm units
+ *  esp_wifi_set_max_tx_power() takes, and its name. */
+struct WifiTxPowerStep {
+  int8_t quarter_dbm;
+  const char* label;
+};
+/** The steps on offer, strongest first, as `*steps`; returns how many. */
+int wifiTxPowerSteps(const WifiTxPowerStep** steps);
+/** The transmit power stored, quarter dBm. */
+int8_t wifiTxPower();
+/** Store a step from wifiTxPowerSteps() and apply it at once, as a portal
+ *  save does. False, and nothing stored, for any other value. */
+bool wifiSetTxPower(int8_t quarter_dbm);
+/** Store `entity_id` as the Volume & power device, "" for the media player
+ *  itself, as a portal save does: the player's input on it is kept when the
+ *  new device lists an input by that name, and cleared when it does not.
+ *  Blocks on a round trip to Home Assistant to ask. */
+void wifiSelectControl(const char* entity_id);
+/** A setting was changed on the device: bring the portal's fields up to
+ *  date, so a page opened from now on shows it -- and a save from it does
+ *  not put the old value back. May block on Home Assistant for the lists. */
+void wifiSettingsChanged();
 
 /** GPIO setup; call once early in setup(). Touch is the primary input, so
  *  BOOT exists only as the escape hatch that clears Wi-Fi and HA settings. */
