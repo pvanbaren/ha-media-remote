@@ -120,6 +120,10 @@ WiFiManagerParameter s_param_ha_token("ha_token", "Long-lived access token", "",
  *  amplifier offers. */
 constexpr size_t kInputAttrsBytes = 3072;
 char* s_input_attrs = nullptr;
+/** The input dropdown was last built without the stored input among the
+ *  device's inputs -- it showed "(not listed now)" -- so the next page that
+ *  shows it asks again first. See startLanWebPortal(). */
+bool s_input_unlisted = false;
 WiFiManagerParameter* s_param_ctl_input = nullptr;
 
 /** Music Assistant config entry id. Only the station list needs it, and only
@@ -604,7 +608,8 @@ void buildInputSelect() {
       appendHtmlEscaped(html, sources[i]);
       html += "</option>";
     }
-    if (stored[0] != '\0' && !stored_listed) {
+    s_input_unlisted = stored[0] != '\0' && !stored_listed;
+    if (s_input_unlisted) {
       // Chosen before, and the device does not list it now -- off, or
       // renamed. Kept, and said so, rather than silently dropped.
       html += "<option value=\"";
@@ -614,6 +619,7 @@ void buildInputSelect() {
       html += " (not listed now)</option>";
     }
   } else {
+    s_input_unlisted = false;
     html += "<option value=\"\" disabled>not needed - no separate volume "
             "device</option>";
   }
@@ -1175,6 +1181,21 @@ void startLanWebPortal() {
   }
 #endif
   s_wm.startWebPortal();
+  // The dropdowns are built when the portal starts and after a save, not per
+  // page, so an input list asked for while the volume device listed none --
+  // off, or Home Assistant not answering yet -- would show "(not listed now)"
+  // until the next save. Ask again as a page that shows it is served.
+  if (s_wm.server != nullptr) {
+    s_wm.server->addMiddleware([](WebServer& server,
+                                  Middleware::Callback next) {
+      const String& uri = server.uri();
+      if (s_input_unlisted &&
+          (uri == "/param" || uri == "/wifi" || uri == "/0wifi")) {
+        buildInputSelect();
+      }
+      return next();
+    });
+  }
   LOG_INFO("LAN config: http://%s.local or http://%s",
                 services::device::name(), WiFi.localIP().toString().c_str());
 }
