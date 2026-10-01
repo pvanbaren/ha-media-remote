@@ -71,6 +71,27 @@ void setLocked(char* to, size_t to_len, const char* value) {
   taskEXIT_CRITICAL(&s_lock);
 }
 
+/** Spaces and control characters off both ends, in place, as ha_client does
+ *  for its settings: none belongs in a URL or a token, and a pasted line
+ *  break would otherwise be stored as part of one. True when any went. */
+bool trimSetting(char* s) {
+  const size_t len = strlen(s);
+  size_t start = 0;
+  while (start < len && static_cast<unsigned char>(s[start]) <= ' ') {
+    ++start;
+  }
+  size_t end = len;
+  while (end > start && static_cast<unsigned char>(s[end - 1]) <= ' ') {
+    --end;
+  }
+  if (start == 0 && end == len) {
+    return false;
+  }
+  memmove(s, s + start, end - start);
+  s[end - start] = '\0';
+  return true;
+}
+
 }  // namespace
 
 void init() {
@@ -80,6 +101,23 @@ void init() {
   }
   prefs.getString(kPrefsUrlKey, s_url, sizeof(s_url));
   prefs.getString(kPrefsTokenKey, s_token, sizeof(s_token));
+  // Stored before settings were trimmed on the way in: trimmed now, and the
+  // repair stored, an empty value removed.
+  const bool url_trimmed = trimSetting(s_url);
+  const bool token_trimmed = trimSetting(s_token);
+  if (url_trimmed || token_trimmed) {
+    LOG_WARN("MA: stored settings had spaces or control characters, trimmed");
+    if (s_url[0] != '\0') {
+      prefs.putString(kPrefsUrlKey, s_url);
+    } else {
+      prefs.remove(kPrefsUrlKey);
+    }
+    if (s_token[0] != '\0') {
+      prefs.putString(kPrefsTokenKey, s_token);
+    } else {
+      prefs.remove(kPrefsTokenKey);
+    }
+  }
   prefs.end();
   char url[config::kMaUrlMaxLen + 1];
   effectiveUrl(url, sizeof(url));
@@ -130,17 +168,22 @@ void saveSettings(const char* url, const char* token) {
   char cleaned[config::kMaUrlMaxLen + 1] = {};
   if (url != nullptr) {
     // Trimmed, and without a trailing slash, so "<url>/api" is one slash.
-    while (*url == ' ') {
-      ++url;
-    }
     strlcpy(cleaned, url, sizeof(cleaned));
+    trimSetting(cleaned);
     size_t n = strlen(cleaned);
-    while (n > 0 && (cleaned[n - 1] == ' ' || cleaned[n - 1] == '/')) {
+    while (n > 0 && cleaned[n - 1] == '/') {
       cleaned[--n] = '\0';
     }
   }
+  // Whitespace alone is no token, so it keeps the stored one as blank does.
+  char entered[sizeof(s_token)] = {};
+  if (token != nullptr) {
+    strlcpy(entered, token, sizeof(entered));
+    trimSetting(entered);
+  }
+  token = entered;
   const bool url_changed = strcmp(cleaned, s_url) != 0;
-  const bool token_entered = token != nullptr && token[0] != '\0';
+  const bool token_entered = token[0] != '\0';
   if (!url_changed && !token_entered) {
     return;
   }

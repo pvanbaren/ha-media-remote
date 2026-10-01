@@ -177,6 +177,29 @@ void copyBounded(char* out, size_t out_len, const char* src) {
   }
   out[i] = '\0';
 }
+
+/** Take spaces and control characters off both ends of a setting, in place,
+ *  and say whether anything went. None belongs in a URL, a token, an entity
+ *  id or a config entry id, and a token pasted with its line break, or a
+ *  form posted with Windows line endings, otherwise stores one -- a token of
+ *  "\r" reads as set, and goes out as a header Home Assistant refuses. */
+bool trimSetting(char* s) {
+  const size_t len = strlen(s);
+  size_t start = 0;
+  while (start < len && static_cast<unsigned char>(s[start]) <= ' ') {
+    ++start;
+  }
+  size_t end = len;
+  while (end > start && static_cast<unsigned char>(s[end - 1]) <= ' ') {
+    --end;
+  }
+  if (start == 0 && end == len) {
+    return false;
+  }
+  memmove(s, s + start, end - start);
+  s[end - start] = '\0';
+  return true;
+}
 char s_last_error[128] = {};
 /** Bumped whenever something the state stream was opened against -- the
  *  server, the token, the player, the volume/power entity -- changes, so the
@@ -863,6 +886,37 @@ void init() {
   const int32_t wake = prefs.getInt(kPrefsWakeVolumeKey, kWakeVolumeUnset);
   prefs.end();
 
+  // Settings stored before they were trimmed on the way in are trimmed here,
+  // and the repaired value stored -- an empty token removed, so a remote
+  // whose token was only whitespace reads as unlinked and can link again.
+  struct Stored {
+    const char* key;
+    char* value;
+  };
+  const Stored stored[] = {
+      {kPrefsUrlKey, s_base_url},       {kPrefsTokenKey, s_token},
+      {kPrefsSelectedKey, s_selected},  {kPrefsMaEntryKey, s_ma_entry},
+      {kPrefsControlKey, s_control},    {kPrefsControlInputKey, s_control_input},
+  };
+  bool repaired = false;
+  for (const Stored& setting : stored) {
+    if (trimSetting(setting.value)) {
+      repaired = true;
+      LOG_WARN("HA: stored %s had spaces or control characters, trimmed",
+               setting.key);
+    }
+  }
+  if (repaired && prefs.begin(kPrefsNamespace, false)) {
+    for (const Stored& setting : stored) {
+      if (setting.value[0] != '\0') {
+        prefs.putString(setting.key, setting.value);
+      } else if (prefs.isKey(setting.key)) {
+        prefs.remove(setting.key);
+      }
+    }
+    prefs.end();
+  }
+
   if (wake == kWakeVolumeUnset) {
     s_wake_volume_pct =
         config::kPlayerWakeVolume >= 0.0f
@@ -908,8 +962,19 @@ void saveCredentials(const char* base_url, const char* token_in) {
     return;
   }
 
-  if (base_url != nullptr && base_url[0] != '\0') {
-    snprintf(s_base_url, sizeof(s_base_url), "%s", base_url);
+  char url[sizeof(s_base_url)] = {};
+  char token[sizeof(s_token)] = {};
+  if (base_url != nullptr) {
+    snprintf(url, sizeof(url), "%s", base_url);
+    trimSetting(url);
+  }
+  if (token_in != nullptr) {
+    snprintf(token, sizeof(token), "%s", token_in);
+    trimSetting(token);
+  }
+
+  if (url[0] != '\0') {
+    snprintf(s_base_url, sizeof(s_base_url), "%s", url);
     // Trailing slashes would double up against the /api/... paths.
     size_t len = strlen(s_base_url);
     while (len > 0 && s_base_url[len - 1] == '/') {
@@ -920,9 +985,10 @@ void saveCredentials(const char* base_url, const char* token_in) {
   }
 
   // The portal shows a stored token as a placeholder rather than echoing it,
-  // so an empty field means "leave it alone", not "clear it".
-  if (token_in != nullptr && token_in[0] != '\0') {
-    snprintf(s_token, sizeof(s_token), "%s", token_in);
+  // so an empty field means "leave it alone", not "clear it" -- and so does
+  // one that was only whitespace.
+  if (token[0] != '\0') {
+    snprintf(s_token, sizeof(s_token), "%s", token);
     prefs.putString(kPrefsTokenKey, s_token);
     ++s_generation;
   }
@@ -956,6 +1022,7 @@ void selectEntity(const char* entity_id) {
   }
   taskENTER_CRITICAL(&s_entity_lock);
   copyBounded(s_selected, sizeof(s_selected), entity_id);
+  trimSetting(s_selected);
   taskEXIT_CRITICAL(&s_entity_lock);
   ++s_generation;
   Preferences prefs;
@@ -1249,6 +1316,7 @@ void selectControlInput(const char* input) {
   }
   taskENTER_CRITICAL(&s_entity_lock);
   copyBounded(s_control_input, sizeof(s_control_input), input);
+  trimSetting(s_control_input);
   taskEXIT_CRITICAL(&s_entity_lock);
   ++s_generation;  // the state template names it
 
@@ -1319,6 +1387,7 @@ void selectControlEntity(const char* entity_id) {
   // media player", so it is stored rather than ignored.
   taskENTER_CRITICAL(&s_entity_lock);
   copyBounded(s_control, sizeof(s_control), entity_id);
+  trimSetting(s_control);
   taskEXIT_CRITICAL(&s_entity_lock);
   ++s_generation;
 
@@ -1339,6 +1408,7 @@ void saveMaConfigEntry(const char* entry_id) {
     return;
   }
   snprintf(s_ma_entry, sizeof(s_ma_entry), "%s", entry_id);
+  trimSetting(s_ma_entry);
 
   Preferences prefs;
   if (!prefs.begin(kPrefsNamespace, false)) {
