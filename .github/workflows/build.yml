@@ -7,7 +7,8 @@
 #
 # Pushing a v* tag also drafts a GitHub release with every board's images
 # attached, named for the board. The draft takes its notes from the tag's
-# message; check it and publish it by hand.
+# message; check it and publish it by hand. Publishing it puts its merged
+# images on the install page (pages.yml).
 
 name: Build
 

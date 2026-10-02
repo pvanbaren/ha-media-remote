@@ -1,0 +1,13 @@
+{
+  "name": "Home Assistant Media Remote (Adafruit Qualia ESP32-S3, 720x720)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/firmware-qualia-720-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

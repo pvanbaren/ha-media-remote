@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install Media Remote</title>
+  <meta name="description" content="Install the Home Assistant Media Remote firmware on a board connected over USB, from the browser.">
+  <!--
+    The install page, published to GitHub Pages by .github/workflows/pages.yml
+    with the latest release's firmware-<board>-merged.bin under firmware/.
+    The flashing is ESP Web Tools: Web Serial, in a Chromium desktop browser.
+  -->
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --text: #1b1f24;
+      --muted: #5b6470;
+      --line: #dfe3e8;
+      --accent: #0a84c6;
+      --accent-text: #ffffff;
+      --note: #fff7e0;
+      --note-line: #f0d48a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111418;
+        --card: #1a1f25;
+        --text: #e8ebef;
+        --muted: #9aa4b0;
+        --line: #2c333b;
+        --accent: #3aaee8;
+        --accent-text: #08131b;
+        --note: #2a2414;
+        --note-line: #5c4a1e;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+    h1 { font-size: 1.9rem; margin: 0 0 4px; }
+    h2 { font-size: 1.15rem; margin: 36px 0 12px; }
+    p { margin: 0 0 12px; }
+    a { color: var(--accent); }
+    .version { color: var(--muted); margin-bottom: 24px; }
+    .boards { display: grid; gap: 12px; }
+    .board {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .board h3 { font-size: 1.05rem; margin: 0; }
+    .board p { color: var(--muted); margin: 2px 0 0; font-size: 0.95rem; }
+    .install {
+      flex: none; border: 0; border-radius: 8px; padding: 10px 20px;
+      background: var(--accent); color: var(--accent-text);
+      font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .install:hover { filter: brightness(1.08); }
+    .unsupported { color: var(--muted); font-size: 0.9rem; max-width: 220px; text-align: right; }
+    .note {
+      background: var(--note); border: 1px solid var(--note-line); border-radius: 10px;
+      padding: 12px 16px; margin: 20px 0 0;
+    }
+    ol, ul { padding-left: 22px; margin: 0 0 12px; }
+    li { margin: 4px 0; }
+    code { font-size: 0.92em; }
+    @media (max-width: 540px) {
+      .board { flex-direction: column; align-items: stretch; }
+      .install { width: 100%; }
+      .unsupported { max-width: none; text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Install Media Remote</h1>
+  <p class="version" id="version">The latest release</p>
+
+  <p>Connect the board to this computer with a USB cable, click <b>Install</b> for your board, and choose its port. It takes about a minute.</p>
+
+  <div class="boards">
+    <section class="board">
+      <div>
+        <h3>Waveshare ESP32-S3-Touch-LCD-1.28</h3>
+        <p>240×240 round</p>
+      </div>
+      <esp-web-install-button manifest="manifest-waveshare-s3.json">
+        <button slot="activate" class="install">Install</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on a computer to install.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over https to install.</span>
+      </esp-web-install-button>
+    </section>
+
+    <section class="board">
+      <div>
+        <h3>DFRobot DFR1221</h3>
+        <p>360×360 round</p>
+      </div>
+      <esp-web-install-button manifest="manifest-round360-s3.json">
+        <button slot="activate" class="install">Install</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on a computer to install.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over https to install.</span>
+      </esp-web-install-button>
+    </section>
+
+    <section class="board">
+      <div>
+        <h3>Adafruit Qualia ESP32-S3</h3>
+        <p>4" 720×720 square panel. Put it in download mode first: see below.</p>
+      </div>
+      <esp-web-install-button manifest="manifest-qualia-720.json">
+        <button slot="activate" class="install">Install</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on a computer to install.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over https to install.</span>
+      </esp-web-install-button>
+    </section>
+  </div>
+
+  <div class="note">
+    <b>This is a fresh install.</b> It replaces everything on the board, Wi-Fi and Home Assistant settings included. To update a remote that is already set up, use the <b>Update</b> page of its portal instead, which keeps them.
+  </div>
+
+  <h2>Before you start</h2>
+  <ul>
+    <li>Use Chrome, Edge or Opera on a desktop or laptop. Firefox, Safari and phones can't flash over USB.</li>
+    <li>Use a USB cable that carries data, not one for charging only.</li>
+    <li><b>Qualia:</b> its USB port is run by the firmware, so the browser can't restart it into the bootloader by itself. Hold <b>BOOT</b>, tap <b>RESET</b>, then let go of <b>BOOT</b>, and click Install. If it does not start by itself when the install is done, tap <b>RESET</b>.</li>
+    <li>If no port is offered, unplug the board and plug it in again, or put it in download mode as for the Qualia.</li>
+  </ul>
+
+  <h2>After installing</h2>
+  <ol>
+    <li>The remote starts on its <b>Setup</b> card. Tap it to choose your Wi-Fi network and type its password on the screen, or join its <code>MediaRemote-Setup</code> access point from a phone.</li>
+    <li>Once it is on Wi-Fi, it finds Home Assistant and shows a QR code. Scan it and sign in.</li>
+    <li>Choose the media player from the list, and the remote is ready.</li>
+  </ol>
+
+  <p>Everything else is in the <a href="https://github.com/pvanbaren/ha-media-remote#readme">README</a>. Firmware files for each release are on the <a href="https://github.com/pvanbaren/ha-media-remote/releases">releases page</a>.</p>
+</main>
+<script>
+  // The version the workflow wrote into the manifests, for the line under
+  // the heading. Left as it is if the fetch fails.
+  fetch('manifest-waveshare-s3.json')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => {
+      if (m && m.version && m.version !== 'dev') {
+        document.getElementById('version').textContent = 'Version ' + m.version;
+      }
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

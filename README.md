@@ -517,6 +517,30 @@ GitHub Actions builds all four on every push and pull request
 images to download: `firmware.bin` for a network update and
 `firmware-merged.bin` for a blank board.
 
+### First install, from the browser
+
+**[pvanbaren.github.io/ha-media-remote](https://pvanbaren.github.io/ha-media-remote/)**
+installs the latest release on a board plugged in over USB, with nothing to
+build: click **Install** for the board and choose its port. It needs Chrome,
+Edge or Opera on a computer (Web Serial; not Firefox, Safari or a phone).
+The **Qualia** goes into download mode by hand first -- hold BOOT, tap RESET,
+let go of BOOT -- since its USB port is the firmware's own and the browser
+cannot restart it into the bootloader.
+
+It writes the release's `firmware-<board>-merged.bin` from address 0, so like
+any merged image **it wipes the settings**: it is for a blank board, or one
+being set up again. Update a remote that is already set up from its portal.
+
+The page is `site/`, published to GitHub Pages by
+`.github/workflows/pages.yml` whenever a release is published: the page, a
+manifest per board with the release's tag written in, and the release's
+merged images beside them. The images are copied rather than linked, since a
+release download carries no CORS headers and the browser would refuse it.
+The flashing is [ESP Web Tools](https://esphome.github.io/esp-web-tools/).
+GitHub Pages has to be set to build from GitHub Actions once, under
+**Settings -> Pages**, and the workflow can be run by hand to publish the
+page again for the latest release.
+
 ### First install, over USB
 
 ```bash
@@ -692,6 +716,8 @@ scripts/
   merge_firmware.py        pio run -t merge
 partitions/media_remote.csv  the flash layout, shared by every board
 .github/workflows/build.yml  CI: builds every board on each push
+.github/workflows/pages.yml  the install page, on each published release
+site/                        the install page and its board manifests
 ```
 
 ### Tasks

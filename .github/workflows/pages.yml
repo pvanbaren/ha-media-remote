@@ -1,0 +1,75 @@
+# Publish the install page to GitHub Pages: site/, with the latest
+# published release's firmware-<board>-merged.bin under firmware/ and its
+# tag written into each board's manifest.
+#
+# On publishing a release rather than on pushing its tag: a tag only drafts
+# the release (build.yml), and the page should never offer firmware that
+# has not been released. Run it by hand to publish the page again for the
+# latest release -- after changing site/, say.
+#
+# The images are served from Pages itself, beside the page, rather than
+# linked from the release: a release download carries no CORS headers, so
+# the browser refuses to hand it to the flasher.
+#
+# Needs Settings -> Pages -> Source set to GitHub Actions, once.
+
+name: Install page
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cut one off half way.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publish the install page
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # The release that was just published, or by hand the latest one.
+      - name: Fetch the release's images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName -q .tagName)
+          fi
+          echo "Release $TAG"
+          mkdir -p _site/firmware
+          cp site/* _site/
+          gh release download "$TAG" --pattern 'firmware-*-merged.bin' \
+            --dir _site/firmware
+          # Every manifest names an image that is there, and says which
+          # release it is.
+          for manifest in _site/manifest-*.json; do
+            env="${manifest#_site/manifest-}"
+            env="${env%.json}"
+            test -f "_site/firmware/firmware-$env-merged.bin" ||
+              { echo "No image for $env in $TAG"; exit 1; }
+            sed -i "s/\"version\": \"dev\"/\"version\": \"$TAG\"/" "$manifest"
+          done
+          ls -l _site _site/firmware
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,13 @@
+{
+  "name": "Home Assistant Media Remote (DFRobot DFR1221)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/firmware-round360-s3-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
