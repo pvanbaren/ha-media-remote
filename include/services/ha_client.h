@@ -165,9 +165,10 @@ void selectControlEntity(const char* entity_id);
  *  empty means the input named after the player, where there is one. */
 const char* storedControlInput();
 void selectControlInput(const char* input);
-/** The player's own volume, 0..1, set when it wakes from standby while a
- *  separate entity carries volume and power; negative when that is off. What
- *  the portal stored, or config::kPlayerWakeVolume until it has stored one. */
+/** The player's own volume, 0..1, set when the remote switches a separate
+ *  volume and power entity on; negative when that is off. What the portal
+ *  stored, or config::kPlayerWakeVolume until it has stored one. The portal
+ *  calls it Player volume at switch-on; "wake" here is the amplifier's. */
 float playerWakeVolume();
 /** The same as a whole percent for the portal: 0..100, or -1 for off. */
 int playerWakeVolumePercent();

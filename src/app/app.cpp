@@ -68,12 +68,9 @@ bool g_state_valid = false;
 std::atomic<bool> g_state_dirty{false};
 /** Set to cut the poll task's wait short after a transport command. */
 std::atomic<bool> g_poll_now{false};
-/** A tap woke the panel and the volume/power entity should be switched on.
- *  Handed to the poll task rather than called from the touch path: turn_on is
- *  a network round trip, and holding the screen black for it is exactly the
- *  wrong moment to block. */
-std::atomic<bool> g_turn_on_control{false};
-/** ...and the other way, once the panel has been dark long enough. */
+/** The panel has been dark long enough and the volume/power entity should be
+ *  switched off. Handed to the poll task rather than called from the loop:
+ *  turn_off is a network round trip. */
 std::atomic<bool> g_turn_off_control{false};
 
 unsigned long g_last_elapsed_ms = 0;
@@ -113,13 +110,6 @@ constexpr float kVolumeConfirmEpsilon = 0.02f;
 unsigned long g_message_recheck_ms = 0;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
-
-/** Playback state the previous poll saw, for spotting the edge into activity.
- *  kUnknown until the first poll lands: the very first observation is not a
- *  transition, and treating it as one would reset the volume of a system that
- *  was happily playing before the remote was even switched on. */
-PlaybackState g_last_playback = PlaybackState::kUnknown;
-bool g_have_last_playback = false;
 
 /** millis() when the player last went idle, or 0 while it is doing something. */
 unsigned long g_idle_since = 0;
@@ -346,23 +336,16 @@ void wakeDisplay() {
   g_state_dirty = true;
 }
 
-/** A tap landed on a dark panel. Reaching for a dark screen is already the
- *  gesture for "I want this", and on a separate amplifier there is nothing to
- *  hear until it is switched on -- so unlike waking because playback resumed,
- *  this powers the control entity. Whatever started playing by itself clearly
- *  did not need the help. */
-void requestControlWake() {
+/** A tap landed on a dark panel: the idle clock starts again. It powers
+ *  nothing -- a glance at the remote is not a request for music, and the
+ *  amplifier is switched on by play or a pick from the list instead (see
+ *  powerOnControl()) -- but a power-off the blanking asked for and the poll
+ *  task has not yet sent is called off, since someone is here after all. */
+void noteTouchWake() {
   g_idle_since = 0;
   g_control_off_sent = false;
+  g_turn_off_control = false;
   g_state_dirty = true;
-  if (!config::kTurnOnControlOnWake || !services::ha::configured()) {
-    return;
-  }
-  if (services::ha::controlEntity()[0] == '\0') {
-    return;
-  }
-  g_turn_on_control = true;
-  g_poll_now = true;
 }
 
 /** Point the volume/power entity at this player, where it has an input for
@@ -371,17 +354,12 @@ void requestControlWake() {
  *
  *  Switching a zone on does not route anything to it: a Triad output comes up
  *  with no input, stays silent, and its integration drops it again a minute
- *  later unless the linked player starts playing first. So a power-on the
- *  remote asks for selects the player's input as well -- straight after the
- *  turn_on, unless the zone is already on it.
- *
- *  For a zone that was already on it depends who is asking. `claim` -- play
- *  pressed on this remote -- takes the zone over whatever it is on: that is
- *  someone in this room asking to hear this player. Anything else only fills
- *  a zone with no input at all, so one deliberately switched to another source
- *  is left alone. */
-void selectPlayerSource(const PlayerState& snapshot, bool just_turned_on,
-                        bool claim) {
+ *  later unless the linked player starts playing first. So a power-on selects
+ *  the player's input as well -- straight after the turn_on, unless the zone
+ *  is already on it. A zone that was already on is taken over whatever it is
+ *  on too: the only power-ons are play pressed on this remote and a pick from
+ *  its list, someone in this room asking to hear this player. */
+void selectPlayerSource(const PlayerState& snapshot) {
   if (!config::kSelectControlSource || !services::ha::controlIsSeparate()) {
     return;
   }
@@ -395,16 +373,50 @@ void selectPlayerSource(const PlayerState& snapshot, bool just_turned_on,
   if (strcmp(snapshot.control_source, snapshot.player_source) == 0) {
     return;  // already on it
   }
-  if (!just_turned_on && !claim && snapshot.control_source[0] != '\0') {
-    return;  // on something else, and nobody here asked to change that
-  }
   services::ha::selectSource(services::ha::controlEntity(),
                              snapshot.player_source);
 }
 
+/** Set the *player's* own volume to the portal's Player volume at switch-on,
+ *  services::ha::playerWakeVolume() -- or config::kPlayerWakeVolume until one
+ *  is saved -- when a separate entity carries volume and power and a level is
+ *  set. With the real knob on the amplifier the player's volume is the gain
+ *  on the signal it hands over, and leaving it wherever it drifted means the
+ *  amplifier's setting stops meaning the same thing session to session.
+ *
+ *  Only from powerOnControl(), once it has switched the amplifier on: the
+ *  start of a session this remote began. Never because the player started by
+ *  itself -- a cast from a phone keeps the volume it was cast at. volume_set
+ *  goes to selectedEntity(), the thing that plays; where the two are the same
+ *  entity, the volume last chosen there is the one wanted back. */
+void pinPlayerVolume() {
+  if (!services::ha::controlIsSeparate()) {
+    return;
+  }
+  const float level = services::ha::playerWakeVolume();
+  if (level < 0.0f) {
+    return;
+  }
+  char player[config::kEntityIdMaxLen];
+  services::ha::copySelectedEntity(player, sizeof(player));
+  if (player[0] == '\0') {
+    return;
+  }
+  LOG_INFO("HA: amplifier switched on, pinning %s to %.2f", player, level);
+  services::ha::setVolume(player, level);
+}
+
 /** Switch the volume/power entity on, unless it is plainly unnecessary, and
- *  route this player to it where it switches inputs (selectPlayerSource();
- *  `claim_source` is that function's `claim`).
+ *  route this player to it where it switches inputs (selectPlayerSource()),
+ *  setting the player's own volume once it has switched it on
+ *  (pinPlayerVolume()). Power, input and volume all come before the play
+ *  they are for.
+ *
+ *  Only for playback started from this remote -- play pressed, or something
+ *  picked from the list or the search. Never for playback that started on
+ *  its own, nor for a tap that only wakes the screen: a player can feed
+ *  several rooms -- a Chromecast every zone can be switched to, say -- and
+ *  a cast from a phone to it must not switch on every room's amplifier.
  *
  *  Skipped when the last snapshot says it is already on, and when that
  *  snapshot says it has no TURN_ON feature -- calling turn_on on an entity
@@ -414,7 +426,7 @@ void selectPlayerSource(const PlayerState& snapshot, bool just_turned_on,
  *
  *  Blocks on the round trip, so callers on the touch path have to want the
  *  wait. Returns true if a call was actually made. */
-bool powerOnControl(bool claim_source = false) {
+bool powerOnControl() {
   if (!services::ha::configured()) {
     return false;
   }
@@ -427,7 +439,7 @@ bool powerOnControl(bool claim_source = false) {
   const bool have_state = snapshotState(snapshot);
   if (have_state) {
     if (!snapshot.control_off) {
-      selectPlayerSource(snapshot, false, claim_source);
+      selectPlayerSource(snapshot);
       return false;
     }
     if (snapshot.control_features != 0 &&
@@ -437,8 +449,11 @@ bool powerOnControl(bool claim_source = false) {
   }
 
   const bool ok = services::ha::callService("turn_on", control);
-  if (ok && have_state) {
-    selectPlayerSource(snapshot, true, claim_source);
+  if (ok) {
+    if (have_state) {
+      selectPlayerSource(snapshot);
+    }
+    pinPlayerVolume();
   }
   return ok;
 }
@@ -465,59 +480,6 @@ bool powerOffControl() {
   }
 
   return services::ha::callService("turn_off", control);
-}
-
-/** Whether the player is doing something, as opposed to sitting in standby.
- *
- *  Paused counts. A paused player has already been through the wake below;
- *  resuming it is not a fresh start. */
-bool playerIsActive(PlaybackState playback) {
-  return playback == PlaybackState::kPlaying ||
-         playback == PlaybackState::kPaused;
-}
-
-/** Handle the player coming out of standby, when a separate entity carries
- *  volume and power.
- *
- *  Two things, and they belong together because they are two halves of the
- *  same handoff. The amplifier is switched on, because nothing the player does
- *  is audible until it is. And the *player's* own volume is pinned to
- *  services::ha::playerWakeVolume() -- the portal's setting, or
- *  config::kPlayerWakeVolume until one is saved -- because with the real knob elsewhere that value
- *  is a source gain rather than a volume, and leaving it wherever it drifted
- *  means the amplifier's setting stops meaning the same thing session to
- *  session.
- *
- *  Note which entity each targets: turn_on goes to controlEntity(), the
- *  amplifier, and volume_set to selectedEntity(), the thing that plays. Power
- *  first, so the amplifier has the length of the second round trip to wake up
- *  before there is anything to hear.
- *
- *  Does nothing when the two are the same entity: the volume last chosen there
- *  is the volume wanted back, and powering it on is already handled by the
- *  touch and play paths. */
-void handlePlayerWake(PlaybackState before, PlaybackState now) {
-  if (!services::ha::controlIsSeparate()) {
-    return;
-  }
-  if (!g_have_last_playback || playerIsActive(before) ||
-      !playerIsActive(now)) {
-    return;
-  }
-
-  const char* player = services::ha::selectedEntity();
-  if (player[0] == '\0') {
-    return;
-  }
-
-  LOG_INFO("HA: %s woke from standby", player);
-  powerOnControl();
-
-  const float wake_volume = services::ha::playerWakeVolume();
-  if (wake_volume >= 0.0f) {
-    LOG_INFO("HA: pinning %s to %.2f", player, wake_volume);
-    services::ha::setVolume(player, wake_volume);
-  }
 }
 
 
@@ -737,15 +699,14 @@ void sendCommand(Intent intent) {
   // An amplifier that is off will not make a sound whatever the player does,
   // so play powers it first and then plays -- in that order, so the amp is
   // awake before the audio starts rather than a second into the track. Only
-  // play: skip-next on a dark room is a mis-tap, not a request for music.
+  // a press that starts playback: one that pauses is not asking to hear
+  // anything, and skip-next on a dark room is a mis-tap. Not while the room
+  // is hearing another input either: then play resumes that where it is.
   ui::showCommandPending(intent, true);
-  if (intent == Intent::kPlayPause && !elsewhere) {
-    // A press that will start playback also takes the zone over, whatever
-    // input it is on; one that will pause leaves it be. Not while the room
-    // is hearing another input: then play resumes that where it is.
-    const bool starting =
-        !have_before || before.playback != PlaybackState::kPlaying;
-    powerOnControl(starting);
+  const bool starting =
+      !have_before || before.playback != PlaybackState::kPlaying;
+  if (intent == Intent::kPlayPause && starting && !elsewhere) {
+    powerOnControl();
   }
   const bool ok = services::ha::callService(service, entity);
   ui::showCommandPending(intent, false);
@@ -839,7 +800,7 @@ void handleInput() {
       break;
 
     case Intent::kWokeFromTouch:
-      requestControlWake();
+      noteTouchWake();
       break;
 
     case Intent::kPrevious:
@@ -880,7 +841,7 @@ void handleInput() {
       // and it is switched to the player's input whatever it was on, since
       // picking something to play here is asking to hear it.
       ui::clearArtwork();
-      powerOnControl(true);
+      powerOnControl();
       startPlaying(services::browse::play(in.index));
       break;
 
@@ -891,7 +852,7 @@ void handleInput() {
 
     case Intent::kPlaySearchResult:
       ui::clearArtwork();
-      powerOnControl(true);
+      powerOnControl();
       startPlaying(services::search::play(in.index));
       break;
   }
@@ -961,11 +922,6 @@ void haPollTask(void*) {
 
     if (WiFi.status() == WL_CONNECTED && services::ha::configured() &&
         entity[0] != '\0') {
-      if (g_turn_on_control) {
-        g_turn_on_control = false;
-        g_turn_off_control = false;  // a wake outranks a pending power-off
-        powerOnControl();
-      }
       if (g_turn_off_control) {
         g_turn_off_control = false;
         powerOffControl();
@@ -1022,10 +978,6 @@ void haPollTask(void*) {
         // for it (see kCoverArtHoldMs).
         ui::requestArtwork(fresh.picture);
         publishState(fresh);
-
-        handlePlayerWake(g_last_playback, fresh.playback);
-        g_last_playback = fresh.playback;
-        g_have_last_playback = true;
 
         // What plays on this player is what plays in this room: the history
         // the swipe-up list's first two sections are built from. A new

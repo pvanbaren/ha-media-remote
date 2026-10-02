@@ -521,8 +521,9 @@ bool listsInput(const char* entity_id, const char* input) {
 }
 
 /**
- * "Player volume on wake": the level the player's own volume is set to when
- * it wakes from standby, in percent, blank for off (see handlePlayerWake()).
+ * "Player volume at switch-on": the level the player's own volume is set to
+ * when the remote switches the amplifier on, in percent, blank for off (see
+ * pinPlayerVolume() in app.cpp).
  *
  * Shown only while a separate entity carries volume and power. The pin is
  * for that setup -- the player's volume is then a source gain, and the knob
@@ -543,7 +544,8 @@ constexpr int kWakeParamLen = 3;
 void refreshWakeVolumeField() {
   if (services::ha::controlIsSeparate()) {
     snprintf(s_wake_label, sizeof(s_wake_label),
-             "Player volume on wake, %% (blank = leave it alone)");
+             "Player volume when the remote switches the amplifier on, %% "
+             "(blank = leave it alone)");
     snprintf(s_wake_attrs, sizeof(s_wake_attrs),
              " type=\"number\" min=\"0\" max=\"100\" step=\"1\" "
              "placeholder=\"off\"");
@@ -798,7 +800,8 @@ void onPortalParamsSaved() {
     }
   }
 
-  // Player volume on wake: blank is off, a whole number 0..100 the level.
+  // Player volume at switch-on: blank is off, a whole number 0..100 the
+  // level.
   // Anything else keeps what is stored rather than guessing.
   if (s_param_wake != nullptr && submitted("wake_vol")) {
     const char* raw = s_param_wake->getValue();
@@ -813,7 +816,7 @@ void onPortalParamsSaved() {
       }
     }
     if (pct == -2) {
-      LOG_WARN("Portal: player volume on wake \"%s\" is not 0-100, kept",
+      LOG_WARN("Portal: player volume at switch-on \"%s\" is not 0-100, kept",
                raw);
     } else if (pct != services::ha::playerWakeVolumePercent()) {
       services::ha::savePlayerWakeVolumePercent(pct);

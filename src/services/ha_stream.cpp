@@ -546,7 +546,7 @@ StreamCall streamCall(const char* domain, const char* service,
   }
 
   if (xTaskGetCurrentTaskHandle() == s_owner) {
-    // The owner itself, from handlePlayerWake() or a power flag: send and
+    // The owner itself, from a power flag: send and
     // read until the answer comes back, storing any state that arrives
     // meanwhile for the next streamService().
     s_own_call_done = false;

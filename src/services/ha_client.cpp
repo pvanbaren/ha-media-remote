@@ -31,7 +31,8 @@ constexpr char kPrefsSelectedKey[] = "sel";
 constexpr char kPrefsMaEntryKey[] = "maid";
 constexpr char kPrefsControlKey[] = "ctl";
 constexpr char kPrefsControlInputKey[] = "ctlin";
-/** The player's wake volume in percent: -1 off, 0..100 on. Absent until the
+/** The player's volume at switch-on in percent: -1 off, 0..100 on. Absent
+ *  until the
  *  portal first saves one, which is what lets the build's default stand. */
 constexpr char kPrefsWakeVolumeKey[] = "wakevol";
 /** Read back when nothing is stored. */
@@ -1277,9 +1278,9 @@ void savePlayerWakeVolumePercent(int percent) {
   prefs.putInt(kPrefsWakeVolumeKey, s_wake_volume_pct);
   prefs.end();
   if (s_wake_volume_pct >= 0) {
-    LOG_INFO("HA: player volume on wake: %d%%", s_wake_volume_pct);
+    LOG_INFO("HA: player volume at switch-on: %d%%", s_wake_volume_pct);
   } else {
-    LOG_INFO("HA: player volume on wake: left alone");
+    LOG_INFO("HA: player volume at switch-on: left alone");
   }
 }
 

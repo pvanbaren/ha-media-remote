@@ -219,17 +219,6 @@ constexpr char kDefaultPlayerEntityId[] = "";
  *  means the player above does both, which is the ordinary case. */
 constexpr char kDefaultControlEntityId[] = "";
 
-/** Power the volume/power entity on when a tap wakes a blanked panel.
- *
- *  The gesture that means "I want this" already exists, and on a separate
- *  amplifier or receiver there is nothing to hear until it is switched on, so
- *  reaching for the screen may as well do it. Only a *tap* on a blanked panel
- *  does this -- waking because playback resumed does not, since whatever
- *  started it clearly did not need the help.
- *
- *  The off half lives in kTurnOffControlOnBlank, on the same idle timer. */
-constexpr bool kTurnOnControlOnWake = true;
-
 /** When powering on a separate volume/power entity that lists the player as
  *  one of its sources -- a zone amplifier such as a Triad, by the player's
  *  own name -- select that source too. Turning a zone on routes nothing to
@@ -276,25 +265,27 @@ constexpr LogLevel kLogLevel = LogLevel::kInfo;
  *  start is memory that cannot fragment later. */
 constexpr bool kHaKeepAlive = true;
 
-/** Volume to set on the *media player* when it wakes up, and only when a
- *  separate entity carries volume and power.
+/** Volume to set on the *media player* when the remote switches the
+ *  amplifier on -- play pressed, or something picked from the list, while it
+ *  was off -- and only when a separate entity carries volume and power. Never
+ *  when the player starts by itself.
  *
  *  When the two are the same thing this is meaningless and is skipped: the
  *  volume the user last chose is the volume they want back.
  *
  *  When they differ, the player's own volume_level is not a volume at all --
  *  it is the gain on the signal being handed to an amplifier that has its own
- *  knob. Whatever that gain happens to be when the player wakes is arbitrary,
+ *  knob. Whatever that gain happens to be when a session starts is arbitrary,
  *  and if it drifted low once, every later adjustment fights it: the amplifier
  *  gets turned up to compensate for a quiet source, and the next track through
- *  a correctly-set player is deafening. Pinning it to one known value on the
- *  way up makes the amplifier's setting mean something from one session to the
- *  next.
+ *  a correctly-set player is deafening. Pinning it to one known value as the
+ *  amplifier comes on makes the amplifier's setting mean something from one
+ *  session to the next.
  *
  *  Off by default: whether a player's gain wants pinning, and where, depends
  *  on the player and the amplifier, and a volume changed on its own when
  *  playback starts is a surprise to anyone who did not ask for it. The
- *  portal's "Player volume on wake" field, shown when the volume device is a
+ *  portal's "Player volume at switch-on" field, shown when the volume device is a
  *  separate one, turns it on at a level of its own -- 70% is a sensible one:
  *  a little headroom costs nothing audible and leaves room for a player that
  *  applies replaygain above unity. A reset of the Home Assistant settings
@@ -381,7 +372,8 @@ constexpr bool kBlankWhenPaused = true;
 
 /** Switch the volume/power entity off when the panel blanks.
  *
- *  The counterweight to kTurnOnControlOnWake. Narrow by construction: standing
+ *  The counterweight to play and the list switching it on. Narrow by
+ *  construction: standing
  *  down already requires the player to be paused, idle, off or unavailable for
  *  kIdleTimeoutMs, and the panel wakes the instant that stops being true -- so
  *  the timer cannot run while anything is playing, and any touch or resumed

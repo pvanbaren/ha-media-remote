@@ -184,10 +184,11 @@ After **five minutes** with the player paused, idle, off or unavailable
 panel asleep -- and the **volume device is switched off** with it. Any touch
 wakes it, and so does playback starting from anywhere else.
 
-The volume device is also **switched on** when it is plainly wanted: a touch
-that wakes the blanked screen, pressing play, and choosing something from the
-list or the search. A zone amplifier is **switched to the player's input** at
-the same time. Details in
+The volume device is **switched on** only when playback is started from the
+remote: pressing play, or choosing something from the list or the search. A
+zone amplifier is **switched to the player's input** at the same time.
+Playback started anywhere else -- a cast from a phone -- and a touch that only
+wakes the screen leave it alone. Details in
 [Powering the volume device](#powering-the-volume-device).
 
 ### Gestures
@@ -206,7 +207,7 @@ the same time. Details in
 | Search | Tap keys, then SEARCH | Search |
 | Search results | Tap a result | Play that artist's radio |
 | Search | Swipe right | Back one step |
-| Blank screen | Any touch | Wake, and switch the volume device on |
+| Blank screen | Any touch | Wake it; the volume device is left as it is |
 | Hardware | Hold **BOOT** for 3 s (Qualia: the **DOWN** button) | Clear the settings and reboot into setup |
 
 A tap on a list that was still moving, or on one the loop did not see the
@@ -340,9 +341,12 @@ zone amplifier lists its players; a receiver needs the input chosen here.
 Changing **Volume & power** keeps it when the new device has an input by the
 same name, and clears it otherwise.
 
-**Player volume on wake** *(only with a separate volume device)* -- the level,
-in percent, the *player's* own volume is set to each time it wakes from
-standby; blank, the default, leaves it alone (`config::kPlayerWakeVolume`).
+**Player volume at switch-on** *(only with a separate volume device)* -- the
+level, in percent, the *player's* own volume is set to each time the remote
+switches the volume device on: play pressed, or something picked from the list
+or the search, while it was off. Never when the player starts by itself, so a
+cast from a phone keeps the volume it was cast at. Blank, the default, leaves
+it alone (`config::kPlayerWakeVolume`).
 70 is a sensible level to try. With the real knob on the amplifier, the
 player's volume is the gain on the signal it hands over, and pinning it keeps
 the amplifier's setting meaning the same thing from one session to the next;
@@ -357,7 +361,7 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Setting | BOOT held | Erase WiFi config |
 |---|---|---|
 | Wi-Fi network | cleared | cleared |
-| Home Assistant URL, token, player, volume device, input, player volume on wake, Music Assistant entry id | cleared | kept |
+| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Music Assistant entry id | cleared | kept |
 | Music Assistant URL and token | cleared | kept |
 | Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
@@ -698,29 +702,35 @@ once a second.
 ### Powering the volume device
 
 Switched **on** (`turn_on`, skipped when it is already on or has no
-`TURN_ON`) when a touch wakes the blanked screen, when play is pressed --
-power first, then play, so the amplifier is awake before the audio starts --
-and when something is chosen from the list or the search, before the
-`play_media` that takes several seconds anyway. Skip-next in a dark room is a
-mis-tap, not a request for music, and does not.
+`TURN_ON`) only for playback started from the remote: when a press of play
+starts it -- power first, then play, so the amplifier is awake before the
+audio starts -- and when something is chosen from the list or the search,
+before the `play_media` that takes several seconds anyway. A press that
+pauses does not, nor does skip-next in a dark room, which is a mis-tap rather
+than a request for music.
+
+Nothing else switches it on: not a touch that wakes the blanked screen, and
+not the player starting by itself. A player can feed several rooms -- a
+Chromecast that every zone can be switched to, say -- and a cast from a phone
+to it would otherwise switch on the amplifier of every remote that follows
+it.
 
 **A zone amplifier also gets its input.** A Triad output switched on routes
 nothing and comes up silent, so where the volume device has an input for the
 player (chosen in the portal, or named after it) powering it on also calls
-`select_source`, unless it is already on that input. For a device that was on
-already it depends who asked: play pressed on the remote, or something picked
-from the list or the search, takes it over whatever it is on; anything else
-only fills a device with no input at all. A press that pauses never touches
-the source. `kSelectControlSource` turns this off.
+`select_source`, unless it is already on that input. A device that was on
+already is taken over whatever it is on, since only play pressed on the
+remote, or something picked from its list or search, gets this far. A press
+that pauses never touches the source. `kSelectControlSource` turns this off.
 
-**When the player wakes from standby** -- idle, off, unavailable or unknown
-becoming playing or paused -- the volume device is switched on, and the
-*player's* volume is pinned to the portal's **Player volume on wake**, if a
-level is set there; by default it is left alone. With a separate
+**Switching it on also sets the player's volume**, to the portal's **Player
+volume at switch-on**, if a level is set there; by default it is left alone.
+Only when the remote has just switched the volume device on -- not when it was
+on already, and never when the player starts by itself. With a separate
 amplifier the player's `volume_level` is the gain on the signal it hands over;
 left to drift, a quiet source gets the amplifier turned up and the next
-correctly-set track is deafening. Only when the volume device is separate,
-only on the edge, never on the first state after boot.
+correctly-set track is deafening. Power, input and volume all come before the
+play.
 
 Switched **off** when the screen blanks (`kTurnOffControlOnBlank`), once per
 stretch of darkness, and only when it claims `TURN_OFF`. Blanking already
