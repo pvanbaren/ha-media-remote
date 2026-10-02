@@ -233,6 +233,35 @@ void statusScreenNeedsHaSetup() {
   resetSpinner();
 }
 
+void statusScreenHaSignIn(const char* qr_text, const char* url,
+                          const char* name) {
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  displayFontEnsureLoaded(gfx);
+  gfx.fillScreen(config::kColorBlack);
+
+  // The code in the middle, as large as the circle allows with its quiet
+  // zone: its corners are what a round panel cuts off first, and a square
+  // inside the circle is at most its diameter over the root of two.
+  const int side = ui::theme::kSize * 62 / 100;
+  const int top = ui::theme::kCenterY - side / 2;
+  gfx.qrcode(qr_text, ui::theme::kCenterX - side / 2, top, side, 1, true);
+
+  const int title_y = top / 2 + ui::theme::px(4);
+  drawCentredLine(gfx, "Scan to link", title_y, ui::theme::kStatusBodyTextPx,
+                  config::kTextOnBlack);
+  const int below = top + side;
+  const int name_y = below + (ui::theme::kSize - below) / 3;
+  drawCentredLine(gfx, name, name_y, ui::theme::kStatusBodyTextPx,
+                  ui::theme::kTextSecondary);
+  // Typed rather than scanned, from a computer: the page behind the code.
+  const char* bare = strstr(url, "://");
+  drawCentredLine(gfx, bare != nullptr ? bare + 3 : url,
+                  name_y + ui::theme::textPx(20), ui::theme::kStatusBodyTextPx,
+                  ui::theme::kTextMuted);
+  ui::canvasPresent();
+  resetSpinner();
+}
+
 void statusScreenHaUnreachable(const char* detail) {
   statusScreenMessage("Home Assistant", "not reachable",
                       detail != nullptr ? detail : "", config::kColorBlack,

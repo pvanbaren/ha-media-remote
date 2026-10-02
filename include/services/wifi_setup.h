@@ -1,5 +1,7 @@
 #pragma once
 
+class WebServer;
+
 /**
  * Wi-Fi bring-up and the LAN settings portal.
  *
@@ -72,6 +74,11 @@ void wifiRequestJoin(const char* ssid, const char* password);
  *  screens. Saved only if it connects; otherwise the network that was saved
  *  before is rejoined, and false comes back. */
 bool wifiJoinNow(const char* ssid, const char* password);
+
+/** Serve `handler` at `path` on the portal's web server, beside its own
+ *  pages, whenever that server starts. Call before Wi-Fi comes up. A few
+ *  slots; false when they are full. */
+bool wifiAddWebPage(const char* path, void (*handler)(WebServer& server));
 
 /** The station link as it is now, for the status page. */
 struct WifiLinkStatus {

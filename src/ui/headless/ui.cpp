@@ -97,6 +97,9 @@ void showLoading(const char* what) { say("loading %s", what); }
 void showCommandPending(Intent, bool) {}
 
 void showNeedsHaSetup() { say("needs Home Assistant setup"); }
+void showHaSignIn(const char*, const char* url, const char* name) {
+  say("link to %s: sign in at %s", name, url);
+}
 void showNoPlayer() { say("no player selected"); }
 void showHaUnreachable(const char* detail) { say("HA unreachable: %s", detail); }
 void showPortal() { say("setup portal"); }

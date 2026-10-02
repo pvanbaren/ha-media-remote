@@ -143,6 +143,10 @@ void showCommandPending(Intent intent, bool pending);
 
 /** Status cards. */
 void showNeedsHaSetup();
+/** Home Assistant found and waiting for a sign-in: a QR code saying
+ *  `qr_text`, the remote's sign-in page, with `url` to type instead and the
+ *  server's `name`. */
+void showHaSignIn(const char* qr_text, const char* url, const char* name);
 void showNoPlayer();
 void showHaUnreachable(const char* detail);
 void showPortal();

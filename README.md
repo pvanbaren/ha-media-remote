@@ -23,7 +23,10 @@ narrates to the serial console.
 
 What you need:
 
-- **Home Assistant**, reachable from the device, and a long-lived access token.
+- **Home Assistant**, reachable from the device. The remote finds it on the
+  network and you sign in from your phone
+  ([Linking to Home Assistant](#linking-to-home-assistant)), or give it a URL
+  and a long-lived access token in the portal.
 - **Music Assistant** (optional, but it is what the swipe-up list and the
   search are made of), with its Home Assistant integration.
 - A **Music Assistant token** (optional) for the room's own recommendations.
@@ -193,7 +196,8 @@ When there is nothing to play yet, a card says why:
 | **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured; the setup access point is up. A tap chooses a network on the device |
 | **Connecting** | Joining the saved network |
 | **No Wi-Fi** -- Tap to choose | The saved network did not answer. A tap chooses another |
-| **Link to HA** | Wi-Fi works; set the Home Assistant URL and token in the portal |
+| **Link to HA** | Wi-Fi works and Home Assistant has not been found; set its URL and token in the portal |
+| **Scan to link** -- a QR code | Home Assistant found; scan the code and sign in to link the remote |
 | **Home Assistant** -- not reachable | Requests are failing; the last line is the reason |
 | **No player** -- Choose one at `<name>.local` | No media player chosen; choose one in the portal |
 | **Reset** | Settings are being cleared (BOOT held) |
@@ -278,6 +282,40 @@ A few rules hold for every field:
 - A dropdown that was not on the page you saved -- a page opened before the
   player list had loaded -- is left as it was, never blanked.
 
+### Linking to Home Assistant
+
+Once the remote is on Wi-Fi with nothing linked, it looks for Home Assistant
+on the network: Home Assistant announces itself over mDNS
+(`_home-assistant._tcp`), with its URL. When one answers, the card becomes a
+**QR code**, with Home Assistant's name and the address the code stands for
+beneath it. A URL already typed into the portal is used instead of looking.
+
+1. **Scan the code** with a phone on the same network, or open the address
+   under it in any browser there. It is the remote's own page, `/ha`, which
+   sends the browser on to Home Assistant's sign-in page.
+2. **Sign in** to Home Assistant as you always do.
+3. Home Assistant sends the browser back to the remote, which takes it from
+   there: it trades the sign-in for a **long-lived access token** named
+   `Media Remote (<name>)`, revokes the short session the sign-in made,
+   fills in the **Music Assistant config entry id** if that is blank, and
+   stores the URL and the token.
+
+The player is then the only thing left to choose, in the portal. The token
+is listed in Home Assistant under your profile → **Security** →
+**Long-lived access tokens**; deleting it there unlinks the remote.
+
+The remote is the OAuth client, at its own address (`http://<its IP>/`,
+which Home Assistant accepts for a client on the local network), and the
+browser comes back to `/ha_auth` on the same address. That is why the phone
+has to be on the remote's network, and why the address rather than the
+`.local` name: Android does not resolve `.local` names. The code that comes
+back is good for one use, for ten minutes, and only with a sign-in this
+remote started.
+
+Not found (no mDNS on the network, or Home Assistant on another subnet): the
+card says to set the URL and token in the portal, and the remote looks again
+every half minute.
+
 ### The fields
 
 In the order the page shows them. After a save the confirmation page goes
@@ -312,7 +350,8 @@ dates against.
 
 **Long-lived access token** -- in Home Assistant, your profile → **Security**
 → **Long-lived access tokens** → **Create token**. Home Assistant shows it
-once.
+once. Not needed when the remote was linked by its QR code: it made one of
+its own.
 
 **Music Assistant config entry id** -- needed for the list and the search: the
 integration's services are addressed by config entry, not by entity. It looks

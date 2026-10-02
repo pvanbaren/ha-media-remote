@@ -658,6 +658,11 @@ void showNeedsHaSetup() {
   statusScreenNeedsHaSetup();
 }
 
+void showHaSignIn(const char* qr_text, const char* url, const char* name) {
+  hw::touchCancel();
+  statusScreenHaSignIn(qr_text, url, name);
+}
+
 void showNoPlayer() {
   hw::touchCancel();
   statusScreenNoPlayer();

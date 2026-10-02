@@ -47,6 +47,13 @@ constexpr char kPrefsTxPowerKey[] = "txpow";
 
 bool s_force_config_portal = false;
 
+/** Pages other services asked for with wifiAddWebPage(). */
+struct WebPage {
+  const char* path = nullptr;
+  void (*handler)(WebServer& server) = nullptr;
+};
+WebPage s_web_pages[4];
+
 /** True while wifiSetupConnect() waits in the setup portal. */
 bool s_in_setup_portal = false;
 /** A join asked for on the device, for the setup portal's loop to make. */
@@ -1222,6 +1229,12 @@ void ensureWifiManager() {
   s_wm.setWebServerCallback([] {
     claimSaveRoutes();
     s_wm.server->on("/link", handleLinkPage);
+    for (const WebPage& page : s_web_pages) {
+      if (page.path != nullptr) {
+        auto* handler = page.handler;
+        s_wm.server->on(page.path, [handler] { handler(*s_wm.server); });
+      }
+    }
   });
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
@@ -1652,6 +1665,17 @@ bool wifiJoinNow(const char* ssid, const char* password) {
     logLinkQuality();
   }
   return ok;
+}
+
+bool wifiAddWebPage(const char* path, void (*handler)(WebServer& server)) {
+  for (WebPage& page : s_web_pages) {
+    if (page.path == nullptr) {
+      page.path = path;
+      page.handler = handler;
+      return true;
+    }
+  }
+  return false;
 }
 
 void wifiSetObserver(const WifiObserver& observer) {

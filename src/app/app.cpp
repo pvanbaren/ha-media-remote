@@ -28,6 +28,7 @@
 #include "services/browse.h"
 #include "services/device_name.h"
 #include "services/display_settings.h"
+#include "services/ha_link.h"
 #include "services/history.h"
 #include "services/ma_api.h"
 #include "services/recommend.h"
@@ -271,10 +272,22 @@ bool untitledBriefly() {
   return brief;
 }
 
+/** Not linked to Home Assistant yet: the QR code to sign in with when Home
+ *  Assistant has been found, the card pointing at the portal otherwise. */
+void showNeedsHa() {
+  if (services::ha_link::ready()) {
+    ui::showHaSignIn(services::ha_link::qrText(),
+                     services::ha_link::pageUrl(),
+                     services::ha_link::serverName());
+  } else {
+    ui::showNeedsHaSetup();
+  }
+}
+
 void showNowPlaying() {
   if (!services::ha::configured()) {
     LOG_INFO("UI: now playing skipped, Home Assistant not configured");
-    ui::showNeedsHaSetup();
+    showNeedsHa();
     showMessageScreen();
     return;
   }
@@ -654,7 +667,7 @@ void handleListTimeout() {
  *  couple of seconds without a reboot. */
 void showNeedsPlayer() {
   if (!services::ha::configured()) {
-    ui::showNeedsHaSetup();
+    showNeedsHa();
   } else {
     ui::showNoPlayer();
   }
@@ -779,6 +792,55 @@ void handleMessageRecheck() {
     return;
   }
   g_poll_now = true;
+}
+
+/** Linking to Home Assistant, from the loop: look for it once Wi-Fi is up
+ *  and nothing is linked, put the QR code up when it is found, and finish
+ *  the sign-in once a browser comes back with a code. */
+unsigned long g_ha_discover_ms = 0;
+bool g_ha_discover_tried = false;
+
+void handleHaLink() {
+  if (services::ha::configured() || WiFi.status() != WL_CONNECTED ||
+      g_screen != Screen::kMessage) {
+    return;
+  }
+
+  if (services::ha_link::codeArrived()) {
+    ui::showLoading("Home Assistant link");
+    if (services::ha_link::complete()) {
+      // Linked. The player is the one thing left to choose.
+      if (services::ha::selectedEntity()[0] == '\0') {
+        showNeedsPlayer();
+      } else {
+        ui::showLoading(
+            services::ha::entityLabel(services::ha::selectedEntity()));
+        showMessageScreen();
+        g_poll_now = true;
+      }
+    } else {
+      ui::showHaUnreachable(services::ha_link::lastError());
+      showMessageScreen();
+      delay(3000);
+      showNeedsHa();
+    }
+    return;
+  }
+
+  // Not found yet: once at the start, then every half minute, since Home
+  // Assistant may still be starting, or on the network a little later.
+  if (services::ha_link::ready()) {
+    return;
+  }
+  const unsigned long now = millis();
+  if (g_ha_discover_tried && now - g_ha_discover_ms < 30000UL) {
+    return;
+  }
+  g_ha_discover_tried = true;
+  g_ha_discover_ms = now;
+  if (services::ha_link::discover()) {
+    showNeedsHa();
+  }
 }
 
 /** Start whatever the finger picked out of a list, and acknowledge it the
@@ -1176,6 +1238,8 @@ void setup() {
     ui::showPortal();
   }
   services::ha::init();
+  // Before Wi-Fi, so its pages are there when the portal's server starts.
+  services::ha_link::init();
   // After ha::init(): an unset Music Assistant address is derived from Home
   // Assistant's. The recommendations wait for Wi-Fi on their own task.
   services::ma::init();
@@ -1184,7 +1248,7 @@ void setup() {
   if (!wifiSetupConnect()) {
     showMessageScreen();
   } else if (!services::ha::configured()) {
-    ui::showNeedsHaSetup();
+    showNeedsHa();
     showMessageScreen();
   } else if (services::ha::selectedEntity()[0] == '\0') {
     showNeedsPlayer();
@@ -1225,6 +1289,7 @@ void loop() {
   handleListTimeout();
 
   handleMessageRecheck();
+  handleHaLink();
 
   // Before the artwork, and that ordering is the whole point. What is playing
   // is why the device exists; browse thumbnails are a preload for a list

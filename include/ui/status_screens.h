@@ -27,6 +27,12 @@ void statusScreenConnectingTick();
 void statusScreenNeedsHaSetup();
 /** HA reachable check failed; `detail` is services::ha::lastError(). */
 void statusScreenHaUnreachable(const char* detail);
+/** Home Assistant found: a QR code for `qr_text` (the remote's own sign-in
+ *  page), with `name` -- which Home Assistant -- and `url`, the same page to
+ *  type instead of scanning. */
+void statusScreenHaSignIn(const char* qr_text, const char* url,
+                          const char* name);
+
 /** Connected and configured, but no media_player has been chosen. */
 void statusScreenNoPlayer();
 
