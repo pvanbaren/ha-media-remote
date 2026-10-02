@@ -629,7 +629,7 @@ void handleStatusRefresh() {
 void handleListTimeout() {
   if (config::kListIdleReturnMs == 0 ||
       (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
-       g_screen != Screen::kStatus)) {
+       g_screen != Screen::kStatus && g_screen != Screen::kWifi)) {
     return;
   }
   unsigned long since = ui::lastInteractionMs();
@@ -642,6 +642,7 @@ void handleListTimeout() {
   LOG_DEBUG("UI: %s untouched for %lu s, back to now playing",
                 g_screen == Screen::kBrowse   ? "list"
                 : g_screen == Screen::kSearch ? "search"
+                : g_screen == Screen::kWifi   ? "wifi"
                                               : "status",
                 config::kListIdleReturnMs / 1000);
   showNowPlaying();
@@ -740,6 +741,9 @@ void handleWifiState() {
     g_wifi_down_since = 0;
     return;
   }
+  if (g_screen == Screen::kWifi) {
+    return;  // someone is choosing a network; a reconnect would take the screen
+  }
 
   if (g_wifi_down_since == 0) {
     g_wifi_down_since = millis();
@@ -785,6 +789,112 @@ void startPlaying(bool started) {
   showMessageScreen();
   g_poll_now = true;
   (void)started;
+}
+
+// --- Choosing a network on the device ------------------------------------------
+
+constexpr int kMaxWifiNetworks = 24;
+WifiNetwork g_wifi_networks[kMaxWifiNetworks];
+/** A scan has been started for the network list and not yet collected. */
+bool g_wifi_scanning = false;
+
+/** Open the network list and start the scan that fills it. `note`, when not
+ *  empty, takes the title's place: why the last join failed. */
+void openWifi(const char* note) {
+  WifiLinkStatus link;
+  wifiLinkStatus(link);
+  g_screen = Screen::kWifi;
+  ui::showWifi(note != nullptr ? note : "", link.connected ? link.ssid : "");
+  g_wifi_scanning = wifiScanStart();
+  if (!g_wifi_scanning) {
+    ui::showWifiNetworks(g_wifi_networks, 0);
+  }
+  g_list_opened_ms = millis();
+}
+
+/** Each pass while the list is up: hand it the scan once that is done. */
+void collectWifiScan() {
+  if (!g_wifi_scanning || g_screen != Screen::kWifi) {
+    return;
+  }
+  const int found = wifiScanPoll(g_wifi_networks, kMaxWifiNetworks);
+  if (found == -1) {
+    return;  // still scanning
+  }
+  g_wifi_scanning = false;
+  ui::showWifiNetworks(g_wifi_networks, found > 0 ? found : 0);
+}
+
+/** A join on the device failed, from either path: back to the list, saying so. */
+void onJoinFailed(const char* ssid) {
+  char note[64];
+  snprintf(note, sizeof(note), "Could not join %s", ssid);
+  openWifi(note);
+}
+
+void onPortalStarted() {
+  ui::showPortal();
+  g_screen = Screen::kMessage;
+}
+
+/** What the Wi-Fi screens and the cards that lead to them ask for. The same
+ *  from the setup portal's loop and from the running remote; only the join
+ *  differs, since in the portal it is the portal's loop that makes it. */
+void handleWifiIntent(const ui::Input& in) {
+  switch (in.intent) {
+    case Intent::kTapCard:
+      // The Setup card, or No Wi-Fi: a tap opens the network list. Any other
+      // card is about Home Assistant, and a tap there does nothing.
+      if (wifiPortalActive() || WiFi.status() != WL_CONNECTED) {
+        openWifi(nullptr);
+      }
+      break;
+    case Intent::kOpenWifi:
+    case Intent::kWifiRescan:
+      openWifi(nullptr);
+      break;
+    case Intent::kWifiJoin: {
+      char ssid[33];
+      char pass[65];
+      snprintf(ssid, sizeof(ssid), "%s", ui::wifiChosenSsid());
+      snprintf(pass, sizeof(pass), "%s", ui::wifiPassword());
+      if (ssid[0] == '\0') {
+        break;
+      }
+      if (wifiPortalActive()) {
+        wifiRequestJoin(ssid, pass);  // the portal's loop joins next
+        break;
+      }
+      g_screen = Screen::kMessage;
+      if (wifiJoinNow(ssid, pass)) {
+        g_wifi_down_since = 0;
+        showNowPlaying();
+      } else {
+        onJoinFailed(ssid);
+      }
+      break;
+    }
+    case Intent::kWifiLeave:
+      if (wifiPortalActive()) {
+        onPortalStarted();
+      } else if (WiFi.status() == WL_CONNECTED) {
+        openStatus();
+      } else {
+        ui::showConnectFailed();
+        showMessageScreen();
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+/** The setup portal's turn for the display: while wifiSetupConnect() waits
+ *  in the portal, nothing else reads the touch screen. */
+void portalIdle() {
+  collectWifiScan();
+  const ui::Input in = ui::poll(g_screen, nullptr);
+  handleWifiIntent(in);
 }
 
 /** One pass of the input loop: ask the display what the finger asked for, and
@@ -854,6 +964,14 @@ void handleInput() {
       ui::clearArtwork();
       powerOnControl();
       startPlaying(services::search::play(in.index));
+      break;
+
+    case Intent::kTapCard:
+    case Intent::kOpenWifi:
+    case Intent::kWifiRescan:
+    case Intent::kWifiJoin:
+    case Intent::kWifiLeave:
+      handleWifiIntent(in);
       break;
   }
 
@@ -1035,12 +1153,14 @@ void setup() {
   // The portal reports what it is doing; this is where those events become
   // screens. Everything below the app layer is written against no display.
   wifiSetObserver(WifiObserver{
-      .portalStarted = ui::showPortal,
+      .portalStarted = onPortalStarted,
       .connectingBegan = ui::showConnecting,
       .connectingTick = ui::tickConnecting,
       .connectFailed = ui::showConnectFailed,
       .settingsCleared = ui::showSettingsCleared,
       .playerChanged = ui::clearArtwork,
+      .portalIdle = portalIdle,
+      .joinFailed = onJoinFailed,
   });
 
   bootButtonInit();
@@ -1101,6 +1221,7 @@ void loop() {
   // The display reports a tap on a dark panel as kWokeFromTouch and nothing
   // else, so the same press cannot also press a button.
   handleInput();
+  collectWifiScan();
   handleListTimeout();
 
   handleMessageRecheck();
@@ -1125,7 +1246,7 @@ void loop() {
     // Neither the list, the search nor the status page may be replaced by a
     // poll landing underneath someone who is reading or typing.
     if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
-        g_screen != Screen::kStatus) {
+        g_screen != Screen::kStatus && g_screen != Screen::kWifi) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");

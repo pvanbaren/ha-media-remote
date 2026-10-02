@@ -21,6 +21,14 @@ struct WifiObserver {
   void (*settingsCleared)() = nullptr;
   /** A different media_player was chosen in the portal. */
   void (*playerChanged)() = nullptr;
+  /** Called over and over while the setup portal waits for someone, so the
+   *  display can keep answering the finger: the network list and password
+   *  page run inside it. A join asked for there with wifiRequestJoin() is
+   *  attempted as soon as this returns. */
+  void (*portalIdle)() = nullptr;
+  /** A join asked for on the device did not connect; the setup portal is up
+   *  again behind it. */
+  void (*joinFailed)(const char* ssid) = nullptr;
 };
 
 /** Install the observer. Call once in setup(), before wifiSetupConnect().
@@ -36,6 +44,34 @@ bool wifiSetupConnect();
 bool wifiReconnect();
 /** Keeps the LAN config portal alive; call every loop() iteration. */
 void wifiLoop();
+
+/** One network a scan found: the strongest access point of each name. */
+struct WifiNetwork {
+  char ssid[33] = {};
+  /** What this device hears from it, dBm. */
+  int rssi = 0;
+  /** False for an open network, which joins without a password. */
+  bool secure = false;
+};
+
+/** Start a scan of every channel, in the background. False when the radio
+ *  would not start one. */
+bool wifiScanStart();
+/** -1 while the scan runs; then the networks it found, strongest first, one
+ *  per name, hidden ones left out, at most `capacity` of them -- and the
+ *  scan's own results are freed. -2 when no scan is running or it failed. */
+int wifiScanPoll(WifiNetwork* out, int capacity);
+
+/** True while the setup access point is up and wifiSetupConnect() waits in
+ *  it -- which is when a join goes through wifiRequestJoin(). */
+bool wifiPortalActive();
+/** Ask the setup portal to join `ssid` with `password` (empty for an open
+ *  network) once portalIdle() returns. Saved only if it connects. */
+void wifiRequestJoin(const char* ssid, const char* password);
+/** Join `ssid` now, from the running remote: blocks through the connecting
+ *  screens. Saved only if it connects; otherwise the network that was saved
+ *  before is rejoined, and false comes back. */
+bool wifiJoinNow(const char* ssid, const char* password);
 
 /** The station link as it is now, for the status page. */
 struct WifiLinkStatus {

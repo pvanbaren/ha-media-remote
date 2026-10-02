@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "services/ha_client.h"
+#include "services/wifi_setup.h"
 
 /**
  * Everything the application asks of a display, and nothing about how any of
@@ -37,6 +38,7 @@ enum class Screen : uint8_t {
   kBrowse,      // the library list
   kSearch,      // artist search, reached from the list
   kStatus,      // the device's own status, a swipe down from now playing
+  kWifi,        // choosing a Wi-Fi network and typing its password
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -54,6 +56,11 @@ enum class Intent : uint8_t {
   kPlaySearchResult,  // `index` is a result
   kWokeFromTouch,     // a tap landed on a blanked panel and only woke it
   kOpenStatus,
+  kTapCard,           // a tap on a status card, which the app may act on
+  kOpenWifi,          // the network list, a swipe left from the status page
+  kWifiRescan,        // scan again
+  kWifiJoin,          // join wifiChoice()'s network
+  kWifiLeave,         // back out of the network list
 };
 
 struct Input {
@@ -105,6 +112,15 @@ struct DeviceStatus {
 };
 /** The status page, or its next refresh: it is redrawn whole each time. */
 void showStatus(const DeviceStatus& status);
+/** The network list, scanning, with `note` in place of its title when not
+ *  empty and `current` marked as the network in use. */
+void showWifi(const char* note, const char* current);
+/** What the scan found, onto the list. */
+void showWifiNetworks(const WifiNetwork* networks, int count);
+/** The network chosen and the password typed for it ("" for an open one). */
+const char* wifiChosenSsid();
+const char* wifiPassword();
+
 /** Results for whatever services::search now holds. */
 void showSearchResults();
 /** A frame before a blocking call, so the panel does not simply stop. */

@@ -204,17 +204,17 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
 }
 
 void statusScreenPortal() {
+  // Two ways in: the access point and a browser, or a tap and the network
+  // list on the device itself.
   char ap_line[64];
-  char url_line[64];
   snprintf(ap_line, sizeof(ap_line), "Join %s", config::kPortalApName);
-  snprintf(url_line, sizeof(url_line), "%s.local", services::device::name());
-  statusScreenMessage("Setup", ap_line, url_line, config::kColorYellow,
-                      config::kTextOnYellow);
+  statusScreenMessage("Setup", ap_line, "or tap to choose Wi-Fi",
+                      config::kColorYellow, config::kTextOnYellow);
   resetSpinner();
 }
 
 void statusScreenConnectFailed() {
-  statusScreenMessage("No Wi-Fi", "Saved network", "did not answer",
+  statusScreenMessage("No Wi-Fi", "Saved network failed", "Tap to choose",
                       config::kColorBlack, config::kTextOnBlack);
   resetSpinner();
 }

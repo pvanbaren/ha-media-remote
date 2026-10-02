@@ -79,6 +79,16 @@ void showStatus(const DeviceStatus& s) {
       s.input[0] ? ", input " : "", s.input, s.ip,
       s.uptime_s, s.ssid, s.channel, s.rssi, s.tx_dbm);
 }
+void showWifi(const char* note, const char* current) {
+  say("wifi networks%s%s (on %s)", note[0] ? ": " : "", note,
+      current[0] ? current : "none");
+}
+void showWifiNetworks(const WifiNetwork*, int count) {
+  say("wifi: %d networks", count);
+}
+// Nothing is ever chosen without a screen to choose on.
+const char* wifiChosenSsid() { return ""; }
+const char* wifiPassword() { return ""; }
 void showSearchResults() { say("search results"); }
 void showSearching() { say("searching..."); }
 void showLoadingList() { say("loading library"); }

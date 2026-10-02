@@ -20,6 +20,7 @@
 #include "ui/search.h"
 #include "ui/status_screens.h"
 #include "ui/theme.h"
+#include "ui/wifi_join.h"
 
 /**
  * The round panel's half of ui/ui.h.
@@ -85,6 +86,9 @@ constexpr ScrollableList kBrowseList{browse_list::scrollByPx,
 constexpr ScrollableList kSearchResults{search::scrollByPx,
                                         search::atScrollLimit,
                                         search::redrawResults};
+constexpr ScrollableList kWifiNetworks{wifi_join::scrollByPx,
+                                       wifi_join::atScrollLimit,
+                                       wifi_join::draw};
 
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
@@ -333,6 +337,8 @@ void driveListScrolling(Screen screen) {
     // Only the results scroll; the keyboard has nothing to move, and
     // scrollByPx() says so.
     driveList(kSearchResults, search::showingResults());
+  } else if (screen == Screen::kWifi) {
+    driveList(kWifiNetworks, wifi_join::onList());
   } else {
     driveList(kBrowseList, false);
   }
@@ -445,6 +451,43 @@ Input searchTouch(const hw::TouchReport& report) {
   return out;
 }
 
+Input wifiTouch(const hw::TouchReport& report) {
+  Input out;
+  if (report.event == hw::TouchEvent::kTap && wifi_join::onList() &&
+      !listTapAllowed(report)) {
+    return out;
+  }
+  switch (report.event) {
+    case hw::TouchEvent::kTap:
+      switch (wifi_join::handleTap(report.x, report.y)) {
+        case wifi_join::Result::kChanged:
+          wifi_join::draw();
+          break;
+        case wifi_join::Result::kJoin:
+          out.intent = Intent::kWifiJoin;
+          break;
+        case wifi_join::Result::kRescan:
+          out.intent = Intent::kWifiRescan;
+          break;
+        default:
+          break;
+      }
+      break;
+    case hw::TouchEvent::kSwipeRight:
+      // Back out one page at a time: password to list, list to wherever the
+      // list was opened from.
+      if (wifi_join::back()) {
+        wifi_join::draw();
+      } else {
+        out.intent = Intent::kWifiLeave;
+      }
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
 }  // namespace
 
 bool init(uint8_t rotation) {
@@ -488,15 +531,24 @@ Input poll(Screen screen, const PlayerState* state) {
   if (screen == Screen::kBrowse) {
     return browseTouch(report);
   }
+  if (screen == Screen::kWifi) {
+    return wifiTouch(report);
+  }
   if (screen == Screen::kMessage) {
-    // The cards are not interactive: everything they complain about is fixed
-    // in the portal, and the app notices the fix on its own. A touch is still
-    // worth taking as "someone is here", which waking above already did.
+    // Most of what the cards complain about is fixed in the portal, and the
+    // app notices on its own. A tap is passed up all the same: the Setup and
+    // No Wi-Fi cards open the network list on it.
+    if (report.event == hw::TouchEvent::kTap) {
+      out.intent = Intent::kTapCard;
+    }
     return out;
   }
   if (screen == Screen::kStatus) {
-    // Nothing on it to press: any tap or swipe goes back.
-    if (report.event != hw::TouchEvent::kNone) {
+    // A swipe left goes on to the Wi-Fi networks, as one does from the list
+    // to the search; any other tap or swipe goes back.
+    if (report.event == hw::TouchEvent::kSwipeLeft) {
+      out.intent = Intent::kOpenWifi;
+    } else if (report.event != hw::TouchEvent::kNone) {
       out.intent = Intent::kBackToNowPlaying;
     }
     return out;
@@ -543,6 +595,25 @@ void showBrowse() {
 }
 
 void showStatus(const DeviceStatus& status) { statusScreenDevice(status); }
+
+void showWifi(const char* note, const char* current) {
+  hw::touchCancel();
+  wifi_join::open(note, current);
+  s_list_dragging = false;
+  s_list_velocity = 0.0f;
+  wifi_join::draw();
+}
+
+void showWifiNetworks(const WifiNetwork* networks, int count) {
+  wifi_join::setNetworks(networks, count);
+  if (wifi_join::onList()) {
+    wifi_join::draw();
+  }
+}
+
+const char* wifiChosenSsid() { return wifi_join::chosenSsid(); }
+
+const char* wifiPassword() { return wifi_join::password(); }
 
 void showSearch() {
   hw::touchCancel();

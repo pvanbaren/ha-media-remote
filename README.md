@@ -156,9 +156,33 @@ line. Then come the address, the time since the remote started, the Wi-Fi
 network and its channel, the signal the remote hears (**Rx**) and the power it
 transmits with (**Tx**).
 
-The page refreshes every second. Any tap or swipe goes back to now playing,
-and it goes back by itself after a minute untouched (`kListIdleReturnMs`), as
-the list does.
+The page refreshes every second. A **swipe left** goes on to
+[the Wi-Fi networks](#choosing-wi-fi-on-the-device); any other tap or swipe
+goes back to now playing, and it goes back by itself after a minute untouched
+(`kListIdleReturnMs`), as the list does.
+
+### Choosing Wi-Fi on the device
+
+The network can be chosen on the remote itself, without a phone: **tap** the
+Setup or No Wi-Fi card, or **swipe left** on the status page to change
+networks later.
+
+The list is what a scan of every channel found, one row per network at its
+strongest access point, strongest first: the name, its signal in bars, and a
+lock where it wants a password. The network in use is highlighted. **Tap** an
+open network to join it, or a locked one for the password page; the last row
+scans again. **Swipe right** to back out.
+
+The password page is a phone's keyboard: letters with **shift** (it stays on
+until tapped again), **123** for digits and punctuation and **#+=** for the
+rest of the symbols, **abc** back to the letters. What is typed is shown as
+it is, its end in view, since a mistyped password is the usual reason a join
+fails. **JOIN** lights at eight characters, WPA's shortest.
+
+A join is kept only once it connects: until then the network saved before is
+untouched, so a wrong password costs nothing. If it does not connect, the
+list comes back saying so, and a remote that was connected goes back to its
+old network. The portal's **Configure WiFi** does the same from a browser.
 
 ### Status cards
 
@@ -166,9 +190,9 @@ When there is nothing to play yet, a card says why:
 
 | Card | Meaning |
 |---|---|
-| **Setup** -- Join `MediaRemote-Setup`, `<name>.local` | No Wi-Fi configured; the setup access point is up |
+| **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured; the setup access point is up. A tap chooses a network on the device |
 | **Connecting** | Joining the saved network |
-| **No Wi-Fi** | The saved network did not answer |
+| **No Wi-Fi** -- Tap to choose | The saved network did not answer. A tap chooses another |
 | **Link to HA** | Wi-Fi works; set the Home Assistant URL and token in the portal |
 | **Home Assistant** -- not reachable | Requests are failing; the last line is the reason |
 | **No player** -- Choose one at `<name>.local` | No media player chosen; choose one in the portal |
@@ -199,7 +223,11 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe sideways, top half | Volume |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
-| Status page | Tap or swipe | Back to now playing |
+| Status page | Swipe left | Choose a Wi-Fi network |
+| Status page | Tap, or any other swipe | Back to now playing |
+| Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
+| Wi-Fi networks | Tap a network | Join it, or type its password |
+| Wi-Fi networks | Swipe right | Back one step |
 | List | Drag up / down | Scroll; it glides on release |
 | List | Tap a row | Play it |
 | List | Tap the title strip, or swipe right | Back to now playing |
@@ -227,7 +255,10 @@ forty rows on a small circle, and it is reachable when the panel is not.
 **First time.** With no Wi-Fi saved, the device raises an access point,
 **`MediaRemote-Setup`**. Join it; the setup page usually opens by itself, or
 browse to **`http://192.168.4.1`**. Choose your network and fill in the fields
-below. The device then joins your network.
+below. The device then joins your network. Or **tap the Setup card** and
+choose the network on the device itself
+([Choosing Wi-Fi on the device](#choosing-wi-fi-on-the-device)); the rest of
+the settings are then in the portal on your network.
 
 **Afterwards.** The same portal stays available on your network at
 **`http://<device-name>.local`** -- `http://media-remote.local` until you name

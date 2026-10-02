@@ -47,6 +47,13 @@ constexpr char kPrefsTxPowerKey[] = "txpow";
 
 bool s_force_config_portal = false;
 
+/** True while wifiSetupConnect() waits in the setup portal. */
+bool s_in_setup_portal = false;
+/** A join asked for on the device, for the setup portal's loop to make. */
+bool s_join_pending = false;
+char s_join_ssid[33] = {};
+char s_join_pass[65] = {};
+
 /** WiFiManager with its two save handlers reachable, so the routes can be
  *  claimed ahead of it and handed on (see claimSaveRoutes()). */
 class PortalWiFiManager : public WiFiManager {
@@ -1407,6 +1414,62 @@ bool connectSavedNetwork(bool show_ui) {
   return tryConnectWithUi(ssid, pass, show_ui);
 }
 
+/**
+ * Join a network chosen on the device, and keep it only if it connects.
+ *
+ * The attempt saves the new network as any join does -- WiFi.begin() with the
+ * stack storing to flash -- and a failure undoes it: the previous network is
+ * written back, or with none the saved one is cleared, so a mistyped password
+ * cannot cost the network that worked, nor leave one that never did.
+ *
+ * Not the other way round, attempting from RAM and writing the config to
+ * flash once it connects: that was tried, and the network was gone at the
+ * next boot. Setting the config already in force wrote nothing to flash.
+ * Writing back a different config, as a failure here does, is a change.
+ */
+bool joinNetwork(const char* ssid, const char* pass) {
+  wifi_mode_t mode = WIFI_MODE_NULL;
+  if (esp_wifi_get_mode(&mode) != ESP_OK || mode == WIFI_MODE_NULL) {
+    WiFi.mode(WIFI_STA);
+    delay(50);
+  }
+  wifi_config_t previous = {};
+  const bool had_previous =
+      esp_wifi_get_config(WIFI_IF_STA, &previous) == ESP_OK &&
+      previous.sta.ssid[0] != '\0';
+
+  LOG_INFO("WiFi: joining \"%s\" (chosen on the device)", ssid);
+  // Off the current network first, or tryConnectWithUi() sees a link that is
+  // up and calls that a success.
+  WiFi.disconnect(false);
+  delay(100);
+  // Storing to flash, both ways: the flag is what the core applies when it
+  // next starts the stack, which a retry does, and the call is what applies
+  // to the one running. A reset or the portal may have left either off.
+  WiFi.persistent(true);
+  esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+  const bool ok = tryConnectWithUi(String(ssid), String(pass), true);
+
+  if (ok) {
+    LOG_INFO("WiFi: joined \"%s\", saved", ssid);
+    return true;
+  }
+  LOG_WARN("WiFi: could not join \"%s\"", ssid);
+  wifi_mode_t now = WIFI_MODE_NULL;
+  if (esp_wifi_get_mode(&now) != ESP_OK || now == WIFI_MODE_NULL) {
+    WiFi.mode(WIFI_STA);  // a retry can leave the stack stopped
+    delay(50);
+  }
+  esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+  if (had_previous) {
+    esp_wifi_set_config(WIFI_IF_STA, &previous);
+  } else {
+    wifi_config_t none = {};
+    esp_wifi_set_config(WIFI_IF_STA, &none);
+  }
+  return false;
+}
+
 bool openConfigPortal() {
   stopLanWebPortal();
   WiFi.disconnect(true);
@@ -1415,14 +1478,40 @@ bool openConfigPortal() {
   notify(s_observer.portalStarted);
   s_wm.setConfigPortalBlocking(false);
   s_wm.startConfigPortal(config::kPortalApName);
+  s_in_setup_portal = true;
+  s_join_pending = false;
+  bool joined = false;
   while (s_wm.getConfigPortalActive()) {
     bootButtonPollLongPress();
     if (s_wm.process()) {
-      return true;
+      joined = true;
+      break;
+    }
+    // The display's turn: the network list and the password page live here,
+    // since nothing else answers the finger until this loop returns.
+    notify(s_observer.portalIdle);
+    if (s_join_pending) {
+      s_join_pending = false;
+      s_wm.stopConfigPortal();
+      if (joinNetwork(s_join_ssid, s_join_pass)) {
+        joined = true;
+        break;
+      }
+      // Back to the portal, the same way as the first time, and then say
+      // what happened: the access point's callback puts the Setup card up.
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      delay(50);
+      s_wm.startConfigPortal(config::kPortalApName);
+      if (s_observer.joinFailed != nullptr) {
+        s_observer.joinFailed(s_join_ssid);
+      }
+      continue;
     }
     delay(10);
   }
-  return wifiLinkUp();
+  s_in_setup_portal = false;
+  return joined || wifiLinkUp();
 }
 
 }  // namespace
@@ -1455,6 +1544,114 @@ void wifiLinkStatus(WifiLinkStatus& out) {
   int8_t tx_quarter_dbm = 0;
   esp_wifi_get_max_tx_power(&tx_quarter_dbm);
   out.tx_dbm = tx_quarter_dbm / 4.0f;
+}
+
+bool wifiScanStart() {
+  wifi_mode_t mode = WIFI_MODE_NULL;
+  if (esp_wifi_get_mode(&mode) != ESP_OK || mode == WIFI_MODE_NULL) {
+    WiFi.mode(WIFI_STA);
+    delay(50);
+  }
+  // In the background, so the screen keeps answering for the second or two
+  // a scan of every channel takes. One the portal started is as good: its
+  // results come back through scanComplete() the same way.
+  const int16_t started = WiFi.scanNetworks(true, false);
+  return started == WIFI_SCAN_RUNNING || started >= 0;
+}
+
+int wifiScanPoll(WifiNetwork* out, int capacity) {
+  const int16_t found = WiFi.scanComplete();
+  if (found == WIFI_SCAN_RUNNING) {
+    return -1;
+  }
+  if (found < 0) {
+    return -2;
+  }
+  int count = 0;
+  for (int i = 0; i < found; ++i) {
+    const String ssid = WiFi.SSID(i);
+    if (ssid.isEmpty()) {
+      continue;  // hidden: nothing to show, nothing to tap
+    }
+    const int rssi = WiFi.RSSI(i);
+    const bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    // One row per name, at its strongest access point's signal.
+    int slot = -1;
+    for (int j = 0; j < count; ++j) {
+      if (strcmp(out[j].ssid, ssid.c_str()) == 0) {
+        slot = j;
+        break;
+      }
+    }
+    if (slot >= 0) {
+      if (rssi > out[slot].rssi) {
+        out[slot].rssi = rssi;
+        out[slot].secure = secure;
+      }
+      continue;
+    }
+    if (count < capacity) {
+      slot = count++;
+    } else {
+      // Full: a stronger network takes the weakest one's place.
+      int weakest = 0;
+      for (int j = 1; j < count; ++j) {
+        if (out[j].rssi < out[weakest].rssi) {
+          weakest = j;
+        }
+      }
+      if (capacity == 0 || rssi <= out[weakest].rssi) {
+        continue;
+      }
+      slot = weakest;
+    }
+    snprintf(out[slot].ssid, sizeof(out[slot].ssid), "%s", ssid.c_str());
+    out[slot].rssi = rssi;
+    out[slot].secure = secure;
+  }
+  WiFi.scanDelete();
+
+  // Strongest first.
+  for (int i = 1; i < count; ++i) {
+    const WifiNetwork n = out[i];
+    int j = i;
+    while (j > 0 && out[j - 1].rssi < n.rssi) {
+      out[j] = out[j - 1];
+      --j;
+    }
+    out[j] = n;
+  }
+  return count;
+}
+
+bool wifiPortalActive() { return s_in_setup_portal; }
+
+void wifiRequestJoin(const char* ssid, const char* password) {
+  if (ssid == nullptr || ssid[0] == '\0') {
+    return;
+  }
+  snprintf(s_join_ssid, sizeof(s_join_ssid), "%s", ssid);
+  snprintf(s_join_pass, sizeof(s_join_pass), "%s",
+           password != nullptr ? password : "");
+  s_join_pending = true;
+}
+
+bool wifiJoinNow(const char* ssid, const char* password) {
+  if (ssid == nullptr || ssid[0] == '\0') {
+    return false;
+  }
+  stopLanWebPortal();
+  WiFi.setAutoReconnect(false);
+  const bool ok = joinNetwork(ssid, password != nullptr ? password : "");
+  if (!ok) {
+    // Back where it was: joinNetwork() put the saved config back in force.
+    connectSavedNetwork(true);
+  }
+  WiFi.setAutoReconnect(true);
+  if (wifiLinkUp()) {
+    logLinkQuality();
+  }
+  return ok;
 }
 
 void wifiSetObserver(const WifiObserver& observer) {
