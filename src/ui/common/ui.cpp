@@ -524,6 +524,18 @@ Input playersTouch(const hw::TouchReport& report) {
   return out;
 }
 
+/** Whether a tap in the volume's half of now playing may toggle the volume
+ *  device's power: it claims TURN_ON or TURN_OFF, either -- the toggle is
+ *  Home Assistant's, which knows which one applies. A device reporting no
+ *  features at all counts as supporting them, as it does everywhere else:
+ *  that is an integration that never set the attribute. */
+bool powerToggleAvailable(const PlayerState& state) {
+  constexpr uint32_t kOnOff =
+      services::ha::kFeatureTurnOn | services::ha::kFeatureTurnOff;
+  return state.control_features == 0 ||
+         (state.control_features & kOnOff) != 0;
+}
+
 Input settingsTouch(const hw::TouchReport& report) {
   Input out;
   if (report.event == hw::TouchEvent::kTap &&
@@ -647,6 +659,15 @@ Input poll(Screen screen, const PlayerState* state) {
       out.intent = Intent::kNext;
       break;
     default:
+      // A tap in the half a sideways swipe sets the volume in toggles the
+      // volume device's power. A swipe there is the volume, and a tap is
+      // never one: it moved less than the tap slop, in less than
+      // kTouchTapMaxMs.
+      if (state != nullptr &&
+          now_playing::volumeSwipeRegion(report.x, report.y) &&
+          powerToggleAvailable(*state)) {
+        out.intent = Intent::kTogglePower;
+      }
       break;
   }
   return out;

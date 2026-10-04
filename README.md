@@ -69,6 +69,12 @@ wherever it already was. The arc on a round panel spans 70% of the
 circumference, centred on twelve o'clock, leaving the gap at the bottom for
 the transport row and the chip.
 
+A quick **tap** in the same top half **toggles the volume device's power**
+(`media_player.toggle`). The volume is drawn **grey while the volume device
+is off**, as it is while muted. Switched on this way it gets what play gives
+it -- the player's input and its volume at switch-on; see
+[Powering the volume device](#powering-the-volume-device).
+
 Details worth knowing:
 
 - **Buttons follow what the player can do.** A button whose action the
@@ -243,9 +249,10 @@ After **five minutes** with the player paused, idle, off or unavailable
 panel asleep -- and the **volume device is switched off** with it. Any touch
 wakes it, and so does playback starting from anywhere else.
 
-The volume device is **switched on** only when playback is started from the
-remote: pressing play, or choosing something from the list or the search. A
-zone amplifier is **switched to the player's input** at the same time.
+The volume device is **switched on** only from the remote: pressing play,
+choosing something from the list or the search, or a tap in the top half of
+now playing, which also switches it off again. A zone amplifier is
+**switched to the player's input** at the same time.
 Playback started anywhere else -- a cast from a phone -- and a touch that only
 wakes the screen leave it alone. Details in
 [Powering the volume device](#powering-the-volume-device).
@@ -256,6 +263,7 @@ wakes the screen leave it alone. Details in
 |---|---|---|
 | Now playing | Tap a transport button | Previous / play-pause / next |
 | Now playing | Swipe sideways, top half | Volume |
+| Now playing | Tap the top half | Switch the volume device on or off |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
 | Status page | Tap the gear | Open the settings |
@@ -842,12 +850,25 @@ once a second.
 ### Powering the volume device
 
 Switched **on** (`turn_on`, skipped when it is already on or has no
-`TURN_ON`) only for playback started from the remote: when a press of play
-starts it -- power first, then play, so the amplifier is awake before the
-audio starts -- and when something is chosen from the list or the search,
-before the `play_media` that takes several seconds anyway. A press that
-pauses does not, nor does skip-next in a dark room, which is a mis-tap rather
-than a request for music.
+`TURN_ON`) only from the remote: when a press of play starts playback --
+power first, then play, so the amplifier is awake before the audio starts --
+when something is chosen from the list or the search, before the
+`play_media` that takes several seconds anyway, and by a tap in the top half
+of now playing. A press that pauses does not, nor does skip-next in a dark
+room, which is a mis-tap rather than a request for music.
+
+**The tap toggles.** A tap in the top half of now playing -- the half a
+sideways swipe sets the volume in -- calls `media_player.toggle` on the
+volume device, for one that claims `TURN_ON` or `TURN_OFF`. Home Assistant
+decides which, from its own state at that moment, so the tap does not
+depend on what the remote last heard. The remote then asks for the state
+afresh and puts it on screen, the volume grey while the device is off; if
+the device came on, it also gets the player's input and the player volume
+at switch-on, as play's power-on does. A zone amplifier needs the input: a
+Triad output switched off is disconnected from its input, and switched back
+on with none it is silent. A tap is a press that moved less than the tap
+slop and lifted within `kTouchTapMaxMs`, so a volume swipe is never taken
+for one; a tap on a dark screen only wakes it.
 
 Nothing else switches it on: not a touch that wakes the blanked screen, and
 not the player starting by itself. A player can feed several rooms -- a

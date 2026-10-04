@@ -161,6 +161,7 @@ bool snapshotState(PlayerState& out) {
  *  path. The elapsed chip handles its own repaint instead. */
 bool visuallyDiffers(const PlayerState& a, const PlayerState& b) {
   return a.playback != b.playback || a.muted != b.muted ||
+         a.control_off != b.control_off ||
          a.supported_features != b.supported_features ||
          a.control_features != b.control_features ||
          a.duration_s != b.duration_s || a.volume != b.volume ||
@@ -709,6 +710,51 @@ void choosePlayer() {
   g_poll_now = true;
 }
 
+
+/** A tap in the volume's half of now playing: toggle the volume device's
+ *  power with media_player.toggle, which switches it off if Home Assistant
+ *  has it on and on if it has it off. The decision is Home Assistant's, on
+ *  its own state at the moment of the call, rather than the remote's copy of
+ *  it -- which this tap must not depend on.
+ *
+ *  Then the state is asked for afresh, and if the device came on it gets
+ *  what play's power-on gives it -- the player's input and the player volume
+ *  at switch-on -- since this is someone here asking to hear it. A zone
+ *  amplifier needs the input: a Triad output switched off is disconnected
+ *  from its input, and one switched back on with none is silent. That state
+ *  is also put on screen at once, the volume grey while the device is off,
+ *  rather than waiting on the stream. */
+void togglePower() {
+  if (!services::ha::configured()) {
+    return;
+  }
+  char control[config::kEntityIdMaxLen];
+  char player[config::kEntityIdMaxLen];
+  services::ha::copyControlEntity(control, sizeof(control));
+  services::ha::copySelectedEntity(player, sizeof(player));
+  if (control[0] == '\0' || player[0] == '\0') {
+    return;
+  }
+
+  LOG_INFO("UI: tap toggles %s", control);
+  if (!services::ha::callService("toggle", control)) {
+    LOG_WARN("UI: toggle of %s refused", control);
+    return;
+  }
+
+  PlayerState now;
+  if (!services::ha::fetchState(player, now)) {
+    g_poll_now = true;  // the stream will say, in its own time
+    return;
+  }
+  LOG_INFO("UI: %s is now %s", control, now.control_off ? "off" : "on");
+  if (!now.control_off) {
+    selectPlayerSource(now);
+    pinPlayerVolume();
+  }
+  publishState(now);
+  g_poll_now = true;
+}
 
 /** The media_player service an intent maps to, or nullptr when it is not a
  *  transport command at all. */
@@ -1442,6 +1488,10 @@ void handleInput() {
       // either fail or move a software gain nobody can hear.
       commandVolume(services::ha::controlEntity(), in.level);
       g_poll_now = true;
+      break;
+
+    case Intent::kTogglePower:
+      togglePower();
       break;
 
     case Intent::kOpenBrowse:

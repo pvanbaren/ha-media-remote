@@ -284,7 +284,10 @@ void drawVolumeBar(lgfx::LovyanGFX& gfx, const PlayerState& state,
   gfx.fillRoundRect(kBarLeft, kBarY, kBarWidth, kBarHeight, kBarRadius,
                     theme::kArcTrack);
 
-  const uint16_t fill = state.muted ? theme::kVolumeMutedFill : kBarFill;
+  // Grey when nothing will be heard at that level: muted, or the volume
+  // device switched off.
+  const uint16_t fill =
+      state.muted || state.control_off ? theme::kVolumeMutedFill : kBarFill;
   const int filled = static_cast<int>(kBarWidth * level + 0.5f);
   if (filled > 0) {
     gfx.fillRoundRect(kBarLeft, kBarY, filled, kBarHeight, kBarRadius, fill);

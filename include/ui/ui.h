@@ -50,6 +50,7 @@ enum class Intent : uint8_t {
   kPlayPause,
   kNext,
   kSetVolume,         // `level` carries it, 0.0-1.0
+  kTogglePower,       // switch the volume device on, or off, from now playing
   kOpenBrowse,
   kOpenSearch,
   kBackToNowPlaying,

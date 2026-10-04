@@ -296,8 +296,11 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
   // at roughly two o'clock.
   const float filled_end =
       theme::kVolumeArcStartDeg + theme::kVolumeArcSweepDeg * level;
-  const uint16_t fill =
-      state.muted ? theme::kVolumeMutedFill : theme::kVolumeFill;
+  // Grey when nothing will be heard at that level: muted, or the volume
+  // device switched off.
+  const uint16_t fill = state.muted || state.control_off
+                            ? theme::kVolumeMutedFill
+                            : theme::kVolumeFill;
   if (filled_end > theme::kVolumeArcStartDeg + 0.5f) {
     gfx.fillArc(theme::kCenterX, cy, theme::kVolumeArcInnerRadius,
                 theme::kVolumeArcOuterRadius, theme::kVolumeArcStartDeg,

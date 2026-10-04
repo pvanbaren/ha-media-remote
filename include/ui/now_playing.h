@@ -36,13 +36,15 @@ void refreshVolume(const services::ha::PlayerState& state, float level);
 /** True when the player exposes a volume the slider can drive. */
 bool volumeAvailable(const services::ha::PlayerState& state);
 
-/** Whether a press starting at (x, y) may become a volume swipe.
+/** Whether a press starting at (x, y) may become a volume swipe, or a tap
+ *  there toggle the volume device's power.
  *
  *  The whole top half of the panel, rather than the arc itself. Landing a
  *  fingertip on a 7 px track drawn 111 px out from the centre is a precision
  *  task on a 1.28" circle, and it is the one control here that gets used
  *  without looking. Nothing else lives up there -- the transport row is at
- *  y=181 and the title text is not a target -- so the space is free.
+ *  y=181 and the title text is not a target -- so the space is free, and the
+ *  volume's own half is where switching what carries it on and off belongs.
  *
  *  Vertical swipes are left alone by the caller, since swipe-up opens the
  *  browse list. */
