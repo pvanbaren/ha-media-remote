@@ -488,14 +488,16 @@ void buildEntitySelect(EntitySelect& sel, const char* selected) {
     sel.attrs += "</option>";
   }
 
+  bool selected_listed = selected[0] == '\0';
   for (int i = 0; i < count; ++i) {
     const services::ha::PlayerEntry* entry = services::players::entryAt(i);
     if (entry == nullptr) {
       continue;
     }
     // Never outgrow the reserved buffer: reallocating would move it out from
-    // under the parameter.
-    if (sel.attrs.length() + kPlayerOptionBytes > sel.capacity) {
+    // under the parameter. One option's room is kept back for the stored
+    // entity, should the list turn out not to have it.
+    if (sel.attrs.length() + 2 * kPlayerOptionBytes > sel.capacity) {
       LOG_WARN("Portal: %s list truncated to fit the page buffer",
                     sel.id);
       break;
@@ -505,6 +507,7 @@ void buildEntitySelect(EntitySelect& sel, const char* selected) {
     sel.attrs += '"';
     if (strcmp(entry->entity_id, selected) == 0) {
       sel.attrs += " selected";
+      selected_listed = true;
     }
     sel.attrs += '>';
     appendHtmlEscaped(sel.attrs, entry->name);
@@ -512,6 +515,18 @@ void buildEntitySelect(EntitySelect& sel, const char* selected) {
       sel.attrs += " (unavailable)";
     }
     sel.attrs += "</option>";
+  }
+
+  // Stored, and not among Home Assistant's players now -- renamed or removed.
+  // Offered as itself and marked, as the input dropdown does: otherwise the
+  // browser shows the first player as chosen while the form still carries
+  // the stored id, and the page says something the save will not do.
+  if (have_list && !selected_listed) {
+    sel.attrs += "<option value=\"";
+    appendHtmlEscaped(sel.attrs, selected);
+    sel.attrs += "\" selected>";
+    appendHtmlEscaped(sel.attrs, services::ha::entityLabel(selected));
+    sel.attrs += " (not listed now)</option>";
   }
 
   sel.attrs += "</select";
@@ -1270,16 +1285,32 @@ void startLanWebPortal() {
 #endif
   s_wm.startWebPortal();
   // The dropdowns are built when the portal starts and after a save, not per
-  // page, so an input list asked for while the volume device listed none --
-  // off, or Home Assistant not answering yet -- would show "(not listed now)"
-  // until the next save. Ask again as a page that shows it is served.
+  // page, so on their own they show the lists as they were then: a player
+  // renamed in Home Assistant since kept its old entity id on the page, and
+  // the new one was not offered at all. As a page that shows them is
+  // served, they are built again from a fresh list once the cached one is
+  // older than config::kHaPlayerListTtlMs -- a fetch, so at most once per
+  // that age -- and the input list too while it showed the stored input as
+  // "(not listed now)": the volume device off, or Home Assistant not
+  // answering yet, when it was asked. A fetch that fails leaves the list
+  // stale, so attempts are held kListRebuildRetryMs apart: a portal page must
+  // not wait out a timeout every time while Home Assistant is down.
   if (s_wm.server != nullptr) {
     s_wm.server->addMiddleware([](WebServer& server,
                                   Middleware::Callback next) {
+      constexpr unsigned long kListRebuildRetryMs = 30000;
+      static unsigned long s_rebuilt_ms = 0;
+      static bool s_rebuilt = false;
       const String& uri = server.uri();
-      if (s_input_unlisted &&
-          (uri == "/param" || uri == "/wifi" || uri == "/0wifi")) {
-        buildInputSelect();
+      if (uri == "/param" || uri == "/wifi" || uri == "/0wifi") {
+        if (services::ha::configured() && services::players::stale() &&
+            (!s_rebuilt || millis() - s_rebuilt_ms >= kListRebuildRetryMs)) {
+          s_rebuilt = true;
+          s_rebuilt_ms = millis();
+          buildPlayerSelects();  // the input list with them
+        } else if (s_input_unlisted) {
+          buildInputSelect();
+        }
       }
       return next();
     });

@@ -326,6 +326,13 @@ A few rules hold for every field:
   restart the device a moment after the page answers.
 - A dropdown that was not on the page you saved -- a page opened before the
   player list had loaded -- is left as it was, never blanked.
+- **The player dropdowns follow Home Assistant.** Opening a settings page
+  fetches the player list again if the remote's copy is more than five
+  minutes old (`kHaPlayerListTtlMs`), so a player renamed or added since
+  shows up; nothing is fetched while nobody opens the portal, and a failed
+  fetch is tried again no sooner than 30 seconds later. A stored player the
+  list no longer has -- renamed or removed -- is shown as itself, marked
+  *(not listed now)*, rather than as whichever player happens to come first.
 
 ### Linking to Home Assistant
 
