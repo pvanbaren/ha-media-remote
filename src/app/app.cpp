@@ -717,49 +717,85 @@ void choosePlayer() {
 }
 
 
+/** How long a power tap waits for the state to show what it did, before
+ *  giving up on finishing a switch-on. */
+constexpr unsigned long kToggleSettleMs = 5000;
+/** A power tap waiting on the state: when the toggle went, or 0. Loop only. */
+unsigned long g_toggle_sent_ms = 0;
+/** Whether the volume device was off before that toggle, by the state then;
+ *  and whether there was a state to say. Loop only. */
+bool g_toggle_was_off = false;
+bool g_toggle_was_known = false;
+
 /** A tap in the volume's half of now playing: toggle the volume device's
  *  power with media_player.toggle, which switches it off if Home Assistant
  *  has it on and on if it has it off. The decision is Home Assistant's, on
  *  its own state at the moment of the call, rather than the remote's copy of
  *  it -- which this tap must not depend on.
  *
- *  Then the state is asked for afresh, and if the device came on it gets
- *  what play's power-on gives it -- the player's input and the player volume
- *  at switch-on -- since this is someone here asking to hear it. A zone
- *  amplifier needs the input: a Triad output switched off is disconnected
- *  from its input, and one switched back on with none is silent. That state
- *  is also put on screen at once, the volume grey while the device is off,
- *  rather than waiting on the stream. */
+ *  What it did is left to the state stream to say: handleToggleSettled()
+ *  finishes a switch-on once it does. Asking Home Assistant here instead
+ *  meant a request of its own, and a second TLS session alongside the
+ *  stream's is more internal RAM than a board can be sure of: on the Qualia
+ *  it failed, and a zone switched on was never given its input. */
 void togglePower() {
   if (!services::ha::configured()) {
     return;
   }
   char control[config::kEntityIdMaxLen];
-  char player[config::kEntityIdMaxLen];
   services::ha::copyControlEntity(control, sizeof(control));
-  services::ha::copySelectedEntity(player, sizeof(player));
-  if (control[0] == '\0' || player[0] == '\0') {
+  if (control[0] == '\0' || services::ha::selectedEntity()[0] == '\0') {
     return;
   }
+
+  PlayerState before;
+  g_toggle_was_known = snapshotState(before);
+  g_toggle_was_off = g_toggle_was_known && before.control_off;
 
   LOG_INFO("UI: tap toggles %s", control);
   if (!services::ha::callService("toggle", control)) {
     LOG_WARN("UI: toggle of %s refused", control);
+    g_toggle_sent_ms = 0;
     return;
   }
+  g_toggle_sent_ms = millis();
+  g_poll_now = true;  // where there is no stream, the poll says instead
+}
 
-  PlayerState now;
-  if (!services::ha::fetchState(player, now)) {
-    g_poll_now = true;  // the stream will say, in its own time
+/** A power tap's toggle, once a state sampled after it shows it took: if the
+ *  device came on, it gets what play's power-on gives it -- the player's
+ *  input and the player volume at switch-on -- since this is someone here
+ *  asking to hear it. A zone amplifier needs the input: a Triad output
+ *  switched off is disconnected from its input, and one switched back on
+ *  with none is silent.
+ *
+ *  It took when the device's power differs from before the toggle; with no
+ *  state from before, the first state after it is taken at its word. A state
+ *  still showing the old power is one rendered before the toggle landed, and
+ *  is waited past. */
+void handleToggleSettled() {
+  if (g_toggle_sent_ms == 0) {
     return;
   }
-  LOG_INFO("UI: %s is now %s", control, now.control_off ? "off" : "on");
+  PlayerState now;
+  const bool fresh =
+      snapshotState(now) &&
+      static_cast<long>(now.sampled_ms - g_toggle_sent_ms) > 0 &&
+      (!g_toggle_was_known || now.control_off != g_toggle_was_off);
+  if (!fresh) {
+    if (millis() - g_toggle_sent_ms >= kToggleSettleMs) {
+      LOG_WARN("UI: the power tap's toggle never showed in the state");
+      g_toggle_sent_ms = 0;
+    }
+    return;
+  }
+  g_toggle_sent_ms = 0;
+  LOG_INFO("UI: %s is now %s", services::ha::controlEntity(),
+           now.control_off ? "off" : "on");
   if (!now.control_off) {
     selectPlayerSource(now);
     pinPlayerVolume();
   }
-  publishState(now);
-  g_poll_now = true;
 }
 
 /** The most rooms Isolate deals with at once: more than any zone amplifier
@@ -1980,6 +2016,7 @@ void loop() {
   handleInput();
   collectWifiScan();
   handleListTimeout();
+  handleToggleSettled();
 
   handleMessageRecheck();
   handleHaLink();
