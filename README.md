@@ -839,20 +839,38 @@ is being *heard* and reports it:
 
 1. The **player**, normally.
 2. When the volume device is on an input other than the player's and that
-   input is **named after another player** that is playing or paused, that
-   player -- its Music Assistant entity where two share the name, since that
-   one has the art and the queue. A Triad zone on "Kitchen" is playing
-   whatever the player called Kitchen is.
-3. Failing that, the **volume device itself** when it is playing or paused
-   with artwork of its own: a receiver on its own Spotify or net radio.
+   input is **named after another player**, that player, whatever it is
+   doing: idle or off, it is still what the room hears, so the remote shows
+   it idle rather than its own player. Where several share the name, one
+   playing or paused comes before one that is not, then one that is
+   available, and the Music Assistant entity among equals, since that one has
+   the art and the queue. A Triad zone on "Kitchen" is playing whatever the
+   player called Kitchen is.
+3. Failing any player by that name, the **volume device itself** when it is
+   playing or paused with artwork of its own: a receiver on its own Spotify or
+   net radio.
 
 Everything about what is playing -- state, title, art, progress, features,
 the history -- comes from that entity, and previous / play-pause / next go to
 it. Volume always goes to the volume device. Pressing play while the room
-hears another input resumes that where it is, rather than switching the
-device over. Only while the volume device is on another input does the
-subscription read every `media_player`, which Home Assistant rate-limits to
-once a second.
+hears another input plays that input's player where it is -- paused, idle or
+off -- and never switches the device back to this remote's player; choosing
+something from the list or the search does that. Play and pause go out as
+`media_play` and `media_pause`, decided from the state of the entity they
+are sent to, never as a toggle that could pause a player playing unheard.
+Only while the volume device is on another input does the subscription read
+every `media_player`, which Home Assistant rate-limits to once a second.
+
+**A phone casting to a Music Assistant player's device is controlled
+through the device.** While something other than Music Assistant is
+casting to the Chromecast a Music Assistant player wraps -- the player
+reports it as its `app_id`, `youtube_music` say -- play, pause, next and
+previous go to the native entity of the same name, which that app answers
+to, and the buttons are greyed by that entity's features. Music Assistant
+might otherwise start its own queue over the cast, or pass next and previous
+nowhere. What is shown still comes from the Music Assistant player, which
+follows the cast, and the list and the search still play through it. The
+subscription reads every `media_player` while such a cast is on, too.
 
 ### Powering the volume device
 

@@ -73,12 +73,15 @@ constexpr char kPlayersTemplate[] =
 //
 // What is playing comes from `m`: what the room is hearing. That is `e`,
 // unless `c` is a separate device on some input other than the player's.
-// Then it is the player that input is named after, where one is playing or
-// paused -- a Triad zone switched to another of its linked players; its
-// Music Assistant entity where there are two by that name, since that is the
-// one with the art and the queue -- or failing that `c` itself, where it is
-// playing or paused with artwork of its own: a receiver on its own Spotify or
-// net radio. The title, the art, the progress, the transport buttons and the
+// Then it is the player that input is named after -- a Triad zone switched
+// to another of its linked players -- whatever that player is doing: idle or
+// off, it is still what the room hears, and showing `e` instead put another
+// player's track and buttons on a room that could not hear it. Of several by
+// that name, one playing or paused before one that is not, then one that is
+// available; its Music Assistant entity among equals, since that is the one
+// with the art and the queue. Failing any by that name, `c` itself, where it
+// is playing or paused with artwork of its own: a receiver on its own
+// Spotify or net radio. The title, the art, the progress, the transport buttons and the
 // history all follow `m`, and the last field names it for the calls that go
 // with them.
 //
@@ -99,8 +102,12 @@ constexpr char kStateTemplateFmt[] =
     "{%% set other = c != e and cs != '' and not (ps and cs == ps) %%}"
     "{%% set sp = '' %%}"
     "{%% if other %%}"
-    "{%% set cands = states.media_player|selectattr('name','eq',cs)"
-    "|selectattr('state','in',['playing','paused'])|list %%}"
+    "{%% set named = states.media_player|selectattr('name','eq',cs)|list %%}"
+    "{%% set active = named|selectattr('state','in',['playing','paused'])"
+    "|list %%}"
+    "{%% set awake = named|rejectattr('state','in',['unavailable','unknown'])"
+    "|list %%}"
+    "{%% set cands = active or awake or named %%}"
     "{%% set mass = cands|selectattr('attributes.mass_player_type','defined')"
     "|list %%}"
     "{%% set sp = ((mass or cands)|map(attribute='entity_id')|list|first) "
@@ -109,6 +116,22 @@ constexpr char kStateTemplateFmt[] =
     "{%% set m = sp if sp else (c if other and "
     "states(c) in ['playing','paused'] and state_attr(c,'entity_picture') "
     "else e) %%}"
+    // Where the transport buttons go: `m`, unless `m` is a Music Assistant
+    // player that something other than Music Assistant is casting to -- a
+    // phone casting YouTube Music to the Chromecast it wraps, which the
+    // player reports as its app_id -- when it is the native entity of the
+    // same name, which that app answers to. Sent to the Music Assistant
+    // player, play could start its own queue over the cast and next and
+    // previous go nowhere. Only then are all media_players read.
+    "{%% set t = m %%}"
+    "{%% if state_attr(m,'mass_player_type') is not none and "
+    "state_attr(m,'app_id') not in [none,'','music_assistant'] %%}"
+    "{%% set twins = states.media_player"
+    "|selectattr('name','eq',state_attr(m,'friendly_name'))"
+    "|rejectattr('attributes.mass_player_type','defined')"
+    "|rejectattr('state','in',['unavailable','unknown','off'])|list %%}"
+    "{%% set t = (twins|map(attribute='entity_id')|list|first) or m %%}"
+    "{%% endif %%}"
     // An app that says what it is but not what it is playing -- a Roku does
     // that for every app but its TV tuner -- is titled with its own name
     // while it plays, rather than as nothing playing, and the name is then
@@ -122,7 +145,8 @@ constexpr char kStateTemplateFmt[] =
     "{{state_attr(m,'media_artist') or state_attr(m,'media_album_name') or "
     "state_attr(m,'media_series_title') or ('' if at else an)}}\037"
     "{{state_attr(m,'entity_picture') or ''}}\037"
-    "{{state_attr(m,'supported_features')|int(0)}}\037"
+    // The buttons' feature bits: the entity they will be sent to.
+    "{{state_attr(t,'supported_features')|int(0)}}\037"
     "{{(state_attr(m,'media_duration') or 0)|float(0)|round(1)}}\037"
     "{{(state_attr(m,'media_position') or 0)|float(0)|round(1)}}\037"
     "{%% set pu = state_attr(m,'media_position_updated_at') %%}"
@@ -142,7 +166,8 @@ constexpr char kStateTemplateFmt[] =
     "{{m if m != e else ''}}\037"
     // Both configured entities by name, for the status page.
     "{{state_attr(e,'friendly_name') or e}}\037"
-    "{{state_attr(c,'friendly_name') or c}}\036";
+    "{{state_attr(c,'friendly_name') or c}}\037"
+    "{{t if t != m else ''}}\036";
 
 // Every input on one entity, for the portal's dropdown.
 constexpr char kSourcesTemplateFmt[] =
@@ -1147,6 +1172,7 @@ void parseState(const String& body, PlayerState& out) {
   const String media_entity = nextField(body, pos);
   const String player_name = nextField(body, pos);
   const String control_name = nextField(body, pos);
+  const String transport_entity = nextField(body, pos);
 
   out = PlayerState{};
   out.playback = parsePlaybackState(state);
@@ -1171,6 +1197,8 @@ void parseState(const String& body, PlayerState& out) {
   copyField(out.media_entity, sizeof(out.media_entity), media_entity);
   copyField(out.player_name, sizeof(out.player_name), player_name);
   copyField(out.control_name, sizeof(out.control_name), control_name);
+  copyField(out.transport_entity, sizeof(out.transport_entity),
+            transport_entity);
 
   // media_position is a snapshot taken at media_position_updated_at; the
   // template reports how stale that is so the bar starts in the right place.

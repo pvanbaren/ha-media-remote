@@ -78,6 +78,12 @@ struct PlayerState {
    *  configured ones, whatever the room is hearing -- for the status page. */
   char player_name[config::kFriendlyNameMaxLen] = {};
   char control_name[config::kFriendlyNameMaxLen] = {};
+  /** Where play/pause and skip go when it is not the entity being shown: the
+   *  native entity behind a Music Assistant player that another app -- a
+   *  phone's cast -- is playing on, since that app answers to it and Music
+   *  Assistant may not. `supported_features` is then that entity's too.
+   *  Empty otherwise. */
+  char transport_entity[config::kEntityIdMaxLen] = {};
   /** Set by the app, not the server: there has been no title for less than
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */

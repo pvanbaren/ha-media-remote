@@ -781,13 +781,20 @@ void sendCommand(Intent intent) {
     return;
   }
   // To whatever the room is hearing: when the volume device is on another
-  // input, the player that input carries or the device itself; the player
-  // otherwise.
+  // input, the player that input carries or the device itself, whatever it is
+  // doing -- play on a zone switched to another input is play on that input,
+  // idle or not, and never takes the zone back for this remote's player; the
+  // list and the search are for that. The player otherwise.
   PlayerState before;
   const bool have_before = snapshotState(before);
   const bool elsewhere = have_before && before.media_entity[0] != '\0';
   const char* entity =
       elsewhere ? before.media_entity : services::ha::selectedEntity();
+  // An outside app casting to a Music Assistant player -- a phone's YouTube
+  // Music -- answers to the native entity behind it, which the state names.
+  if (have_before && before.transport_entity[0] != '\0') {
+    entity = before.transport_entity;
+  }
 
   // Light the button for the duration of the round trip: the call itself is
   // the press feedback, so nothing extra has to be timed.
@@ -796,10 +803,19 @@ void sendCommand(Intent intent) {
   // awake before the audio starts rather than a second into the track. Only
   // a press that starts playback: one that pauses is not asking to hear
   // anything, and skip-next on a dark room is a mis-tap. Not while the room
-  // is hearing another input either: then play resumes that where it is.
+  // is hearing another input either: then play is that input's.
+  //
+  // Play and pause are sent as what they are, media_play or media_pause, not
+  // as the toggle: whether this press starts or pauses is decided here from
+  // the state of the entity it goes to, and a toggle would undo that on one
+  // whose state the snapshot did not have -- a player playing unheard behind
+  // another input was paused by the press meant to start it.
   ui::showCommandPending(intent, true);
   const bool starting =
       !have_before || before.playback != PlaybackState::kPlaying;
+  if (intent == Intent::kPlayPause) {
+    service = starting ? "media_play" : "media_pause";
+  }
   if (intent == Intent::kPlayPause && starting && !elsewhere) {
     powerOnControl();
   }
@@ -810,16 +826,12 @@ void sendCommand(Intent intent) {
     return;
   }
 
-  // Flip play/pause locally so the glyph answers immediately; the poll that
-  // follows replaces this with whatever HA actually did.
+  // Show what was asked for at once, so the glyph answers immediately; the
+  // poll that follows replaces this with whatever HA actually did.
   if (intent == Intent::kPlayPause && g_state_mutex != nullptr &&
       xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-    if (g_state.playback == PlaybackState::kPlaying) {
-      g_state.playback = PlaybackState::kPaused;
-    } else if (g_state.playback == PlaybackState::kPaused ||
-               g_state.playback == PlaybackState::kIdle) {
-      g_state.playback = PlaybackState::kPlaying;
-    }
+    g_state.playback =
+        starting ? PlaybackState::kPlaying : PlaybackState::kPaused;
     xSemaphoreGive(g_state_mutex);
     g_state_dirty = true;
   }
