@@ -866,8 +866,10 @@ void onPortalParamsSaved() {
       s_player_select.param != nullptr && submitted(s_player_select.id)
           ? s_player_select.param->getValue()
           : nullptr;
-  if (player != nullptr && player[0] != '\0' &&
-      strcmp(player, services::ha::selectedEntity()) != 0) {
+  const bool player_changed =
+      player != nullptr && player[0] != '\0' &&
+      strcmp(player, services::ha::selectedEntity()) != 0;
+  if (player_changed) {
     services::ha::selectEntity(player);
     // The new player has its own art, and whatever is on screen belongs to
     // the old one. What to do about that is the app layer's call.
@@ -1015,8 +1017,12 @@ void onPortalParamsSaved() {
   // them from, and they were only built again when the portal restarted --
   // which in practice meant a reboot. Built now instead, so the page after
   // the save offers them; against the new server's list when it changed.
+  // And when the player changed: the dropdown marks the player it was built
+  // with, so the page after the save showed the old one chosen -- the save
+  // looked undone, though the form and the remote had the new one.
   if (services::ha::configured() &&
-      (server_changed || control_changed || s_player_select.param == nullptr)) {
+      (server_changed || control_changed || player_changed ||
+       s_player_select.param == nullptr)) {
     if (server_changed) {
       services::players::refresh();
     }
