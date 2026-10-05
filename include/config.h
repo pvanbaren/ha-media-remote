@@ -404,6 +404,11 @@ constexpr unsigned long kListTapGuardMs = 250;
  *  move -- and a press nobody watched cannot be told from a tap. */
 constexpr unsigned long kTouchWatchGapMs = 60;
 
+/** Taps on now playing are refused for this long after Isolate's card gives
+ *  way to it. The finger that pressed Isolate, Cancel or OK may come down
+ *  again on now playing -- where the same spot toggles the room's power. */
+constexpr unsigned long kIsolateTapGuardMs = 1000;
+
 /** Shortest gap between two repaints of a list for thumbnails arriving.
  *
  *  The worker can land several a second once its connection is warm, and

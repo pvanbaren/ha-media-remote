@@ -34,6 +34,10 @@ enum class PlaybackState : uint8_t {
   kUnavailable,
 };
 
+/** Between the names in PlayerState::peer_names: a room's name may have a
+ *  comma in it. */
+constexpr char kPeerNameSep = 0x1D;
+
 /** Snapshot of the selected player, as rendered by the now-playing screen. */
 struct PlayerState {
   PlaybackState playback = PlaybackState::kUnknown;
@@ -84,6 +88,15 @@ struct PlayerState {
    *  Assistant may not. `supported_features` is then that entity's too.
    *  Empty otherwise. */
   char transport_entity[config::kEntityIdMaxLen] = {};
+  /** The other zones of the volume device's integration on the same input --
+   *  other rooms hearing what this one hears -- which Isolate would turn
+   *  off: how many; their names, separated by kPeerNameSep and cut short to
+   *  fit; and their entity ids, comma-separated, in the same order and only
+   *  as many as fit whole. 0 and empty without a separate volume device on
+   *  an input. */
+  int peer_count = 0;
+  char peer_names[128] = {};
+  char peer_ids[256] = {};
   /** Set by the app, not the server: there has been no title for less than
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */

@@ -41,6 +41,7 @@ enum class Screen : uint8_t {
   kWifi,        // choosing a Wi-Fi network and typing its password
   kPlayers,     // choosing the media player, when none is chosen
   kSettings,    // the settings page, or one setting's choices, from the gear
+  kIsolate,     // Isolate's question, from the "+N rooms" chip, and its outcome
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -51,6 +52,7 @@ enum class Intent : uint8_t {
   kNext,
   kSetVolume,         // `level` carries it, 0.0-1.0
   kTogglePower,       // switch the volume device on, or off, from now playing
+  kIsolate,           // the "+N rooms" chip: offer to turn the others off
   kOpenBrowse,
   kOpenSearch,
   kBackToNowPlaying,
@@ -69,6 +71,8 @@ enum class Intent : uint8_t {
   kOpenSettings,      // the gear on the status page
   kSettingsTap,       // `index` is the settings row tapped
   kSettingsBack,      // a swipe right on the settings page or its choices
+  kIsolateConfirm,    // Isolate on Isolate's card
+  kIsolateCancel,     // Cancel, OK or a swipe right there
 };
 
 struct Input {
@@ -154,6 +158,23 @@ void settingsAdd(const char* text, const char* detail,
 /** The list just built, scrolled to row `focus` -- or when that is -1, to
  *  its current choice if it has one, and otherwise its top. */
 void showSettings(int focus = -1);
+/** Isolate's card: `title`, a muted `note` under it saying what the rooms
+ *  are, the rooms one to a line, and its buttons. */
+struct IsolateCard {
+  enum class Buttons : uint8_t {
+    kAsk,   // Isolate and Cancel
+    kNone,  // while the rooms are being turned off
+    kOk,    // under a failure; a tap anywhere dismisses it
+  };
+  const char* title = "";
+  const char* note = "";
+  const char* const* rooms = nullptr;
+  int room_count = 0;
+  bool warning = false;  // the title in amber: it did not all work
+  Buttons buttons = Buttons::kAsk;
+};
+/** Show `card`; the strings need only last the call. */
+void showIsolate(const IsolateCard& card);
 /** A card while the device restarts, saying `why`. */
 void showRestarting(const char* why);
 

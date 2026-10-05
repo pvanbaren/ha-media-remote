@@ -69,6 +69,19 @@ wherever it already was. The arc on a round panel spans 70% of the
 circumference, centred on twelve o'clock, leaving the gap at the bottom for
 the transport row and the chip.
 
+**Isolate.** While other zones of the volume device -- other Triad
+outputs -- are on the same input as this room, a **"+N rooms"** chip shows
+at the top of now playing. Tap it to be asked *Isolate this room?* over a
+list of the other rooms; **Isolate** switches them off while this room
+keeps playing and goes back to now playing, and **Cancel** or a swipe right
+leaves them be. Only a failure stays on the card -- *Couldn't isolate* and
+the rooms still on -- until it is tapped. Taps on now playing are ignored
+for a second after the card goes, so a second tap cannot switch this room
+off. The rooms are the ones on this input when Isolate is pressed, so one
+that changed input meanwhile is left alone, and Zone Source Auto-Shutoff
+leaves the source playing, since this room still uses it. The other rooms
+come back on the same input with a tap on their own remotes.
+
 A quick **tap** in the same top half **toggles the volume device's power**
 (`media_player.toggle`). The volume is drawn **grey while the volume device
 is off**, as it is while muted. Switched on this way it gets what play gives
@@ -264,6 +277,7 @@ wakes the screen leave it alone. Details in
 | Now playing | Tap a transport button | Previous / play-pause / next |
 | Now playing | Swipe sideways, top half | Volume |
 | Now playing | Tap the top half | Switch the volume device on or off |
+| Now playing | Tap the "+N rooms" chip | Offer to turn off the other rooms on this input |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
 | Status page | Tap the gear | Open the settings |

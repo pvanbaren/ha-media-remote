@@ -161,7 +161,7 @@ bool snapshotState(PlayerState& out) {
  *  path. The elapsed chip handles its own repaint instead. */
 bool visuallyDiffers(const PlayerState& a, const PlayerState& b) {
   return a.playback != b.playback || a.muted != b.muted ||
-         a.control_off != b.control_off ||
+         a.control_off != b.control_off || a.peer_count != b.peer_count ||
          a.supported_features != b.supported_features ||
          a.control_features != b.control_features ||
          a.duration_s != b.duration_s || a.volume != b.volume ||
@@ -288,6 +288,7 @@ void showNeedsHa() {
 }
 
 void openPlayers();
+void leaveIsolate();
 
 void showNowPlaying() {
   if (!services::ha::configured()) {
@@ -649,7 +650,7 @@ void handleListTimeout() {
   if (config::kListIdleReturnMs == 0 ||
       (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
        g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
-       g_screen != Screen::kSettings)) {
+       g_screen != Screen::kSettings && g_screen != Screen::kIsolate)) {
     return;
   }
   unsigned long since = ui::lastInteractionMs();
@@ -664,9 +665,14 @@ void handleListTimeout() {
                 : g_screen == Screen::kSearch   ? "search"
                 : g_screen == Screen::kWifi     ? "wifi"
                 : g_screen == Screen::kSettings ? "settings"
+                : g_screen == Screen::kIsolate  ? "isolate"
                                                 : "status",
                 config::kListIdleReturnMs / 1000);
-  showNowPlaying();
+  if (g_screen == Screen::kIsolate) {
+    leaveIsolate();
+  } else {
+    showNowPlaying();
+  }
 }
 
 /** No player is selected: the list of players to choose one from, once Home
@@ -754,6 +760,141 @@ void togglePower() {
   }
   publishState(now);
   g_poll_now = true;
+}
+
+/** The most rooms Isolate deals with at once: more than any zone amplifier
+ *  here has outputs. */
+constexpr int kMaxPeers = 16;
+/** When Isolate's card last gave way to now playing, or 0. Loop only. */
+unsigned long g_isolate_left_ms = 0;
+
+/** Split `list` in place at each `sep`, into at most `capacity` pieces.
+ *  Returns how many; none for an empty list. */
+int splitList(char* list, char sep, const char** out, int capacity) {
+  int count = 0;
+  char* p = list;
+  while (*p != '\0' && count < capacity) {
+    out[count++] = p;
+    char* end = strchr(p, sep);
+    if (end == nullptr) {
+      break;
+    }
+    *end = '\0';
+    p = end + 1;
+  }
+  return count;
+}
+
+/** The "+N rooms" chip: ask before turning the other rooms off, naming them.
+ *  Isolate and Cancel on the card; a swipe right cancels too. */
+void openIsolateConfirm() {
+  PlayerState snapshot;
+  if (!snapshotState(snapshot) || snapshot.peer_count <= 0) {
+    return;
+  }
+  const char* rooms[kMaxPeers];
+  ui::IsolateCard card;
+  card.title = "Isolate this room?";
+  card.note = "Turns off";
+  card.rooms = rooms;
+  card.room_count = splitList(snapshot.peer_names, services::ha::kPeerNameSep,
+                              rooms, kMaxPeers);
+  card.buttons = ui::IsolateCard::Buttons::kAsk;
+  g_screen = Screen::kIsolate;
+  ui::showIsolate(card);
+  g_list_opened_ms = millis();
+}
+
+/** Isolate confirmed: turn off every other zone on this room's input,
+ *  leaving this room playing, and go back to now playing -- where the chip
+ *  going is what says it worked. Only a failure stays on the card, naming the
+ *  rooms still on. The zones are the ones
+ *  the state names now, not when the card went up -- one may have changed
+ *  input since -- and the state is the subscription's, as fresh as the rest
+ *  of it and with no request of its own: a second TLS session for one is
+ *  more internal RAM than a board with the stream open can be sure of.
+ *  Zone Source Auto-Shutoff, which stops a source no zone is using any
+ *  more, leaves it alone -- this room still is. */
+void isolateRoom() {
+  ui::IsolateCard card;
+  card.buttons = ui::IsolateCard::Buttons::kOk;
+  PlayerState snapshot;
+  if (!snapshotState(snapshot)) {
+    card.title = "Couldn't isolate";
+    card.note = "No word from Home Assistant";
+    card.warning = true;
+    ui::showIsolate(card);
+    return;
+  }
+  const char* names[kMaxPeers];
+  const char* ids[kMaxPeers];
+  const int named = splitList(snapshot.peer_names, services::ha::kPeerNameSep,
+                              names, kMaxPeers);
+  const int count = splitList(snapshot.peer_ids, ',', ids, kMaxPeers);
+  if (count == 0) {
+    LOG_INFO("UI: isolate: no other room on this input now");
+    leaveIsolate();
+    return;
+  }
+
+  // Each room is a round trip; the card says what is happening meanwhile.
+  card.title = "Isolating";
+  card.note = "Turning off";
+  card.rooms = names;
+  card.room_count = named;
+  card.buttons = ui::IsolateCard::Buttons::kNone;
+  ui::showIsolate(card);
+
+  const char* still_on[kMaxPeers];
+  int still_count = 0;
+  for (int i = 0; i < count; ++i) {
+    LOG_INFO("UI: isolate: turning off %s", ids[i]);
+    if (!services::ha::callService("turn_off", ids[i])) {
+      LOG_WARN("UI: isolate: %s not turned off (%s)", ids[i],
+               services::ha::lastError());
+      still_on[still_count++] = i < named ? names[i] : ids[i];
+    }
+  }
+  g_poll_now = true;
+
+  if (still_count == 0) {
+    leaveIsolate();
+    return;
+  }
+  card.title = "Couldn't isolate";
+  card.note = "Still on";
+  card.rooms = still_on;
+  card.room_count = still_count;
+  card.warning = true;
+  card.buttons = ui::IsolateCard::Buttons::kOk;
+  ui::showIsolate(card);
+}
+
+/** Isolate's card, cancelled or done with: back to now playing, and the
+ *  clock started on the taps it refuses for a moment. */
+void leaveIsolate() {
+  g_isolate_left_ms = millis();
+  showNowPlaying();
+}
+
+/** Whether `intent` is a tap on now playing that has just been refused,
+ *  because Isolate's card gave way to it under the finger. */
+bool tapGuardedAfterIsolate(Intent intent) {
+  if (g_isolate_left_ms == 0 || g_screen != Screen::kNowPlaying ||
+      millis() - g_isolate_left_ms >= config::kIsolateTapGuardMs) {
+    return false;
+  }
+  switch (intent) {
+    case Intent::kPrevious:
+    case Intent::kPlayPause:
+    case Intent::kNext:
+    case Intent::kTogglePower:
+    case Intent::kIsolate:
+      LOG_DEBUG("UI: tap refused, Isolate's card has only just gone");
+      return true;
+    default:
+      return false;
+  }
 }
 
 /** The media_player service an intent maps to, or nullptr when it is not a
@@ -1478,7 +1619,10 @@ void portalIdle() {
 void handleInput() {
   PlayerState snapshot;
   const bool have_state = snapshotState(snapshot);
-  const ui::Input in = ui::poll(g_screen, have_state ? &snapshot : nullptr);
+  ui::Input in = ui::poll(g_screen, have_state ? &snapshot : nullptr);
+  if (tapGuardedAfterIsolate(in.intent)) {
+    in.intent = Intent::kNone;
+  }
 
   switch (in.intent) {
     case Intent::kNone:
@@ -1504,6 +1648,18 @@ void handleInput() {
 
     case Intent::kTogglePower:
       togglePower();
+      break;
+
+    case Intent::kIsolate:
+      openIsolateConfirm();
+      break;
+
+    case Intent::kIsolateConfirm:
+      isolateRoom();
+      break;
+
+    case Intent::kIsolateCancel:
+      leaveIsolate();
       break;
 
     case Intent::kOpenBrowse:
@@ -1849,7 +2005,8 @@ void loop() {
     // poll landing underneath someone who is reading or typing.
     if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
         g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
-        g_screen != Screen::kPlayers && g_screen != Screen::kSettings) {
+        g_screen != Screen::kPlayers && g_screen != Screen::kSettings &&
+        g_screen != Screen::kIsolate) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");

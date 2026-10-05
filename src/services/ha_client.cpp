@@ -100,6 +100,17 @@ constexpr char kStateTemplateFmt[] =
     "{%% set ps = ci if ci else (fn if fn in sl else '') %%}"
     "{%% set cs = state_attr(c,'source') or '' %%}"
     "{%% set other = c != e and cs != '' and not (ps and cs == ps) %%}"
+    // The other zones of `c`'s own integration on the same input: the rooms
+    // hearing what this one hears, which Isolate turns off. Nothing without a
+    // separate device on an input. Only that integration's entities are read,
+    // so the subscription follows those and no more -- and follows them, so
+    // the list is as fresh as the rest of the state.
+    "{%% set ce = config_entry_id(c) if c != e and cs else none %%}"
+    "{%% set pd = config_entry_attr(ce,'domain') if ce else none %%}"
+    "{%% set peers = (integration_entities(pd)|reject('eq',c)"
+    "|select('is_state_attr','source',cs)"
+    "|reject('is_state',['off','unavailable','unknown'])|list) "
+    "if pd else [] %%}"
     "{%% set sp = '' %%}"
     "{%% if other %%}"
     "{%% set named = states.media_player|selectattr('name','eq',cs)|list %%}"
@@ -167,7 +178,12 @@ constexpr char kStateTemplateFmt[] =
     // Both configured entities by name, for the status page.
     "{{state_attr(e,'friendly_name') or e}}\037"
     "{{state_attr(c,'friendly_name') or c}}\037"
-    "{{t if t != m else ''}}\036";
+    "{{t if t != m else ''}}\037"
+    // The other rooms on this one's input, for Isolate: how many, who, and
+    // their entity ids to turn off, in the same order.
+    "{{peers|length}}\037"
+    "{{peers|map('state_attr','friendly_name')|join('\035')}}\037"
+    "{{peers|join(',')}}\036";
 
 // Every input on one entity, for the portal's dropdown.
 constexpr char kSourcesTemplateFmt[] =
@@ -1173,6 +1189,9 @@ void parseState(const String& body, PlayerState& out) {
   const String player_name = nextField(body, pos);
   const String control_name = nextField(body, pos);
   const String transport_entity = nextField(body, pos);
+  const String peer_count = nextField(body, pos);
+  const String peer_names = nextField(body, pos);
+  const String peer_ids = nextField(body, pos);
 
   out = PlayerState{};
   out.playback = parsePlaybackState(state);
@@ -1199,6 +1218,17 @@ void parseState(const String& body, PlayerState& out) {
   copyField(out.control_name, sizeof(out.control_name), control_name);
   copyField(out.transport_entity, sizeof(out.transport_entity),
             transport_entity);
+  out.peer_count = static_cast<int>(peer_count.toInt());
+  copyField(out.peer_names, sizeof(out.peer_names), peer_names);
+  // Whole ids only: one cut short would name some other entity, or none.
+  int ids_len = static_cast<int>(peer_ids.length());
+  if (ids_len >= static_cast<int>(sizeof(out.peer_ids))) {
+    ids_len = peer_ids.lastIndexOf(',', sizeof(out.peer_ids) - 1);
+  }
+  if (ids_len > 0) {
+    copyField(out.peer_ids, sizeof(out.peer_ids),
+              peer_ids.substring(0, ids_len));
+  }
 
   // media_position is a snapshot taken at media_position_updated_at; the
   // template reports how stale that is so the bar starts in the right place.

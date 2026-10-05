@@ -18,6 +18,8 @@
 #include "ui/canvas.h"
 #include "ui/cover_art.h"
 #include "ui/now_playing.h"
+#include "ui/isolate_card.h"
+#include "ui/peers_chip.h"
 #include "ui/player_pick.h"
 #include "ui/search.h"
 #include "ui/settings_list.h"
@@ -559,6 +561,30 @@ Input settingsTouch(const hw::TouchReport& report) {
   return out;
 }
 
+/** Isolate's card has its own buttons and nothing to scroll, so a tap is
+ *  taken as it lands. */
+Input isolateTouch(const hw::TouchReport& report) {
+  Input out;
+  if (report.event == hw::TouchEvent::kSwipeRight) {
+    out.intent = Intent::kIsolateCancel;
+    return out;
+  }
+  if (report.event != hw::TouchEvent::kTap) {
+    return out;
+  }
+  switch (isolate_card::hit(report.x, report.y)) {
+    case isolate_card::Result::kConfirm:
+      out.intent = Intent::kIsolateConfirm;
+      break;
+    case isolate_card::Result::kCancel:
+      out.intent = Intent::kIsolateCancel;
+      break;
+    case isolate_card::Result::kNone:
+      break;
+  }
+  return out;
+}
+
 }  // namespace
 
 bool init(uint8_t rotation) {
@@ -611,6 +637,9 @@ Input poll(Screen screen, const PlayerState* state) {
   if (screen == Screen::kSettings) {
     return settingsTouch(report);
   }
+  if (screen == Screen::kIsolate) {
+    return isolateTouch(report);
+  }
   if (screen == Screen::kMessage) {
     // Most of what the cards complain about is fixed in the portal, and the
     // app notices on its own. A tap is passed up all the same: the Setup and
@@ -645,6 +674,13 @@ Input poll(Screen screen, const PlayerState* state) {
     return out;
   }
   if (report.event != hw::TouchEvent::kTap) {
+    return out;
+  }
+
+  // The rooms chip first: it sits in the half where a tap otherwise toggles
+  // the volume device's power.
+  if (peers_chip::hit(report.x, report.y)) {
+    out.intent = Intent::kIsolate;
     return out;
   }
 
@@ -728,6 +764,11 @@ void showSettings(int focus) {
   s_list_dragging = false;
   s_list_velocity = 0.0f;
   settings_list::draw();
+}
+
+void showIsolate(const IsolateCard& card) {
+  hw::touchCancel();
+  isolate_card::draw(card);
 }
 
 void showRestarting(const char* why) {
