@@ -32,10 +32,13 @@ bool writeReg(uint8_t reg, uint8_t value) {
 }
 
 void setBit(uint8_t bit, bool high) {
-  if (!s_present) {
+  const uint8_t mask = static_cast<uint8_t>(1u << bit);
+  // Never one of the sensors' interrupt lines: the latch bit means nothing
+  // while the pin is an input, and it would come into force the moment
+  // anything made it an output again.
+  if (!s_present || (mask & board::kExpanderInputs) != 0) {
     return;
   }
-  const uint8_t mask = static_cast<uint8_t>(1u << bit);
   s_output = high ? static_cast<uint8_t>(s_output | mask)
                   : static_cast<uint8_t>(s_output & ~mask);
   writeReg(kRegOutput, s_output);

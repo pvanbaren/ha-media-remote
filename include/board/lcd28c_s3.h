@@ -138,8 +138,15 @@ constexpr uint8_t kExpanderBitTouchReset = 1;
 constexpr uint8_t kExpanderBitLcdCs = 2;
 constexpr uint8_t kExpanderBitSdCs = 3;
 constexpr uint8_t kExpanderBitBuzzer = 7;
-/** Every pin an output, as Waveshare's demo has it. */
-constexpr uint8_t kExpanderConfig = 0x00;
+/** Bits 4..6 are IMU_INT2, IMU_INT1 and RTC_INT (Waveshare's EXIO5..7): the
+ *  QMI8658 and the PCF85063 drive them, so they stay inputs. */
+constexpr uint8_t kExpanderInputs = 0x70;
+/** Direction register, a set bit an input: the three interrupt lines, and
+ *  every other pin an output. Waveshare's demo has 0x00 here and gets away
+ *  with it because it never reads them -- but that drives the expander's
+ *  level into each sensor's output, and makes their interrupts unreadable.
+ *  A deliberate departure from the demo; do not put it back to 0x00. */
+constexpr uint8_t kExpanderConfig = kExpanderInputs;
 /** The port at start-up: the resets released, both chip selects parked high
  *  and -- the one that matters -- the buzzer low. The TCA9554 powers up with
  *  its outputs latched high, so the first write has to say this, or the
