@@ -19,6 +19,8 @@
 #include <cstring>
 
 #include <esp_heap_caps.h>
+
+#include <new>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -121,7 +123,7 @@ bool g_control_off_sent = false;
 
 /** Set the control entity's volume and remember that we did, so a poll
  *  carrying the pre-change level cannot undo it. Blocks on the round trip. */
-void commandVolume(const char* entity, float level) {
+[[gnu::noinline]] void commandVolume(const char* entity, float level) {
   if (g_state_mutex != nullptr &&
       xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
     g_volume_commanded = level;
@@ -246,7 +248,7 @@ unsigned long g_cover_hold_since_ms = 0;
 /** Whether the pending repaint should wait for the cover still loading for
  *  what is now playing -- up to config::kCoverArtHoldMs, and only on the now
  *  playing screen, where the cover is drawn. */
-bool holdForCover() {
+[[gnu::noinline]] bool holdForCover() {
   if (g_screen != Screen::kNowPlaying && g_screen != Screen::kMessage) {
     return false;
   }
@@ -446,7 +448,7 @@ void pinPlayerVolume() {
  *
  *  Blocks on the round trip, so callers on the touch path have to want the
  *  wait. Returns true if a call was actually made. */
-bool powerOnControl() {
+[[gnu::noinline]] bool powerOnControl() {
   if (!services::ha::configured()) {
     return false;
   }
@@ -507,7 +509,7 @@ bool powerOffControl() {
  *  panel and let the amplifier go with it -- and wake again the moment it is
  *  not. Polling continues while blanked, which is what notices playback
  *  resuming. */
-void handleIdleBlanking() {
+[[gnu::noinline]] void handleIdleBlanking() {
   if (config::kIdleTimeoutMs == 0) {
     return;
   }
@@ -552,7 +554,7 @@ void handleIdleBlanking() {
  *  Starts on an empty query every time rather than keeping the last one. A
  *  search is a thing you do once and then forget; coming back to somebody
  *  else's half-typed name is only ever an obstacle. */
-void openSearch() {
+[[gnu::noinline]] void openSearch() {
   if (!services::ha::configured() ||
       services::ha::selectedEntity()[0] == '\0') {
     return;
@@ -570,7 +572,7 @@ void openSearch() {
  *  preload, and a swipe that lands while a background load is mid-flight, in
  *  which case ensureLoaded() waits for that one rather than starting another.
  */
-void openBrowse() {
+[[gnu::noinline]] void openBrowse() {
   if (!services::ha::configured() ||
       services::ha::selectedEntity()[0] == '\0') {
     return;
@@ -627,14 +629,14 @@ void drawStatus() {
 
 /** Open the status page, a swipe down from now playing: the device's name,
  *  address, uptime and Wi-Fi link, on the device itself. */
-void openStatus() {
+[[gnu::noinline]] void openStatus() {
   g_screen = Screen::kStatus;
   drawStatus();
   g_list_opened_ms = millis();
 }
 
 /** Once a second while it is showing: uptime and signal both move. */
-void handleStatusRefresh() {
+[[gnu::noinline]] void handleStatusRefresh() {
   if (g_screen == Screen::kStatus && !ui::isBlanked() &&
       millis() - g_status_drawn_ms >= 1000UL) {
     drawStatus();
@@ -646,7 +648,7 @@ void handleStatusRefresh() {
  *  Measured from the later of the last touch and the screen opening, so the
  *  clock starts fresh on arrival -- a swipe up after a minute of listening
  *  must not be sent straight back. */
-void handleListTimeout() {
+[[gnu::noinline]] void handleListTimeout() {
   if (config::kListIdleReturnMs == 0 ||
       (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
        g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
@@ -690,7 +692,7 @@ void showNeedsPlayer() {
 
 /** Fetch Home Assistant's media players and show them to choose from. The
  *  fetch blocks for a round trip, so a card goes up first. */
-void openPlayers() {
+[[gnu::noinline]] void openPlayers() {
   ui::showLoading("players");
   const bool fetched = services::players::refresh();
   g_screen = Screen::kPlayers;
@@ -702,7 +704,7 @@ void openPlayers() {
 
 /** A player tapped on the list: store it, as the portal would, and start
  *  following it. */
-void choosePlayer() {
+[[gnu::noinline]] void choosePlayer() {
   char entity[config::kEntityIdMaxLen];
   snprintf(entity, sizeof(entity), "%s", ui::playerChosen());
   if (entity[0] == '\0') {
@@ -738,7 +740,7 @@ bool g_toggle_was_known = false;
  *  meant a request of its own, and a second TLS session alongside the
  *  stream's is more internal RAM than a board can be sure of: on the Qualia
  *  it failed, and a zone switched on was never given its input. */
-void togglePower() {
+[[gnu::noinline]] void togglePower() {
   if (!services::ha::configured()) {
     return;
   }
@@ -773,7 +775,7 @@ void togglePower() {
  *  state from before, the first state after it is taken at its word. A state
  *  still showing the old power is one rendered before the toggle landed, and
  *  is waited past. */
-void handleToggleSettled() {
+[[gnu::noinline]] void handleToggleSettled() {
   if (g_toggle_sent_ms == 0) {
     return;
   }
@@ -823,7 +825,7 @@ int splitList(char* list, char sep, const char** out, int capacity) {
 
 /** The "+N rooms" chip: ask before turning the other rooms off, naming them.
  *  Isolate and Cancel on the card; a swipe right cancels too. */
-void openIsolateConfirm() {
+[[gnu::noinline]] void openIsolateConfirm() {
   PlayerState snapshot;
   if (!snapshotState(snapshot) || snapshot.peer_count <= 0) {
     return;
@@ -851,7 +853,7 @@ void openIsolateConfirm() {
  *  more internal RAM than a board with the stream open can be sure of.
  *  Zone Source Auto-Shutoff, which stops a source no zone is using any
  *  more, leaves it alone -- this room still is. */
-void isolateRoom() {
+[[gnu::noinline]] void isolateRoom() {
   ui::IsolateCard card;
   card.buttons = ui::IsolateCard::Buttons::kOk;
   PlayerState snapshot;
@@ -908,7 +910,7 @@ void isolateRoom() {
 
 /** Isolate's card, cancelled or done with: back to now playing, and the
  *  clock started on the taps it refuses for a moment. */
-void leaveIsolate() {
+[[gnu::noinline]] void leaveIsolate() {
   g_isolate_left_ms = millis();
   showNowPlaying();
 }
@@ -948,7 +950,7 @@ const char* serviceFor(Intent intent) {
   }
 }
 
-void sendCommand(Intent intent) {
+[[gnu::noinline]] void sendCommand(Intent intent) {
   const char* service = serviceFor(intent);
   if (service == nullptr) {
     return;
@@ -1019,7 +1021,7 @@ void sendCommand(Intent intent) {
 
 
 
-void handleWifiState() {
+[[gnu::noinline]] void handleWifiState() {
   if (WiFi.status() == WL_CONNECTED) {
     g_wifi_down_since = 0;
     return;
@@ -1048,7 +1050,7 @@ void handleWifiState() {
 
 /** Re-evaluate a status card periodically: the settings it complains about can
  *  be fixed from the LAN portal while it is on screen. */
-void handleMessageRecheck() {
+[[gnu::noinline]] void handleMessageRecheck() {
   if ((g_screen != Screen::kMessage && g_screen != Screen::kPlayers) ||
       millis() - g_message_recheck_ms < 2000) {
     return;
@@ -1082,7 +1084,7 @@ void handleMessageRecheck() {
 unsigned long g_ha_discover_ms = 0;
 bool g_ha_discover_tried = false;
 
-void handleHaLink() {
+[[gnu::noinline]] void handleHaLink() {
   if (services::ha::configured() || WiFi.status() != WL_CONNECTED ||
       g_screen != Screen::kMessage) {
     return;
@@ -1129,7 +1131,7 @@ void handleHaLink() {
  *  same way in both cases: the display has already put a "Starting..." frame
  *  up, and no card is drawn here on purpose so the screen carries straight on
  *  from the tap to the track with nothing flashing in between. */
-void startPlaying(bool started) {
+[[gnu::noinline]] void startPlaying(bool started) {
   showMessageScreen();
   g_poll_now = true;
   (void)started;
@@ -1157,7 +1159,7 @@ void openWifi(const char* note) {
 }
 
 /** Each pass while the list is up: hand it the scan once that is done. */
-void collectWifiScan() {
+[[gnu::noinline]] void collectWifiScan() {
   if (!g_wifi_scanning || g_screen != Screen::kWifi) {
     return;
   }
@@ -1313,7 +1315,7 @@ void showSettingsPage(int focus) {
 }
 
 /** Open the settings page, the gear on the status page. */
-void openSettings() { showSettingsPage(-1); }
+[[gnu::noinline]] void openSettings() { showSettingsPage(-1); }
 
 void addChoice(const char* text, int value, bool current) {
   if (g_choice_count >= kMaxChoiceValues) {
@@ -1561,7 +1563,7 @@ void applySettingChoice(int row) {
   showSettingsPage(g_setting_open_row);
 }
 
-void handleSettingsTap(int row) {
+[[gnu::noinline]] void handleSettingsTap(int row) {
   if (g_settings_choosing) {
     applySettingChoice(row);
   } else if (row >= 0 && row < g_setting_row_count) {
@@ -1571,7 +1573,7 @@ void handleSettingsTap(int row) {
 
 /** A swipe right: from a list of choices to the page, unchanged, and from
  *  the page back to the status page it was opened from. */
-void handleSettingsBack() {
+[[gnu::noinline]] void handleSettingsBack() {
   if (g_settings_choosing) {
     showSettingsPage(g_setting_open_row);
   } else {
@@ -1582,7 +1584,7 @@ void handleSettingsBack() {
 /** What the Wi-Fi screens and the cards that lead to them ask for. The same
  *  from the setup portal's loop and from the running remote; only the join
  *  differs, since in the portal it is the portal's loop that makes it. */
-void handleWifiIntent(const ui::Input& in) {
+[[gnu::noinline]] void handleWifiIntent(const ui::Input& in) {
   switch (in.intent) {
     case Intent::kTapCard:
       // The Setup card, or No Wi-Fi: a tap opens the network list. Any other
@@ -1649,13 +1651,27 @@ void portalIdle() {
   handleWifiIntent(in);
 }
 
-/** One pass of the input loop: ask the display what the finger asked for, and
+/** What handleInput() dispatches to is kept out of its frame
+ *  ([[gnu::noinline]] on each handler): folded in, every handler's
+ *  PlayerState copies made that frame three kilobytes, and it is still on the
+ *  stack while ui::poll() runs -- which redraws a scrolling list from inside
+ *  it. A fling on the library list overflowed the loop's 8 KB stack.
+ *
+ *  One pass of the input loop: ask the display what the finger asked for, and
  *  do it. Everything arriving here is an intent -- never a coordinate, never
  *  a pixel -- which is what lets a different panel answer the same calls. */
-void handleInput() {
-  PlayerState snapshot;
-  const bool have_state = snapshotState(snapshot);
-  ui::Input in = ui::poll(g_screen, have_state ? &snapshot : nullptr);
+[[gnu::noinline]] void handleInput() {
+  // The state the volume gesture reads, in PSRAM rather than on the stack:
+  // ui::poll() redraws a scrolling list from inside itself, and a 1.3 KB
+  // copy held underneath that redraw is 1.3 KB it has not got. Claimed once
+  // and kept; loop only.
+  static PlayerState* snapshot = [] {
+    void* mem = heap_caps_malloc(sizeof(PlayerState),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem != nullptr ? new (mem) PlayerState() : new PlayerState();
+  }();
+  const bool have_state = snapshotState(*snapshot);
+  ui::Input in = ui::poll(g_screen, have_state ? snapshot : nullptr);
   if (tapGuardedAfterIsolate(in.intent)) {
     in.intent = Intent::kNone;
   }
@@ -1932,6 +1948,35 @@ void haPollTask(void*) {
   }
 }
 
+/** The untitled label's delay has run out with the title still missing:
+ *  the frame that held it back is redrawn with it. A title that arrived in
+ *  the meantime has already repainted, and cancels this. */
+[[gnu::noinline]] void handleUntitledRepaint() {
+  if (!g_untitled_repaint_owed || untitledBriefly()) {
+    return;
+  }
+  g_untitled_repaint_owed = false;
+  PlayerState snapshot;
+  if (g_screen == Screen::kNowPlaying && snapshotState(snapshot) &&
+      snapshot.title[0] == '\0') {
+    g_state_dirty = true;
+  }
+}
+
+/** The elapsed chip, once a second while something plays. */
+[[gnu::noinline]] void handleElapsedTick() {
+  if (ui::isBlanked() || g_screen != Screen::kNowPlaying ||
+      g_volume_dragging || millis() - g_last_elapsed_ms < 1000) {
+    return;
+  }
+  g_last_elapsed_ms = millis();
+  PlayerState snapshot;
+  if (snapshotState(snapshot) &&
+      snapshot.playback == PlaybackState::kPlaying) {
+    ui::refreshElapsed(snapshot);
+  }
+}
+
 }  // namespace
 
 void setup() {
@@ -2004,6 +2049,15 @@ void setup() {
               nullptr);
 }
 
+/** One pass of the remote.
+ *
+ *  The handlers it calls are kept out of its own frame ([[gnu::noinline]])
+ *  rather than folded into it. Folded, its frame was the worst case of all
+ *  of them -- three kilobytes, two PlayerState copies -- held for the whole
+ *  pass, underneath every TLS handshake one of them makes; and on the
+ *  loop's 8 KB stack the Home Assistant link's handshake ran out of room.
+ *  Apart, each handler's locals are on the stack only while it runs. */
+
 void loop() {
   bootButtonPollLongPress();
   wifiLoop();
@@ -2050,32 +2104,14 @@ void loop() {
     }
   }
 
-  // The untitled label's delay has run out with the title still missing:
-  // the frame that held it back is redrawn with it. A title that arrived in
-  // the meantime has already repainted, and cancels this.
-  if (g_untitled_repaint_owed && !untitledBriefly()) {
-    g_untitled_repaint_owed = false;
-    PlayerState snapshot;
-    if (g_screen == Screen::kNowPlaying && snapshotState(snapshot) &&
-        snapshot.title[0] == '\0') {
-      g_state_dirty = true;
-    }
-  }
+  handleUntitledRepaint();
 
   // Thumbnails are fetched on artwork's own worker; this only queues what the
   // screen wants and repaints when some of it has arrived.
   ui::idleWork(g_screen);
   handleStatusRefresh();
 
-  if (!ui::isBlanked() && g_screen == Screen::kNowPlaying &&
-      !g_volume_dragging && millis() - g_last_elapsed_ms >= 1000) {
-    g_last_elapsed_ms = millis();
-    PlayerState snapshot;
-    if (snapshotState(snapshot) &&
-        snapshot.playback == PlaybackState::kPlaying) {
-      ui::refreshElapsed(snapshot);
-    }
-  }
+  handleElapsedTick();
 
   delay(5);
 }
