@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_random.h>
+#include <mbedtls/base64.h>
 
 #include <cstdarg>
 #include <cstdio>
@@ -246,21 +247,77 @@ void logReply(const char* what, const String& reply) {
   LOG_WARN("HA link: %s: %.200s", what, reply.c_str());
 }
 
-/** The id of this user's long-lived token called `name`, from the reply to
- *  auth/refresh_tokens: each entry carries its client_name, then its id. */
-bool findTokenId(const String& tokens, const char* name, char* id,
-                 size_t id_len) {
+/** What every token this firmware asks for is called, before the remote's
+ *  own name: how an earlier one is recognised as the remote's to replace. */
+constexpr char kTokenNamePrefix[] = "Media Remote (";
+/** Names tried before giving up: the remote's own, then " 2" up to this. */
+constexpr int kMaxTokenNames = 20;
+
+/** The refresh token behind a Home Assistant access token: the "iss" of its
+ *  payload, which is a JWT's middle part, base64url-encoded -- an id, a
+ *  time issued and an expiry, under a hundred bytes. False for anything that
+ *  is not one: a token pasted in the portal can be any string.
+ *
+ *  Never inlined, nor is mintToken() below: the link runs on the loop's
+ *  8 KB stack, and folded into complete() their buffers sat underneath the
+ *  TLS handshake of the code exchange, which overflowed it. */
+__attribute__((noinline)) bool tokenIssuer(const char* jwt, char* out,
+                                           size_t out_len) {
+  const char* start = strchr(jwt, '.');
+  const char* end = start != nullptr ? strchr(start + 1, '.') : nullptr;
+  if (end == nullptr || end - start - 1 > 180) {
+    return false;
+  }
+  // base64url to base64, padded, for mbedTLS.
+  char b64[184];
+  size_t n = 0;
+  for (const char* p = start + 1; p < end; ++p) {
+    b64[n++] = *p == '-' ? '+' : *p == '_' ? '/' : *p;
+  }
+  while (n % 4 != 0) {
+    b64[n++] = '=';
+  }
+  unsigned char payload[140];
+  size_t got = 0;
+  if (mbedtls_base64_decode(payload, sizeof(payload) - 1, &got,
+                            reinterpret_cast<const unsigned char*>(b64),
+                            n) != 0) {
+    return false;
+  }
+  payload[got] = '\0';
+  return jsonString(String(reinterpret_cast<const char*>(payload)), "iss", out,
+                    out_len);
+}
+
+/** Whether a token in the reply to auth/refresh_tokens is called `name`.
+ *  Home Assistant refuses a second long-lived token under a name, so one
+ *  that is taken is passed over. */
+bool nameTaken(const String& tokens, const char* name) {
   String needle = "\"client_name\":\"";
   needle += name;
+  needle += "\"";
+  return tokens.indexOf(needle) >= 0;
+}
+
+/** Whether the token with refresh id `id` is a long-lived one this firmware
+ *  made: its name starts with kTokenNamePrefix. Only such a token is ever
+ *  deleted -- one pasted in the portal may be in use elsewhere. */
+bool isRemoteToken(const String& tokens, const char* id) {
+  String needle = "\"id\":\"";
+  needle += id;
   needle += "\"";
   const int at = tokens.indexOf(needle);
   if (at < 0) {
     return false;
   }
+  const int begin = tokens.lastIndexOf('{', at);
   const int end = tokens.indexOf('}', at);
-  const String entry = tokens.substring(at, end < 0 ? tokens.length() : end);
-  return entry.indexOf("long_lived_access_token") >= 0 &&
-         jsonString(entry, "id", id, id_len);
+  const String entry = tokens.substring(begin < 0 ? 0 : begin,
+                                        end < 0 ? tokens.length() : end);
+  String prefix = "\"client_name\":\"";
+  prefix += kTokenNamePrefix;
+  return entry.indexOf(prefix) >= 0 &&
+         entry.indexOf("long_lived_access_token") >= 0;
 }
 
 /** Read messages until one contains `needle`, or the time runs out. */
@@ -289,8 +346,9 @@ bool awaitMessage(WebSocket& ws, const char* needle, String& out) {
 
 /** With a short session's access token: a long-lived token for this remote,
  *  and the Music Assistant entry id while the connection is open. */
-bool mintToken(const char* access, char* token, size_t token_len,
-               char* ma_entry, size_t ma_len) {
+__attribute__((noinline)) bool mintToken(const char* access, char* token,
+                                         size_t token_len, char* ma_entry,
+                                         size_t ma_len) {
   Endpoint e;
   if (!parseBase(e)) {
     setError("cannot parse %s", s_base);
@@ -328,9 +386,8 @@ bool mintToken(const char* access, char* token, size_t token_len,
     }
 
     char name[64];
-    snprintf(name, sizeof(name), "Media Remote (%s)", services::device::name());
-    char second[72];
-    snprintf(second, sizeof(second), "%s 2", name);
+    snprintf(name, sizeof(name), "%s%s)", kTokenNamePrefix,
+             services::device::name());
 
     // Home Assistant wants every message's id higher than the last on the
     // connection, so they come from one counter.
@@ -347,38 +404,49 @@ bool mintToken(const char* access, char* token, size_t token_len,
       ws.sendText(req.c_str(), req.length());
     };
 
-    // Home Assistant keeps one long-lived token per name and refuses a
-    // second. A remote linked before -- or a link that got as far as the
-    // token and failed after it -- leaves one under this remote's name, or
-    // under the second name tried below, so linking again replaces both.
+    // The token this remote holds now, if it was made by an earlier link to
+    // this Home Assistant: replaced rather than left behind. Found by its
+    // own id -- the "iss" inside it -- and never by name, since two remotes
+    // can share a name, and deleting by it took the other one's token.
     send("\"type\":\"auth/refresh_tokens\"");
     String tokens;
-    if (awaitMessage(ws, reply_id, tokens)) {
-      for (const char* old_name : {static_cast<const char*>(name),
-                                   static_cast<const char*>(second)}) {
-        char old_id[48];
-        if (!findTokenId(tokens, old_name, old_id, sizeof(old_id))) {
-          continue;
-        }
-        String del = "\"type\":\"auth/delete_refresh_token\",";
-        del += "\"refresh_token_id\":\"";
-        del += old_id;
-        del += "\"";
-        send(del);
-        if (awaitMessage(ws, reply_id, msg) &&
-            msg.indexOf("\"success\":true") >= 0) {
-          LOG_INFO("HA link: removed the earlier token \"%s\"", old_name);
-        } else {
-          logReply("could not remove the earlier token", msg);
-        }
+    const bool have_list = awaitMessage(ws, reply_id, tokens);
+    char old_id[48];
+    if (have_list &&
+        tokenIssuer(services::ha::token(), old_id, sizeof(old_id)) &&
+        isRemoteToken(tokens, old_id)) {
+      String del = "\"type\":\"auth/delete_refresh_token\",";
+      del += "\"refresh_token_id\":\"";
+      del += old_id;
+      del += "\"";
+      send(del);
+      if (awaitMessage(ws, reply_id, msg) &&
+          msg.indexOf("\"success\":true") >= 0) {
+        LOG_INFO("HA link: removed this remote's earlier token");
+        // Its name is free again: the list no longer says so.
+        tokens = String();
+        send("\"type\":\"auth/refresh_tokens\"");
+        awaitMessage(ws, reply_id, tokens);
+      } else {
+        logReply("could not remove the earlier token", msg);
       }
     }
-    tokens = String();  // the list can be tens of KB; done with it
 
-    // Under its name, and failing that once more under the second: should
-    // the old token have escaped the lookup, its name is still taken.
-    for (const char* asked : {static_cast<const char*>(name),
-                              static_cast<const char*>(second)}) {
+    // Home Assistant keeps one long-lived token per name and refuses a
+    // second, and another remote, or a link this one lost track of, may
+    // hold this name already. So the first of the name, "name 2", "name 3"
+    // and on that the list does not show taken -- and should a name still
+    // be refused, the next one.
+    for (int i = 1; i <= kMaxTokenNames && !ok; ++i) {
+      char asked[72];
+      if (i == 1) {
+        snprintf(asked, sizeof(asked), "%s", name);
+      } else {
+        snprintf(asked, sizeof(asked), "%s %d", name, i);
+      }
+      if (tokens.length() > 0 && nameTaken(tokens, asked)) {
+        continue;
+      }
       String req = "\"type\":\"auth/long_lived_access_token\",";
       req += "\"client_name\":\"";
       req += asked;
@@ -390,10 +458,11 @@ bool mintToken(const char* access, char* token, size_t token_len,
           jsonString(msg, "result", token, token_len)) {
         ok = true;
         LOG_INFO("HA link: long-lived token \"%s\" created", asked);
-        break;
+      } else {
+        logReply("long-lived token refused", msg);
       }
-      logReply("long-lived token refused", msg);
     }
+    tokens = String();  // the list can be tens of KB; done with it
     if (!ok) {
       setError("no long-lived token from Home Assistant");
       break;
