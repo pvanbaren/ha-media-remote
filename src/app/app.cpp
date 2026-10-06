@@ -1093,6 +1093,10 @@ bool g_ha_discover_tried = false;
   if (services::ha_link::codeArrived()) {
     ui::showLoading("Home Assistant link");
     if (services::ha_link::complete()) {
+      // The address, the token and the Music Assistant entry are stored
+      // now; the portal's fields still hold what they did when it started,
+      // and a save from them would show the entry blank -- or put it back.
+      wifiSettingsChanged();
       // Linked. The player is the one thing left to choose.
       if (services::ha::selectedEntity()[0] == '\0') {
         showNeedsPlayer();
