@@ -18,6 +18,10 @@ void prepare(const char* picture);
 /** True when prepare() found art for the current picture, whether or not it
  *  fit in the cache. */
 bool hasArt();
+/** What draw() would paint now, as a number that changes whenever that does:
+ *  a new picture, the cached image arriving or going, a fall back to
+ *  streaming. For keeping what was drawn from it. */
+uint32_t identity();
 
 /** Paint the art centre-cropped to fill a `diameter` square whose TOP-LEFT
  *  corner is (x, y) -- not its centre. LovyanGFX treats the image position as

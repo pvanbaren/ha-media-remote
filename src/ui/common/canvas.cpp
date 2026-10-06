@@ -4,6 +4,7 @@
 
 #include <esp_heap_caps.h>
 
+#include <cstring>
 #include <utility>
 
 #include "board/board.h"
@@ -11,6 +12,7 @@
 #include "log.h"
 #include "hardware/display.h"
 #include "hardware/display_font.h"
+#include "ui/theme.h"
 
 namespace ui {
 namespace {
@@ -131,11 +133,7 @@ bool canvasInit() {
 
   // Byte order is the board's call, not a default: where the frame is copied
   // straight into a scan-out buffer there is nothing left to convert it.
-  if constexpr (board::kFrameNativeByteOrder) {
-    s_frame.setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
-  } else {
-    s_frame.setColorDepth(lgfx::color_depth_t::rgb565_2Byte);
-  }
+  s_frame.setColorDepth(canvasColorDepth());
   s_frame.setPsram(true);
 
   if (s_frame.createSprite(width, height) == nullptr) {
@@ -248,6 +246,102 @@ void dimMask(int x, int y, int w, int h, const uint8_t* mask) {
       }
     }
   }
+}
+
+namespace {
+
+/** A kept frame and what it shows. See canvasSaveBackdrop(). */
+struct Kept {
+  uint16_t* pixels = nullptr;
+  uint32_t key = 0;
+  bool valid = false;
+};
+Kept s_kept[2];
+
+Kept& kept(Backdrop which) {
+  return s_kept[which == Backdrop::kArt ? 0 : 1];
+}
+
+constexpr size_t kFrameBytes =
+    static_cast<size_t>(kSide) * kSide * sizeof(uint16_t);
+
+}  // namespace
+
+void scrim(uint8_t base_alpha, int ramp_top, uint8_t ramp_alpha) {
+  if (!s_ready) {
+    return;
+  }
+  uint16_t* buffer = frameBuffer();
+  if (buffer == nullptr) {
+    return;
+  }
+  const int ramp_rows = kSide - ramp_top;
+  const int span = ramp_rows > 1 ? ramp_rows - 1 : 1;
+  for (int row = 0; row < kSide; ++row) {
+    // What dim() and then dimGradient() would each keep of a pixel,
+    // multiplied: one rounding where there were two.
+    uint32_t keep = 256u - base_alpha;
+    if (row >= ramp_top) {
+      const uint32_t ramp = (static_cast<uint32_t>(ramp_alpha) *
+                             static_cast<uint32_t>(row - ramp_top)) /
+                            static_cast<uint32_t>(span);
+      keep = (keep * (256u - ramp)) >> 8;
+    }
+    if (keep >= 256u) {
+      continue;
+    }
+    const int half = theme::chordHalfWidth(row);
+    int x0 = theme::kCenterX - half;
+    int x1 = theme::kCenterX + half;
+    x0 = x0 < 0 ? 0 : x0;
+    x1 = x1 > kSide ? kSide : x1;
+    uint16_t* line = buffer + static_cast<size_t>(row) * kSide;
+    for (int x = x0; x < x1; ++x) {
+      line[x] = bufferOrder(
+          blendToBlack(hostOrder(line[x]), static_cast<uint16_t>(keep)));
+    }
+  }
+}
+
+void canvasSaveBackdrop(Backdrop which, uint32_t key) {
+  uint16_t* buffer = s_ready ? frameBuffer() : nullptr;
+  if (buffer == nullptr) {
+    return;
+  }
+  Kept& k = kept(which);
+  if (k.pixels == nullptr) {
+    k.pixels = static_cast<uint16_t*>(
+        heap_caps_malloc(kFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (k.pixels == nullptr) {
+      return;  // no room for another frame: every repaint composes, as before
+    }
+  }
+  memcpy(k.pixels, buffer, kFrameBytes);
+  k.key = key;
+  k.valid = true;
+}
+
+bool canvasRestoreBackdrop(Backdrop which, uint32_t key) {
+  uint16_t* buffer = s_ready ? frameBuffer() : nullptr;
+  const Kept& k = kept(which);
+  if (buffer == nullptr || !k.valid || k.key != key) {
+    return false;
+  }
+  memcpy(buffer, k.pixels, kFrameBytes);
+  return true;
+}
+
+uint16_t* canvasPixels(const lgfx::LGFXBase& gfx) {
+  if (!s_ready || &gfx != static_cast<const lgfx::LGFXBase*>(&s_frame)) {
+    return nullptr;
+  }
+  return frameBuffer();
+}
+
+lgfx::color_depth_t canvasColorDepth() {
+  return board::kFrameNativeByteOrder
+             ? lgfx::color_depth_t::rgb565_nonswapped
+             : lgfx::color_depth_t::rgb565_2Byte;
 }
 
 void dimGradient(int y, int h, uint8_t alpha_top, uint8_t alpha_bottom) {

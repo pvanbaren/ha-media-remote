@@ -432,29 +432,72 @@ void drawPlainBackdrop(lgfx::LovyanGFX& gfx) {
   gfx.fillScreen(theme::kSurface);
 }
 
+/** What the kept frame with the track text on it shows: the cover under it
+ *  and every input drawTrackText() reads, hashed (FNV-1a). */
+uint32_t trackTextKey(uint32_t art, bool has_art, const PlayerState& state) {
+  uint32_t h = 2166136261u;
+  auto mix = [&](uint8_t byte) {
+    h ^= byte;
+    h *= 16777619u;
+  };
+  auto mixText = [&](const char* text) {
+    for (const char* p = text; *p != '\0'; ++p) {
+      mix(static_cast<uint8_t>(*p));
+    }
+    mix(0);
+  };
+  for (int shift = 0; shift < 32; shift += 8) {
+    mix(static_cast<uint8_t>(art >> shift));
+  }
+  mix(has_art ? 1 : 0);
+  mix(state.hold_label ? 1 : 0);
+  mixText(state.title);
+  mixText(state.subtitle);
+  if (state.title[0] == '\0') {
+    mixText(idleLabel(state));
+  }
+  return h;
+}
+
 /** Draw the whole screen into the frame buffer. */
 void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   displayFontEnsureLoaded(gfx);
 
-  gfx.fillScreen(theme::kBackground);
-  // (0, 0) is the top-left of the fit box, which is the whole panel; the
-  // middle_center datum positions the art inside it.
-  const bool over_art =
-      ui::cover::hasArt() && ui::cover::draw(gfx, 0, 0, theme::kSize);
-  if (over_art) {
-    // Art is the backdrop, so everything above it needs a scrim: a flat dim
-    // for the whole frame, plus a stronger ramp under the text and transport
-    // row where contrast matters most.
-    ui::dim(0, 0, board::kDisplayWidth, board::kDisplayHeight,
-            theme::kScrimBaseAlpha);
-    ui::dimGradient(kScrimGradientTop,
-                    board::kDisplayHeight - kScrimGradientTop, 0,
-                    theme::kScrimGradientAlpha);
-  } else {
-    drawPlainBackdrop(gfx);
+  // The cover, its scrim and the track text over them, kept from the last
+  // compose while they are the same: they are most of a repaint's cost -- a
+  // decode, a full-frame dim and a blur -- and a play, a pause or a volume
+  // step touches none of them. Two frames, so a title that changes over the
+  // same cover -- a radio stream -- redraws only the text.
+  const bool has_art = ui::cover::hasArt();
+  const uint32_t art = has_art ? ui::cover::identity() : 0;
+  const uint32_t with_text = trackTextKey(art, has_art, state);
+  bool over_art = has_art;
+  if (!ui::canvasRestoreBackdrop(ui::Backdrop::kArtAndText, with_text)) {
+    over_art = has_art && ui::canvasRestoreBackdrop(ui::Backdrop::kArt, art);
+    if (!over_art && has_art) {
+      gfx.fillScreen(theme::kBackground);
+      // (0, 0) is the top-left of the fit box, which is the whole panel; the
+      // middle_center datum positions the art inside it.
+      over_art = ui::cover::draw(gfx, 0, 0, theme::kSize);
+      if (over_art) {
+        // Art is the backdrop, so everything above it needs a scrim: a flat
+        // dim for the whole frame, plus a stronger ramp under the text and
+        // transport row where contrast matters most.
+        ui::scrim(theme::kScrimBaseAlpha, kScrimGradientTop,
+                  theme::kScrimGradientAlpha);
+        ui::canvasSaveBackdrop(ui::Backdrop::kArt, art);
+      }
+    }
+    if (!over_art) {
+      drawPlainBackdrop(gfx);
+    }
+    drawTrackText(gfx, state, over_art);
+    // Kept only as what it was asked to be: art that would not draw this
+    // time is tried again next time rather than remembered as a plain frame.
+    if (over_art == has_art) {
+      ui::canvasSaveBackdrop(ui::Backdrop::kArtAndText, with_text);
+    }
   }
-
-  drawTrackText(gfx, state, over_art);
   drawElapsedChip(gfx, state);
   // Whether or not the bar is shown now: volume can become available without
   // anything else changing, and the first drag must still find the backdrop.

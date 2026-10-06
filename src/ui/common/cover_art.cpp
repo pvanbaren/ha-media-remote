@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 
 #include <cstring>
+#include <new>
 
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -16,6 +17,7 @@
 #include "log.h"
 #include "services/ha_client.h"
 #include "services/yielding_client.h"
+#include "ui/canvas.h"
 
 namespace ui::cover {
 namespace {
@@ -637,6 +639,25 @@ bool hasArt() {
   return hasArtLocked();
 }
 
+uint32_t identity() {
+  Guard guard;
+  // FNV-1a over the picture, then what is held of it.
+  uint32_t h = 2166136261u;
+  auto mix = [&](uint8_t byte) {
+    h ^= byte;
+    h *= 16777619u;
+  };
+  for (const char* p = s_picture; *p != '\0'; ++p) {
+    mix(static_cast<uint8_t>(*p));
+  }
+  const uint32_t len = static_cast<uint32_t>(s_buffer_len);
+  for (int shift = 0; shift < 32; shift += 8) {
+    mix(static_cast<uint8_t>(len >> shift));
+  }
+  mix(s_stream_only ? 1 : 0);
+  return h;
+}
+
 void prepare(const char* picture) {
   if (picture == nullptr || picture[0] == '\0') {
     clear();
@@ -766,6 +787,106 @@ void prepare(const char* picture) {
                 static_cast<unsigned>(len), s_src_w, s_src_h);
 }
 
+namespace {
+
+/** The cover at its own size, for upscaleInto(), and the source column of
+ *  each column of the box it is scaled into. PSRAM, kept between covers and
+ *  remade only when a cover's size differs. */
+/** The sprite object too, made on first use: static, it was 368 bytes of
+ *  internal RAM. */
+lgfx::LGFX_Sprite* s_native = nullptr;
+int16_t* s_columns = nullptr;
+int s_columns_len = 0;
+
+/**
+ * Draw the cached cover, smaller than the box, into the canvas -- decoded at
+ * its own size into s_native, then scaled up into the frame's pixels a row at
+ * a time. Nearest neighbour, as LovyanGFX's own scaled decode is, so it looks
+ * the same; but LovyanGFX scales as it decodes, block by block through its
+ * drawing calls, and on a 480 px panel in PSRAM that cost about 200 ms
+ * whatever the source size. This is a decode of a quarter of the pixels and
+ * then plain copies. False, having drawn nothing, when it cannot -- `dst` not
+ * the canvas, no memory -- and the caller decodes the slow way instead.
+ *
+ * Under the art lock, like everything that reads s_buffer.
+ */
+bool upscaleInto(uint16_t* dst, int x, int y, int diameter, float scale) {
+  const int w = s_src_w;
+  const int h = s_src_h;
+  if (s_native == nullptr) {
+    void* mem = heap_caps_malloc(sizeof(lgfx::LGFX_Sprite),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (mem == nullptr) {
+      return false;
+    }
+    s_native = new (mem) lgfx::LGFX_Sprite();
+  }
+  if (s_native->width() != w || s_native->height() != h) {
+    s_native->deleteSprite();
+    s_native->setColorDepth(ui::canvasColorDepth());
+    s_native->setPsram(true);
+    if (s_native->createSprite(w, h) == nullptr) {
+      return false;
+    }
+  }
+  if (s_columns_len < diameter) {
+    heap_caps_free(s_columns);
+    s_columns = static_cast<int16_t*>(heap_caps_malloc(
+        sizeof(int16_t) * diameter, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    s_columns_len = s_columns != nullptr ? diameter : 0;
+    if (s_columns == nullptr) {
+      return false;
+    }
+  }
+  const bool decoded =
+      s_format == Format::kPng
+          ? s_native->drawPng(s_buffer, s_buffer_len, 0, 0, w, h)
+          : s_native->drawJpg(s_buffer, s_buffer_len, 0, 0, w, h);
+  if (!decoded) {
+    return false;
+  }
+
+  // Centre-crop: the source pixel under each box pixel, centres aligned.
+  const float inv = 1.0f / scale;
+  const float src_x0 = w * 0.5f - diameter * 0.5f * inv;
+  const float src_y0 = h * 0.5f - diameter * 0.5f * inv;
+  for (int i = 0; i < diameter; ++i) {
+    int sx = static_cast<int>(src_x0 + (i + 0.5f) * inv);
+    s_columns[i] = static_cast<int16_t>(sx < 0 ? 0 : sx >= w ? w - 1 : sx);
+  }
+  const auto* src = static_cast<const uint16_t*>(s_native->getBuffer());
+  const int side = board::kDisplayWidth;
+  const int col0 = x < 0 ? -x : 0;
+  const int col1 = x + diameter > side ? side - x : diameter;
+  int last_sy = -1;
+  uint16_t* last_row = nullptr;
+  for (int j = 0; j < diameter; ++j) {
+    const int dy = y + j;
+    if (dy < 0 || dy >= board::kDisplayHeight) {
+      continue;
+    }
+    int sy = static_cast<int>(src_y0 + (j + 0.5f) * inv);
+    sy = sy < 0 ? 0 : sy >= h ? h - 1 : sy;
+    uint16_t* row = dst + static_cast<size_t>(dy) * side + x;
+    if (sy == last_sy && last_row != nullptr) {
+      // The same source row as the one above: copy that rather than map it
+      // again -- a 1.9x scale repeats most rows.
+      memcpy(row + col0, last_row + col0,
+             sizeof(uint16_t) * static_cast<size_t>(col1 - col0));
+    } else {
+      const uint16_t* line = src + static_cast<size_t>(sy) * w;
+      for (int i = col0; i < col1; ++i) {
+        row[i] = line[s_columns[i]];
+      }
+    }
+    last_sy = sy;
+    last_row = row;
+  }
+  return true;
+}
+
+}  // namespace
+
 bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
   Guard guard;
 
@@ -783,6 +904,14 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
       const float sx = static_cast<float>(diameter) / s_src_w;
       const float sy = static_cast<float>(diameter) / s_src_h;
       scale = sx > sy ? sx : sy;
+    }
+    // Smaller than the box and going into the canvas: decode at its own size
+    // and scale it up in one pass, rather than through the scaled decode.
+    if (scale > 1.0f) {
+      uint16_t* dst = ui::canvasPixels(gfx);
+      if (dst != nullptr && upscaleInto(dst, x, y, diameter, scale)) {
+        return true;
+      }
     }
     const bool drawn =
         s_format == Format::kPng

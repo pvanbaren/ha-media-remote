@@ -68,6 +68,37 @@ void dim(int x, int y, int w, int h, uint8_t alpha);
  *  `alpha_bottom` at row `y + h - 1`. */
 void dimGradient(int y, int h, uint8_t alpha_top, uint8_t alpha_bottom);
 
+/** The scrim over cover art: the whole frame dimmed by `base_alpha`, and from
+ *  row `ramp_top` down a ramp from nothing to `ramp_alpha` on top of it --
+ *  dim() then dimGradient(), in one pass over the frame rather than two, and
+ *  only across the glass: on a round panel the corners are skipped. */
+void scrim(uint8_t base_alpha, int ramp_top, uint8_t ramp_alpha);
+
+/** The frames a now playing compose keeps for its next one: the cover art
+ *  under its scrim, which changes with the cover, and that with the track's
+ *  title and its glow drawn on, which changes with the text too. Between
+ *  them, a repaint for a play, a pause or a volume step starts from a copy
+ *  rather than a decode and a blur, and a radio title changing over the same
+ *  cover redraws only the text. */
+enum class Backdrop : uint8_t {
+  kArt,
+  kArtAndText,
+};
+/** Keep a copy of the frame as it stands, as `which`, showing what `key`
+ *  names. In PSRAM, a frame apiece, claimed on first use and kept. */
+void canvasSaveBackdrop(Backdrop which, uint32_t key);
+/** Put `which` back into the frame, if it is the one `key` names. False,
+ *  leaving the frame alone, when what is kept is some other one or nothing. */
+bool canvasRestoreBackdrop(Backdrop which, uint32_t key);
+
+/** The frame's pixels, when `gfx` is the canvas, laid out as
+ *  canvasColorDepth() says; nullptr for anything else. For filling the frame
+ *  faster than drawing calls can -- the cover art's upscale. */
+uint16_t* canvasPixels(const lgfx::LGFXBase& gfx);
+/** How the frame stores a pixel, so that a sprite set up the same way can be
+ *  copied into it a pixel at a time without converting anything. */
+lgfx::color_depth_t canvasColorDepth();
+
 /** As dim(), with each pixel's alpha from `mask`: `w` x `h` bytes, row-major,
  *  laid over the frame at (x, y) in drawing coordinates. What a soft shadow
  *  under text is made of -- the text's own shape, blurred. */
