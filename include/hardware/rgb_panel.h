@@ -3,8 +3,10 @@
 #include <cstdint>
 
 /**
- * The RGB output stage on the Adafruit Qualia: an esp_lcd panel streaming the
- * S3's LCD peripheral over 16 data lines.
+ * The RGB output stage, for a board whose panel is RGB-parallel -- the
+ * Adafruit Qualia's square 720 and the Waveshare 2.8C's round 480: an esp_lcd
+ * panel streaming the S3's LCD peripheral over 16 data lines. The pins and
+ * timings are the board header's; nothing here is particular to either.
  *
  * **One framebuffer, no bounce buffer**, and both are choices.
  *
@@ -25,10 +27,10 @@
  * does not have, and it creates one it does. It puts the CPU in the scan-out
  * path on a hard deadline, so a stall shows up as a glitch.
  *
- * Call expanderInit() first: the panel wants its reset released before pixels
- * start arriving.
+ * Bring the panel out of reset first -- and on a panel that wants one, send
+ * its register init -- since it wants that done before pixels start arriving.
  */
-namespace hw::qualia {
+namespace hw::rgb {
 
 /** Start the RGB panel and claim its framebuffer. False on failure, in which
  *  case rgbPresent() does nothing and the remote runs blind. */
@@ -37,7 +39,7 @@ bool rgbInit();
 /**
  * Copy a rectangle of a composed frame into the framebuffer being scanned.
  *
- * `src` points at the whole 720x720 frame, not at the rectangle, so the copy
+ * `src` points at the whole frame, not at the rectangle, so the copy
  * walks it a row at a time with the full width as its stride. That is what
  * lets a caller repaint a 120-pixel-tall volume bar for about a millisecond
  * instead of pushing a megabyte -- which matters more here than it would with
@@ -80,4 +82,4 @@ void rgbFill(uint16_t colour);
  */
 bool rgbScroll(int y, int h, int dy, int keep_x = 0, int keep_w = 0);
 
-}  // namespace hw::qualia
+}  // namespace hw::rgb

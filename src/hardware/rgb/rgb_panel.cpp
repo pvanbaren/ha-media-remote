@@ -1,4 +1,4 @@
-#include "hardware/qualia_rgb.h"
+#include "hardware/rgb_panel.h"
 
 #include <Arduino.h>
 
@@ -15,7 +15,7 @@
 #include "board/board.h"
 #include "log.h"
 
-namespace hw::qualia {
+namespace hw::rgb {
 namespace {
 
 constexpr int kW = board::kDisplayWidth;
@@ -50,7 +50,7 @@ struct Rect {
  * Drive the panel bus as gently as it will tolerate.
  *
  * Nineteen pins switch at the pixel clock a few centimetres from a 2.4 GHz
- * front end, and on this board that was not a theoretical concern. Every HTTP
+ * front end, and on the Qualia that was not a theoretical concern. Every HTTP
  * request took tens of seconds -- one succeeded in 72 -- while a PC on the
  * same network completed the TLS handshake to the same server in 4 ms.
  * Lowering the pixel clock to 12 MHz cut that to 4.3 s without speeding up a
@@ -253,9 +253,9 @@ bool rgbInit() {
   // puts the CPU in the scan-out path -- an interrupt has to move a slab of
   // PSRAM into internal SRAM before the LCD FIFO drains, every time, forever
   // -- so any stall becomes a visible glitch. It earns its place only when
-  // PSRAM cannot feed the panel at all. This one asks for 720*720*2 bytes at
+  // PSRAM cannot feed the panel at all. The Qualia asks for 720*720*2 bytes at
   // 19.5 Hz, about 24 MB/s, which octal PSRAM can serve. What goes wrong on
-  // this board is bursts -- a present or a compose holding the bus long
+  // that board is bursts -- a present or a compose holding the bus long
   // enough for the LCD FIFO to miss a deadline -- and a bounce buffer would
   // not escape those: it is filled from the same PSRAM, over the same bus,
   // and adds an interrupt deadline of its own.
@@ -274,7 +274,7 @@ bool rgbInit() {
 
   const esp_err_t err = esp_lcd_new_rgb_panel(&cfg, &s_panel);
   if (err != ESP_OK) {
-    LOG_ERROR("Qualia: esp_lcd_new_rgb_panel failed: 0x%x", err);
+    LOG_ERROR("RGB: esp_lcd_new_rgb_panel failed: 0x%x", err);
     s_panel = nullptr;
     return false;
   }
@@ -285,7 +285,7 @@ bool rgbInit() {
   void* fb = nullptr;
   if (esp_lcd_rgb_panel_get_frame_buffer(s_panel, 1, &fb) != ESP_OK ||
       fb == nullptr) {
-    LOG_ERROR("Qualia: get_frame_buffer failed");
+    LOG_ERROR("RGB: get_frame_buffer failed");
     return false;
   }
   s_fb = static_cast<uint16_t*>(fb);
@@ -299,7 +299,7 @@ bool rgbInit() {
   // permanently shifted image.
   esp_lcd_rgb_panel_restart(s_panel);
 
-  LOG_INFO("Qualia: RGB panel up, %dx%d @ %u MHz, 1 framebuffer", kW,
+  LOG_INFO("RGB: panel up, %dx%d @ %u MHz, 1 framebuffer", kW,
                 kH, static_cast<unsigned>(board::kRgbPclkHz / 1000000));
   return true;
 }
@@ -397,4 +397,4 @@ bool rgbScroll(int y, int h, int dy, int keep_x, int keep_w) {
   return true;
 }
 
-}  // namespace hw::qualia
+}  // namespace hw::rgb

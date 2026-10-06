@@ -16,7 +16,7 @@
  * The panel is an RGB-parallel ("DotClock") device: the LCD peripheral streams
  * pixels continuously over 16 data lines plus PCLK/HSYNC/VSYNC/DE, and there
  * is **no command channel**. That shapes everything below it -- see
- * hardware/qualia_rgb.h for the output stage and hardware/qualia_expander.h
+ * hardware/rgb_panel.h for the output stage and hardware/qualia_expander.h
  * for the reset that replaces a register init.
  *
  * Values transcribed from two known-good sources: the Qualia bring-up in

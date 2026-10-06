@@ -1138,7 +1138,7 @@ clock both matter:
 | `GPIO_DRIVE_CAP_0` | 0.5 s | 16–28 ms |
 
 It ships at **`CAP_0` and a 12 MHz pixel clock** (`quietenBus()` in
-`hardware/qualia/rgb.cpp`, after esp_lcd has configured the pins): the drive
+`hardware/rgb/rgb_panel.cpp`, after esp_lcd has configured the pins): the drive
 carries the radio, and the clock is down for PSRAM bandwidth, since at 16 MHz
 a scrolling list shifted the frame sideways. That is 19.5 Hz on the glass. If
 the panel ever speckles or drops columns, the drive strength is the first

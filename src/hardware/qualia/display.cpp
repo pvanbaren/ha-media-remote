@@ -7,7 +7,7 @@
 #include "log.h"
 #include "hardware/display_font.h"
 #include "hardware/qualia_expander.h"
-#include "hardware/qualia_rgb.h"
+#include "hardware/rgb_panel.h"
 
 /**
  * The display, as the Qualia sees it.
@@ -36,7 +36,7 @@ void displayInit(uint8_t rotation) {
   // Order matters: the panel wants its reset released before the peripheral
   // starts clocking pixels at it.
   hw::qualia::expanderInit();
-  s_up = hw::qualia::rgbInit();
+  s_up = hw::rgb::rgbInit();
   hw::qualia::expanderBacklight(true);
 
   displayFontInit();
@@ -54,7 +54,7 @@ void displayBlank() {
   // LCD peripheral. On a mains-powered wall remote that is the part that
   // matters, and it is what makes the room go dark at night.
   if (s_up) {
-    hw::qualia::rgbFill(0);
+    hw::rgb::rgbFill(0);
   }
   hw::qualia::expanderBacklight(false);
   s_blanked = true;
@@ -81,7 +81,7 @@ void displayPresentFrame(const uint16_t* frame, int x, int y, int w, int h) {
   if (!s_up) {
     return;
   }
-  hw::qualia::rgbPresent(frame, x, y, w, h, s_rotation);
+  hw::rgb::rgbPresent(frame, x, y, w, h, s_rotation);
 }
 
 bool displayScrollFrame(int y, int h, int dy, int keep_x, int keep_w) {
@@ -104,5 +104,5 @@ bool displayScrollFrame(int y, int h, int dy, int keep_x, int keep_w) {
     default:
       return false;  // a quarter turn: the rows are the glass's columns
   }
-  return hw::qualia::rgbScroll(y, h, dy, keep_x, keep_w);
+  return hw::rgb::rgbScroll(y, h, dy, keep_x, keep_w);
 }

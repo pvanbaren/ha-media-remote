@@ -13,7 +13,7 @@
  *
  * The S3's LCD peripheral streams a framebuffer continuously and offers no
  * command channel, so there is nothing for LovyanGFX to talk to. esp_lcd owns
- * the output (hardware/qualia_rgb.h) and LovyanGFX is used purely as a
+ * the output (hardware/rgb_panel.h) and LovyanGFX is used purely as a
  * rasteriser into ui::canvas's sprite.
  *
  * `tft` still exists because the shared UI code names it, but it is never
