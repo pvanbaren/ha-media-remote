@@ -27,10 +27,10 @@ jobs:
     name: ${{ matrix.env }}
     runs-on: ubuntu-latest
     strategy:
-      # One board failing says nothing about the others; see all four.
+      # One board failing says nothing about the others; see all five.
       fail-fast: false
       matrix:
-        env: [headless, waveshare-s3, round360-s3, qualia-720]
+        env: [headless, waveshare-s3, round360-s3, lcd28c-s3, qualia-720]
 
     steps:
       - uses: actions/checkout@v5

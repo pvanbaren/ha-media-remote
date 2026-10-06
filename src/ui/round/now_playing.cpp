@@ -489,6 +489,15 @@ void refreshElapsed(const PlayerState& state) {
   // it needs nothing from the cover art beneath -- which is the whole reason
   // it is a chip and not bare text on the scrim.
   drawElapsedChip(ui::panel(), state);
+  if (!board::kPanelWritesDirect) {
+    // ui::panel() is the composed frame on a framebuffer panel, so the chip
+    // is not on the glass until its band is pushed. All of the band's width:
+    // the pill is centred and changes width with its label, and a band a few
+    // dozen rows tall costs nothing worth narrowing.
+    ui::canvasPresentRegion(0, theme::kElapsedY - theme::px(14), theme::kSize,
+                            theme::px(28));
+    return;
+  }
   // And into the canvas, where that is not the panel, so it keeps up there
   // too. A volume drag presents stretches of the canvas, and near either end
   // of the arc a stretch reaches the chip -- which the canvas would otherwise
@@ -503,6 +512,9 @@ void refreshVolume(const PlayerState& state, float level) {
     // No copy of what is under the ring. Draw over it and let the next
     // compose clean up; the trail stays until then.
     drawVolumeArc(ui::panel(), state, level);
+    if (!board::kPanelWritesDirect) {
+      ui::canvasPresent();  // the frame, which is all ui::panel() reached
+    }
     return;
   }
 
@@ -624,8 +636,15 @@ void showButtonPressed(Action action, bool pressed) {
   }
   // The discs are opaque, so redrawing one over the composed frame needs
   // nothing from the backdrop underneath it.
-  drawTransportButton(ui::panel(), buttonFor(action), s_last_drawn,
-                      pressed, enabledFor(action, s_last_drawn));
+  const Button button = buttonFor(action);
+  drawTransportButton(ui::panel(), button, s_last_drawn, pressed,
+                      enabledFor(action, s_last_drawn));
+  if (!board::kPanelWritesDirect) {
+    // The frame, on a framebuffer panel: not on the glass until pushed.
+    const int edge = button.radius * 2 + 1;
+    ui::canvasPresentRegion(button.cx - button.radius,
+                            button.cy - button.radius, edge, edge);
+  }
 }
 
 }  // namespace ui::now_playing

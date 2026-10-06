@@ -10,15 +10,16 @@ on the server; Music Assistant adds the list and the search.
 
 ![The now-playing screen on the Qualia's 720×720 square panel and the DFRobot's 360×360 round one](assets/media-remote-players.jpg)
 
-Three panels are supported:
+Four panels are supported:
 
 | Board | Panel | Flash / PSRAM | Env |
 |---|---|---|---|
 | Waveshare ESP32-S3-Touch-LCD-1.28 | 1.28" round, 240×240 GC9A01 (SPI), CST816S touch | 16 MB / 2 MB | `waveshare-s3` (default) |
 | DFRobot DFR1221 | 1.85" round, 360×360 ST77916 (quad SPI), CST816S touch | 16 MB / 8 MB | `round360-s3` |
 | Adafruit Qualia ESP32-S3 (5800) | 4" square (5794), 720×720 TL040HDS20 (RGB-666 parallel), FT6336 touch | 16 MB / 8 MB | `qualia-720` |
+| Waveshare ESP32-S3-Touch-LCD-2.8C | 2.8" round, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `lcd28c-s3` |
 
-A fourth target, `headless`, runs the whole remote with no display and
+A fifth target, `headless`, runs the whole remote with no display and
 narrates to the serial console.
 
 What you need:
@@ -534,6 +535,7 @@ Libraries are fetched by PlatformIO: LovyanGFX and WiFiManager.
 pio run -e waveshare-s3      # 1.28" round (the default env)
 pio run -e round360-s3       # 1.85" round 360x360
 pio run -e qualia-720        # 4" square 720x720
+pio run -e lcd28c-s3         # 2.8" round 480x480
 pio run -e headless          # no panel
 ```
 
@@ -541,7 +543,7 @@ Each board's build embeds only the fonts it uses and compiles only its own
 `src/hardware/<board>/` and `src/ui/<shape>/` (see
 [the code](#how-the-code-is-organised)).
 
-GitHub Actions builds all four on every push and pull request
+GitHub Actions builds all five on every push and pull request
 (`.github/workflows/build.yml`). Each run's page under **Actions** has the
 images to download: `firmware.bin` for a network update and
 `firmware-merged.bin` for a blank board.
@@ -554,7 +556,8 @@ build: click **Install** for the board and choose its port. It needs Chrome,
 Edge or Opera on a computer (Web Serial; not Firefox, Safari or a phone).
 The **Qualia** goes into download mode by hand first -- hold BOOT, tap RESET,
 let go of BOOT -- since its USB port is the firmware's own and the browser
-cannot restart it into the bootloader.
+cannot restart it into the bootloader. The **2.8C** is not on the page yet:
+it joins with the first release built with it.
 
 It writes the release's `firmware-<board>-merged.bin` from address 0, so like
 any merged image **it wipes the settings**: it is for a blank board, or one
@@ -583,6 +586,8 @@ device keeps its settings across a USB flash.
 
 - **Waveshare**: a CH343 USB-serial bridge; the port auto-detects.
 - **DFR1221**: the S3's own USB port.
+- **2.8C**: the S3's own USB port too, whatever Waveshare's wiki says about a
+  CH343.
 - **Qualia**: the firmware's USB port reboots into the bootloader on a
   different COM port partway through. If PlatformIO reports the old port gone,
   run the upload again, or name the bootloader's port with `--upload-port`.
@@ -737,8 +742,9 @@ src/hardware/
   <board>/touch_raw.cpp    reads the touch controller
   <board>/font_table.cpp   the faces this board embeds
   <board>/boot_button.cpp  the reset button (the Qualia's is on its expander)
-  qualia/rgb.cpp           the RGB panel's framebuffer, copy and scroll
+  rgb/rgb_panel.cpp        an RGB panel's framebuffer, copy and scroll
   qualia/expander.cpp      the TCA9554: panel reset, backlight, buttons
+  lcd28c/panel.cpp         the 2.8C's TCA9554, and its ST7701's register init
 scripts/
   build_ui_font.py         the VLW font generator
   board_header_stamp.py    rebuilds everything when the board header changes
@@ -757,7 +763,7 @@ site/                        the install page and its board manifests
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
-| Touch sampler (Qualia only) | Reads the touch controller into a queue of timestamped changes |
+| Touch sampler (Qualia and 2.8C) | Reads the touch controller into a queue of timestamped changes |
 
 They share three kinds of thing, each with its own discipline:
 
