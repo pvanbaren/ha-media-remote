@@ -594,6 +594,11 @@ Input isolateTouch(const hw::TouchReport& report) {
 bool init(uint8_t rotation) {
   displayInit(rotation);
   canvasInit();
+  // The cover's buffer, before Wi-Fi as it asks. Without it every cover
+  // streams -- fetched again and decoded on every repaint -- which is how
+  // this went unnoticed when the call fell out of the app: the art still
+  // showed, only slowly.
+  cover::init();
   artwork::init();
   hw::touchInit();
   return true;
