@@ -2,6 +2,9 @@
 
 #include <Arduino.h>
 
+#include <alloca.h>
+#include <lgfx/utility/lgfx_qrcode.h>
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -32,6 +35,27 @@ char s_connecting_ssid[40];
 float s_spinner_angle_deg = -90.0f;
 SpinnerDot s_spinner_dots[kSpinnerDotCount];
 int s_spinner_head = 0;
+
+/** White modules around the sign-in code: the light margin a scanner needs
+ *  to find its edges. The standard asks for four, which on a 21-module code
+ *  is more border than code at the sizes a round panel can afford, and phone
+ *  cameras find a code with two without trouble. */
+constexpr int kQrQuietModules = 2;
+
+/** Modules along one side of the code LovyanGFX will draw for `text` -- the
+ *  smallest version that holds it, at the lowest error correction, as
+ *  LGFXBase::qrcode() chooses -- or 0 when nothing does. */
+int qrModules(const char* text) {
+  for (uint8_t version = 1; version <= 40; ++version) {
+    QRCode qr;
+    auto* data =
+        static_cast<uint8_t*>(alloca(lgfx_qrcode_getBufferSize(version)));
+    if (lgfx_qrcode_initText(&qr, data, version, 0, text) == 0) {
+      return qr.size;
+    }
+  }
+  return 0;
+}
 
 /** Draw one centred line, ellipsised to the chord available at its own y. */
 void drawCentredLine(lgfx::LovyanGFX& gfx, const char* str, int y, int text_px,
@@ -305,25 +329,38 @@ void statusScreenHaSignIn(const char* qr_text, const char* url,
   displayFontEnsureLoaded(gfx);
   gfx.fillScreen(config::kColorBlack);
 
-  // The code in the middle, as large as the circle allows with its quiet
-  // zone: its corners are what a round panel cuts off first, and a square
-  // inside the circle is at most its diameter over the root of two.
-  const int side = ui::theme::kSize * 62 / 100;
-  const int top = ui::theme::kCenterY - side / 2;
-  gfx.qrcode(qr_text, ui::theme::kCenterX - side / 2, top, side, 1, true);
+  // The code a little above the middle, leaving the room below it to the
+  // two lines of text, where the circle narrows. Drawn at a whole number of
+  // pixels a module, with exactly kQrQuietModules of white round it:
+  // LGFXBase::qrcode()'s own margin is four modules plus whatever is left
+  // over from the division, which on a 480 px panel came to 64 px of white
+  // each side of a 168 px code. The box stays inside the circle -- a square
+  // in it is at most the diameter over the root of two.
+  const int budget = ui::theme::kSize * 56 / 100;
+  const int modules = qrModules(qr_text);
+  const int cell = modules > 0 ? budget / (modules + 2 * kQrQuietModules) : 0;
+  const int code = cell * modules;
+  const int box = code + 2 * kQrQuietModules * cell;
+  const int top = ui::theme::kCenterY - box / 2 - ui::theme::px(8);
+  if (cell > 0) {
+    gfx.fillRect(ui::theme::kCenterX - box / 2, top, box, box,
+                 config::kColorWhite);
+    gfx.qrcode(qr_text, ui::theme::kCenterX - code / 2,
+               top + kQrQuietModules * cell, code, 1, false);
+  }
 
   const int title_y = top / 2 + ui::theme::px(4);
   drawCentredLine(gfx, "Scan to link", title_y, ui::theme::kStatusBodyTextPx,
                   config::kTextOnBlack);
-  const int below = top + side;
-  const int name_y = below + (ui::theme::kSize - below) / 3;
-  drawCentredLine(gfx, name, name_y, ui::theme::kStatusBodyTextPx,
-                  ui::theme::kTextSecondary);
-  // Typed rather than scanned, from a computer: the page behind the code.
+  // Typed rather than scanned, from a computer: the page behind the code,
+  // straight under it where the circle is still wide enough to show it
+  // whole. Then which Home Assistant, which can give way to the bezel.
   const char* bare = strstr(url, "://");
-  drawCentredLine(gfx, bare != nullptr ? bare + 3 : url,
-                  name_y + ui::theme::textPx(20), ui::theme::kStatusBodyTextPx,
-                  ui::theme::kTextMuted);
+  const int url_y = top + box + ui::theme::textPx(20) * 3 / 4;
+  drawCentredLine(gfx, bare != nullptr ? bare + 3 : url, url_y,
+                  ui::theme::kStatusBodyTextPx, config::kTextOnBlack);
+  drawCentredLine(gfx, name, url_y + ui::theme::textPx(20),
+                  ui::theme::kStatusBodyTextPx, ui::theme::kTextMuted);
   ui::canvasPresent();
   resetSpinner();
 }
