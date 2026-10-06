@@ -52,6 +52,11 @@ bool touchIsDown();
 /** millis() of the last touch the gesture layer processed -- down, move or
  *  release -- or now while a finger is down; 0 before the first. */
 unsigned long touchLastActivityMs();
+/** How long the finger was held still before it last lifted, in ms, by the
+ *  samples' own timestamps rather than by when a caller looked: a press
+ *  only queues a sample when it moves, so this is the gap between its last
+ *  move and its lift. 0 while a finger is down, and before the first lift. */
+unsigned long touchStillBeforeLiftMs();
 /** Live finger position; only meaningful while touchIsDown(). */
 void touchPosition(int& x, int& y);
 

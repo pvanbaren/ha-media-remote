@@ -285,8 +285,12 @@ void driveList(const ScrollableList& list, bool active) {
       s_list_draw_ms = millis();
       list.redraw();
     }
-    // A finger that stopped before lifting meant to stop.
-    if (millis() - s_list_move_ms > 120) {
+    // A finger that stopped before lifting meant to stop. Timed by the
+    // touch samples, not by when this pass ran: on a board whose loop takes
+    // longer than this between passes -- a list repaint on a framebuffer
+    // panel -- the time since this last saw the finger move was always
+    // longer, and every fling stopped dead on release.
+    if (hw::touchStillBeforeLiftMs() > 120) {
       s_list_velocity = 0.0f;
     }
   }

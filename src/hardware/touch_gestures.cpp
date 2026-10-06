@@ -41,6 +41,10 @@ unsigned long s_down_ms = 0;
 bool s_cancelled = false;
 /** When the consumer last saw the finger go down, move or lift. */
 unsigned long s_last_activity_ms = 0;
+/** When the press in progress last moved, and how long the last one to end
+ *  was still before it lifted -- both on the samples' clock. */
+unsigned long s_last_move_ms = 0;
+unsigned long s_still_before_lift_ms = 0;
 
 /**
  * What the controller reported, in order, stamped with when.
@@ -216,6 +220,10 @@ void samplerTask(void*) {
 bool apply(const Sample& sample, TouchReport& out, bool& released) {
   s_last_activity_ms = sample.ms;
   if (sample.down) {
+    // Every queued sample of a press is a move, or its start: a reading
+    // that has not changed is not queued.
+    s_last_move_ms = sample.ms;
+    s_still_before_lift_ms = 0;
     if (!s_down) {
       s_down = true;
       s_cancelled = false;
@@ -242,6 +250,7 @@ bool apply(const Sample& sample, TouchReport& out, bool& released) {
   // always was: the controller reports no coordinate for a lift.
   released = true;
   s_down = false;
+  s_still_before_lift_ms = sample.ms - s_last_move_ms;
   if (s_cancelled) {
     s_cancelled = false;
     return false;
@@ -298,6 +307,10 @@ bool touchIsDown() { return s_down; }
 unsigned long touchLastActivityMs() {
   // A finger resting still queues nothing, but it is someone using the panel.
   return s_down ? millis() : s_last_activity_ms;
+}
+
+unsigned long touchStillBeforeLiftMs() {
+  return s_down ? 0 : s_still_before_lift_ms;
 }
 
 void touchPosition(int& x, int& y) {
