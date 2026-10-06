@@ -14,8 +14,10 @@ reports from fontHeight() and what the layout in ui/theme.h is written against.
 Only the glyphs LovyanGFX itself measures are allowed to set that height; see
 counts_towards_height().
 
-Charset: ASCII plus the Latin-1 accented block and a little typography, enough
-to set Spanish, Portuguese, German and French. See CHARSET below.
+Charset: ASCII, the Latin-1 accented block, Latin Extended-A and Romanian's
+comma-below letters, and a little typography -- enough to set the languages
+of western and central Europe, Romanian, Turkish and the Baltic ones. See
+CHARSET below.
 
 Usage (regenerate everything the firmware embeds):
     python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
@@ -55,18 +57,21 @@ _LATIN1_LETTERS = [c for c in range(0xC0, 0x100) if c not in (0xD7, 0xF7)]
 # the degree sign the UI already had.
 _LATIN1_PUNCT = [0xA1, 0xAA, 0xAB, 0xB0, 0xB7, 0xBA, 0xBB, 0xBF]
 
-# Letters Latin-1 left out: the French OE ligature, both cases, and the German
-# capital sharp s.
+# Latin Extended-A, U+0100..U+017F, the block entire for the same reason as
+# Latin-1's: Polish, Czech, Slovak, Hungarian, Croatian, Slovenian, Turkish,
+# Maltese, the Baltic languages, Romanian's breve and circumflex letters, and
+# the French OE ligature. Then what the block leaves out: Romanian's s and t
+# with comma below, both cases -- the forms Romanian actually uses, rather
+# than the cedilla ones in the block -- and the German capital sharp s.
 #
-# U+0178, French capital Y with diaeresis, is deliberately NOT here. It is the
-# one glyph in reach that is taller than any ASCII letter *and* outside the
-# range LovyanGFX skips when it measures the line height, so including it
-# makes every font solve four pixels shorter and shrinks every label on the
-# panel by about 8% -- to leave room for an accent that is on essentially
-# nothing. It appears in French proper nouns (l'Hay-les-Roses, Ay) and is
-# almost never capitalised in running text. Lowercase U+00FF is kept; it sits
-# inside Latin-1 and costs nothing. See check_metric_drivers().
-_LATIN_EXT = [0x0152, 0x0153, 0x1E9E]
+# Most of the block's capitals carry a mark above the cap height, and so does
+# U+0178, French capital Y with diaeresis. LovyanGFX would let them set the
+# line height, which would make every face solve smaller to fit them; so they
+# are left out of the measuring (_OVERHANG), and the firmware puts each face's
+# line height back to the header's after loading it (display_font.cpp). They
+# overhang the line, as Latin-1's accented capitals always have.
+_LATIN_EXT_A = list(range(0x0100, 0x0180))
+_LATIN_EXT = [0x0218, 0x0219, 0x021A, 0x021B, 0x1E9E]
 
 # General punctuation. Not language coverage as such, but track and artist
 # names arrive from Music Assistant full of curly quotes, en dashes and real
@@ -76,8 +81,14 @@ _PUNCT = [0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x201E, 0x2026]
 # Sorted, and that is load-bearing rather than tidy: LovyanGFX looks glyphs up
 # with std::lower_bound over the table in file order (VLWfont::getUnicodeIndex),
 # so an unsorted table silently finds the wrong glyph or none at all.
-CHARSET = sorted(set(_ASCII + _LATIN1_LETTERS + _LATIN1_PUNCT + _LATIN_EXT +
-                     _PUNCT))
+CHARSET = sorted(set(_ASCII + _LATIN1_LETTERS + _LATIN1_PUNCT + _LATIN_EXT_A +
+                     _LATIN_EXT + _PUNCT))
+
+# Glyphs that may reach above or below the line without moving it: the ones
+# above with marks over a capital or under the baseline. The firmware resets
+# each face's line height to the header's, which counts_towards_height() keeps
+# them out of.
+_OVERHANG = set(_LATIN_EXT_A) | {0x0218, 0x0219, 0x021A, 0x021B}
 
 # gUnicode[] is uint16_t, so nothing outside the Basic Multilingual Plane.
 assert all(0 < cp <= 0xFFFF for cp in CHARSET)
@@ -95,7 +106,13 @@ def counts_towards_height(cp: int) -> bool:
     solve EM_PX against a height the device is never going to report, and
     every ASCII label would come out a size small to make room for an accent
     that is not on it.
+
+    _OVERHANG is left out too. LovyanGFX would count it, but the firmware
+    puts each face's line height back to the header's once it is loaded, so
+    the header -- measured here -- is what the device reports.
     """
+    if cp in _OVERHANG:
+        return False
     return cp > 0xFF or (0x20 < cp < 0xA0 and cp != 0x7F)
 
 

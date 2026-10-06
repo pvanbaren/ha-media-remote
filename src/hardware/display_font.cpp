@@ -2,7 +2,10 @@
 
 #include "hardware/font_table.h"
 
+#include <esp_heap_caps.h>
+
 #include <cmath>
+#include <new>
 
 #include "hardware/display.h"
 #include "log.h"
@@ -17,16 +20,26 @@ namespace {
 constexpr size_t kMaxFonts = 8;
 
 struct FontEntry {
-  const uint8_t* data;
+  const uint8_t* data = nullptr;
+  /** The face, parsed once at init and kept, rather than loaded onto each
+   *  canvas as it is wanted: selecting a kept face is setFont(), which only
+   *  copies its metrics, where loadFont() parsed the whole glyph table again
+   *  at every change of size. Read through `source`, which it keeps a
+   *  pointer to. Drawn from the loop only -- `source` has one read position. */
+  lgfx::PointerWrapper source;
+  lgfx::VLWfont font;
+  bool loaded = false;
   /** fontHeight() at size 1.0, measured in displayFontInit() rather than
    *  trusted from the filename -- the font is the authority on its own
    *  height, and a regenerated set should not need this file edited. */
-  float native_h;
+  float native_h = 0.0f;
 };
 
 /** Filled from hw::fontTable() at init, which is where the per-board list of
- *  embedded faces lives. */
-FontEntry s_fonts[kMaxFonts];
+ *  embedded faces lives. In PSRAM, claimed once and kept: as a static array
+ *  it took 680 bytes of internal RAM, which a board holding two TLS sessions
+ *  has none to spare. */
+FontEntry* s_fonts = nullptr;
 size_t s_font_count = 0;
 
 /** Body text, and what displayFontEnsureLoaded() selects: the 20 px face. */
@@ -34,21 +47,38 @@ constexpr size_t kDefaultFont = 2;
 
 bool s_vlw_loaded = false;
 
-// One-slot cache of the font currently loaded on a given instance, so a run of
-// draws at the same size -- a whole list of rows, say -- reloads only once.
-lgfx::LGFXBase* s_active_gfx = nullptr;
-const uint8_t* s_active_data = nullptr;
-
-/** Load `data` on gfx, skipping the reload when it is already active there. */
-bool useFont(lgfx::LGFXBase& gfx, const uint8_t* data) {
-  if (s_active_gfx == &gfx && s_active_data == data) {
-    return true;
-  }
-  if (!gfx.loadFont(data, lgfx::IFont::font_type_t::ft_vlw)) {
+/**
+ * Parse one embedded face, and give it the line height in its header.
+ *
+ * LovyanGFX sets a face's line height from its tallest glyph, sparing only
+ * U+00A0..U+00FF, so Latin-1's accented capitals overhang the line rather
+ * than push it apart. Latin Extended-A's capitals -- Č, Ś, Ž, Ă -- sit outside
+ * that range, and left to it, the tallest of them would set every line on
+ * the panel: each face reporting a taller fontHeight() than ui/theme.h was
+ * written against, every layout shifted to fit an accent that is on almost
+ * nothing. scripts/build_ui_font.py measures the header without them, so the
+ * header is the line as it always was; this puts it back after the load, and
+ * those capitals overhang as the Latin-1 ones do.
+ */
+bool loadFace(FontEntry& face) {
+  face.source.set(face.data);
+  if (!face.font.loadFont(&face.source)) {
     return false;
   }
-  s_active_gfx = &gfx;
-  s_active_data = data;
+  face.font.maxAscent = static_cast<uint16_t>(face.font.ascent);
+  face.font.maxDescent = static_cast<uint16_t>(face.font.descent);
+  face.font.yAdvance =
+      static_cast<uint16_t>(face.font.ascent + face.font.descent);
+  return true;
+}
+
+/** Select face `index` on gfx. setFont() does nothing when it is already
+ *  the one there, so a run of draws at one size costs nothing to repeat. */
+bool useFont(lgfx::LGFXBase& gfx, size_t index) {
+  if (index >= s_font_count || !s_fonts[index].loaded) {
+    return false;
+  }
+  gfx.setFont(&s_fonts[index].font);
   return true;
 }
 
@@ -60,8 +90,24 @@ bool displayFontInit() {
   if (count > kMaxFonts) {
     count = kMaxFonts;
   }
+  if (s_fonts == nullptr && count > 0) {
+    void* mem = heap_caps_malloc(sizeof(FontEntry) * count,
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (mem == nullptr) {
+      mem = heap_caps_malloc(sizeof(FontEntry) * count, MALLOC_CAP_8BIT);
+    }
+    if (mem == nullptr) {
+      count = 0;
+    } else {
+      s_fonts = static_cast<FontEntry*>(mem);
+      for (size_t i = 0; i < count; ++i) {
+        new (&s_fonts[i]) FontEntry();
+      }
+    }
+  }
   for (size_t i = 0; i < count; ++i) {
-    s_fonts[i] = FontEntry{blobs[i], 0.0f};
+    s_fonts[i].data = blobs[i];
+    s_fonts[i].loaded = loadFace(s_fonts[i]);
   }
   s_font_count = count;
   if (s_font_count == 0) {
@@ -69,7 +115,7 @@ bool displayFontInit() {
     return false;
   }
 
-  s_vlw_loaded = useFont(tft, s_fonts[kDefaultFont].data);
+  s_vlw_loaded = useFont(tft, kDefaultFont);
   if (!s_vlw_loaded) {
     LOG_ERROR("Smooth font load failed - using bitmap fallback");
     return false;
@@ -77,7 +123,7 @@ bool displayFontInit() {
 
   // Measure each font once. displayFontApplyHeight() matches against these.
   for (size_t i = 0; i < s_font_count; ++i) {
-    if (useFont(tft, s_fonts[i].data)) {
+    if (useFont(tft, i)) {
       tft.setTextSize(1.0f);
       s_fonts[i].native_h = static_cast<float>(tft.fontHeight());
     }
@@ -97,7 +143,7 @@ bool displayFontInit() {
   LOG_INFO("Fonts: %u native sizes (%s px)",
            static_cast<unsigned>(s_font_count), sizes);
 
-  useFont(tft, s_fonts[kDefaultFont].data);
+  useFont(tft, kDefaultFont);
   return true;
 }
 
@@ -107,7 +153,7 @@ bool displayFontEnsureLoaded(lgfx::LGFXBase& gfx) {
   if (!s_vlw_loaded) {
     return false;
   }
-  return useFont(gfx, s_fonts[kDefaultFont].data);
+  return useFont(gfx, kDefaultFont);
 }
 
 void displayFontApplyHeight(lgfx::LGFXBase& gfx, float target_px) {
@@ -124,7 +170,7 @@ void displayFontApplyHeight(lgfx::LGFXBase& gfx, float target_px) {
       best = i;
     }
   }
-  useFont(gfx, s_fonts[best].data);
+  useFont(gfx, best);
 
   // Native unless the nearest font is off by more than a pixel. Every size in
   // ui/theme.h has its own font, so this is 1.0 in practice; the rescale is
@@ -138,6 +184,4 @@ void displayFontApplyHeight(lgfx::LGFXBase& gfx, float target_px) {
 void displayFontSetBitmap(lgfx::LGFXBase& gfx, const lgfx::GFXfont* font) {
   gfx.setFont(font);
   gfx.setTextSize(1);
-  s_active_gfx = nullptr;
-  s_active_data = nullptr;
 }

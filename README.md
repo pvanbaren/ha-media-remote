@@ -640,14 +640,22 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 | Waveshare | 15, 17, 20, 24 |
 | DFR1221 | 23, 26, 30, 36 |
 | Qualia | 34, 38, 45, 54, and 23, 26, 30 for the lists |
+| 2.8C | 23, 26, 30, 36 -- the DFR1221's, at a text scale of 0.75 |
 
-The character set is 175 glyphs: ASCII, the Latin-1 letters and punctuation,
-Œ/œ, ẞ, and the dashes and curly quotes track titles are full of -- Spanish,
-Portuguese, German and French completely, and the other Latin-1 languages
-with them. A missing glyph renders as a space. **Ÿ (U+0178) is excluded on
-purpose**: it sits outside the range LovyanGFX skips when it measures line
-height, and it is 4 px taller than any ASCII letter, so including it shrank
-every label by a size. The generator refuses to add it back.
+The character set is 305 glyphs: ASCII, the Latin-1 letters and
+punctuation, all of Latin Extended-A, Romanian's ș and ț, ẞ, and the dashes
+and curly quotes track titles are full of -- the languages of western and
+central Europe, Romanian, Turkish and the Baltic ones. A missing glyph
+renders as a space.
+
+Most of Latin Extended-A's capitals -- Č, Ś, Ž, Ă, Ÿ -- carry a mark above
+the cap height, and LovyanGFX sets a face's line height from its tallest
+glyph, sparing only U+00A0..U+00FF. Left to that, they would make every face
+report a taller line and every label shrink to fit it. So the generator
+measures the header without them, and `display_font.cpp` puts each face's
+line height back to the header's when it loads the face: they overhang the
+line, as À and É always have. A glyph outside both that would set the line
+height still makes the generator stop.
 
 ---
 

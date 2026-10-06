@@ -23,8 +23,8 @@ bool displayFontIsSmooth();
  *  particular size in mind. */
 bool displayFontEnsureLoaded(lgfx::LGFXBase& gfx);
 
-/** Select the embedded font whose native height matches target_px and load it
- *  on gfx, skipping the reload when it is already active there.
+/** Select the embedded font whose native height matches target_px on gfx.
+ *  Every face is parsed once, at init, so this costs next to nothing.
  *
  *  Drawn at setTextSize(1.0) whenever the closest font is within a pixel of
  *  the request, which for every size in ui/theme.h means always. A request
