@@ -88,7 +88,11 @@ void drawLine(lgfx::LovyanGFX& gfx, const char* str, int x, int y,
   gfx.drawString(line, x, y);
 }
 
-void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top) {
+/** A pressed row is lit in the accent with dark text, unlike anything a row
+ *  shows at rest -- the current choice included -- so a tap on any row is
+ *  seen to land. */
+void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top,
+             bool pressed = false) {
   const int half = rowHalfWidth(top);
   if (half <= 0) {
     return;
@@ -98,9 +102,12 @@ void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top) {
   const int cy = top + theme::kListRowHeight / 2;
   const bool current = row.style == SettingStyle::kCurrent;
   gfx.fillRoundRect(x, top, w, theme::kListRowHeight, theme::kListRowRadius,
-                    current ? theme::kSurfaceRaised : theme::kSurface);
+                    pressed   ? theme::kAccent
+                    : current ? theme::kSurfaceRaised
+                              : theme::kSurface);
 
-  const uint16_t color = current ? theme::kAccent
+  const uint16_t color = pressed   ? theme::kBackground
+                         : current ? theme::kAccent
                          : row.style == SettingStyle::kMuted
                              ? theme::kTextMuted
                              : theme::kTextPrimary;
@@ -111,7 +118,8 @@ void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top) {
     return;
   }
   drawLine(gfx, row.text, theme::kCenterX, cy + kLabelDy,
-           theme::kListHeaderTextPx, theme::kTextMuted, text_w);
+           theme::kListHeaderTextPx,
+           pressed ? theme::kBackground : theme::kTextMuted, text_w);
   drawLine(gfx, row.detail, theme::kCenterX, cy + kDetailDy,
            theme::kListRowTextPx, color, text_w);
 }
@@ -182,6 +190,27 @@ void draw() {
            s_noted ? theme::kWarning : theme::kTextPrimary, title_w);
   back_button::draw(gfx);
   ui::canvasPresent();
+}
+
+void showPressed(int row, bool pressed) {
+  if (s_rows == nullptr || row < 0 || row >= s_count) {
+    return;
+  }
+  // Over the frame as last composed: the row's own rectangle, less any of it
+  // scrolled up under the title, which stays as it is.
+  const int top = rowTop(row);
+  const int y0 = top > kListTop ? top : kListTop;
+  const int bottom = top + theme::kListRowHeight;
+  const int y1 = bottom < theme::kSize ? bottom : theme::kSize;
+  const int half = rowHalfWidth(top);
+  if (y1 <= y0 || half <= 0) {
+    return;
+  }
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  gfx.setClipRect(0, y0, theme::kSize, y1 - y0);
+  drawRow(gfx, s_rows[row], top, pressed);
+  gfx.clearClipRect();
+  ui::canvasPresentRegion(theme::kCenterX - half, y0, half * 2, y1 - y0);
 }
 
 bool scrollByPx(int delta) {

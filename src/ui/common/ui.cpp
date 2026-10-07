@@ -775,6 +775,10 @@ void showSettings(int focus) {
   settings_list::draw();
 }
 
+void showSettingPressed(int row, bool pressed) {
+  settings_list::showPressed(row, pressed);
+}
+
 void showIsolate(const IsolateCard& card) {
   hw::touchCancel();
   isolate_card::draw(card);

@@ -1477,15 +1477,17 @@ void restartNow(const char* why) {
   ESP.restart();
 }
 
-/** Store the choice tapped on row `row` of the list that is up. */
-void applySettingChoice(int row) {
+/** Store the choice tapped on row `row` of the list that is up. False when
+ *  the row stood for nothing -- the list it was built from has changed --
+ *  and nothing was shown in its place. */
+bool applySettingChoice(int row) {
   const int value = row >= 0 && row < g_choice_count ? g_choice_values[row] : 0;
   bool changed = false;
   switch (g_setting_open) {
     case Setting::kPlayer: {
       const services::ha::PlayerEntry* entry = services::players::entryAt(row);
       if (entry == nullptr) {
-        return;
+        return false;
       }
       if (strcmp(entry->entity_id, services::ha::selectedEntity()) != 0) {
         services::ha::selectEntity(entry->entity_id);
@@ -1502,7 +1504,7 @@ void applySettingChoice(int row) {
       const services::ha::PlayerEntry* entry =
           row > 0 ? services::players::entryAt(row - 1) : nullptr;
       if (row > 0 && entry == nullptr) {
-        return;
+        return false;
       }
       const char* chosen = entry != nullptr ? entry->entity_id : "";
       if (strcmp(chosen, services::ha::storedControlEntity()) != 0) {
@@ -1517,7 +1519,7 @@ void applySettingChoice(int row) {
     }
     case Setting::kInput: {
       if (row < 0 || row > g_source_count) {
-        return;
+        return false;
       }
       const char* chosen = row == 0 ? "" : g_sources[row - 1];
       if (strcmp(chosen, services::ha::storedControlInput()) != 0) {
@@ -1565,12 +1567,22 @@ void applySettingChoice(int row) {
     wifiSettingsChanged();
   }
   showSettingsPage(g_setting_open_row);
+  return true;
 }
 
+/** The tapped row lights first, on the glass at once: storing a choice, or
+ *  loading the list behind a row, can take a second or two, and without it
+ *  there is no telling the tap was taken. The page or list that follows
+ *  replaces it. "More at" opens nothing, so it does not light. */
 [[gnu::noinline]] void handleSettingsTap(int row) {
   if (g_settings_choosing) {
-    applySettingChoice(row);
-  } else if (row >= 0 && row < g_setting_row_count) {
+    ui::showSettingPressed(row, true);
+    if (!applySettingChoice(row)) {
+      ui::showSettingPressed(row, false);
+    }
+  } else if (row >= 0 && row < g_setting_row_count &&
+             g_setting_rows[row] != Setting::kPortal) {
+    ui::showSettingPressed(row, true);
     openSettingChoices(g_setting_rows[row], row);
   }
 }

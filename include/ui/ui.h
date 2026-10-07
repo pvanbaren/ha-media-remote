@@ -158,6 +158,11 @@ void settingsAdd(const char* text, const char* detail,
 /** The list just built, scrolled to row `focus` -- or when that is -1, to
  *  its current choice if it has one, and otherwise its top. */
 void showSettings(int focus = -1);
+/** Light settings row `row` as pressed, or put it back. The app lights it as
+ *  it takes the tap, before work that may take a second or two -- a store, a
+ *  fetch from Home Assistant -- and whatever it shows next replaces it; it
+ *  puts it back only when the tap comes to nothing. */
+void showSettingPressed(int row, bool pressed);
 /** Isolate's card: `title`, a muted `note` under it saying what the rooms
  *  are, the rooms one to a line, and its buttons. */
 struct IsolateCard {

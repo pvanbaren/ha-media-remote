@@ -30,6 +30,12 @@ void open(int focus);
 /** Compose and present the list. */
 void draw();
 
+/** Light row `row` as pressed -- or put it back -- on the glass at once,
+ *  redrawing that row alone: the answer to a tap whose work may take a
+ *  second or two. The next draw(), or whatever screen comes next, replaces
+ *  it. */
+void showPressed(int row, bool pressed);
+
 /** Scroll by pixels; positive moves further down. False when the clamp
  *  meant nothing moved. */
 bool scrollByPx(int delta);

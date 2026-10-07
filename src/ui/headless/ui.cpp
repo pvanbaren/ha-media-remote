@@ -100,6 +100,7 @@ void settingsBegin(const char* title, const char* note) {
 }
 void settingsAdd(const char*, const char*, SettingStyle) {}
 void showSettings(int) {}
+void showSettingPressed(int, bool) {}
 void showIsolate(const IsolateCard& card) {
   say("isolate: %s (%d rooms)", card.title, card.room_count);
 }
