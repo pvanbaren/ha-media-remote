@@ -14,6 +14,7 @@ GitHub release from that version's section, with
 
 ### Added
 
+- **Sources:** a swipe right on the lower half of now playing lists the volume device's inputs, the current one marked. Tap one to switch to it and go straight back to now playing. When the player's input on the device is set to a particular input, it changes to the new one too; when it follows the input named after the player, it is left alone.
 - **Search from now playing:** a swipe left on the lower half of now playing opens the artist search directly, without going through the list. A swipe right on its keyboard goes back to now playing. A sideways swipe on the top half still sets the volume.
 
 ## [1.2.0] - 2026-10-06

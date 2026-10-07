@@ -356,7 +356,7 @@ void driveListScrolling(Screen screen) {
     driveList(kWifiNetworks, wifi_join::onList());
   } else if (screen == Screen::kPlayers) {
     driveList(kPlayerList, true);
-  } else if (screen == Screen::kSettings) {
+  } else if (screen == Screen::kSettings || screen == Screen::kSources) {
     driveList(kSettingsList, true);
   } else {
     driveList(kBrowseList, false);
@@ -566,6 +566,18 @@ Input settingsTouch(const hw::TouchReport& report) {
   return out;
 }
 
+/** The sources are drawn by the settings list, and touched as it is; only
+ *  what a tap and a back mean differ. */
+Input sourcesTouch(const hw::TouchReport& report) {
+  Input out = settingsTouch(report);
+  if (out.intent == Intent::kSettingsTap) {
+    out.intent = Intent::kSourceTap;
+  } else if (out.intent == Intent::kSettingsBack) {
+    out.intent = Intent::kSourcesBack;
+  }
+  return out;
+}
+
 /** Isolate's card has its own buttons and nothing to scroll, so a tap is
  *  taken as it lands. */
 Input isolateTouch(const hw::TouchReport& report) {
@@ -647,6 +659,9 @@ Input poll(Screen screen, const PlayerState* state) {
   if (screen == Screen::kSettings) {
     return settingsTouch(report);
   }
+  if (screen == Screen::kSources) {
+    return sourcesTouch(report);
+  }
   if (screen == Screen::kIsolate) {
     return isolateTouch(report);
   }
@@ -688,6 +703,11 @@ Input poll(Screen screen, const PlayerState* state) {
   // claimed by driveVolume() as soon as it commits sideways.
   if (report.event == hw::TouchEvent::kSwipeLeft) {
     out.intent = Intent::kOpenSearch;
+    return out;
+  }
+  // The other way, the volume device's inputs: the lower half again.
+  if (report.event == hw::TouchEvent::kSwipeRight) {
+    out.intent = Intent::kOpenSources;
     return out;
   }
   if (report.event != hw::TouchEvent::kTap) {

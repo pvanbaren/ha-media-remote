@@ -167,6 +167,18 @@ the query kept, so a near miss can be edited), then the keyboard to the list,
 or to now playing if that is where the search was opened.
 A tap on the results that misses every result does the same.
 
+### Sources
+
+**Swipe right** on the lower half of now playing for a list of the volume
+device's inputs -- a Triad zone's players, a receiver's HDMI and AirPlay --
+the one it is on marked. **Tap** one to switch to it; the remote goes
+straight back to now playing, which follows the new input
+([When the volume device is on another input](#when-the-volume-device-is-on-another-input)).
+Where the player's input on the device is chosen by name, it becomes the new
+one too; left to follow the input named after the player, it is left alone.
+**Swipe right**, or tap the back button, to leave without switching. A device
+that cannot switch inputs has no list.
+
 ### The status page
 
 **Swipe down** on now playing for the remote's own details:
@@ -297,6 +309,9 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
 | Now playing | Swipe left, lower half | Artist search |
+| Now playing | Swipe right, lower half | The volume device's inputs |
+| Sources | Tap an input | Switch to it, and back to now playing |
+| Sources | Swipe right, or the back button | Back to now playing |
 | Status page | Tap the gear | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
 | Status page | Any other tap or swipe | Back to now playing |

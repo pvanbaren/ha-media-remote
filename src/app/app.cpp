@@ -658,7 +658,8 @@ void drawStatus() {
   if (config::kListIdleReturnMs == 0 ||
       (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
        g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
-       g_screen != Screen::kSettings && g_screen != Screen::kIsolate)) {
+       g_screen != Screen::kSettings && g_screen != Screen::kIsolate &&
+       g_screen != Screen::kSources)) {
     return;
   }
   unsigned long since = ui::lastInteractionMs();
@@ -674,6 +675,7 @@ void drawStatus() {
                 : g_screen == Screen::kWifi     ? "wifi"
                 : g_screen == Screen::kSettings ? "settings"
                 : g_screen == Screen::kIsolate  ? "isolate"
+                : g_screen == Screen::kSources  ? "sources"
                                                 : "status",
                 config::kListIdleReturnMs / 1000);
   if (g_screen == Screen::kIsolate) {
@@ -1337,6 +1339,23 @@ void addChoice(const char* text, int value, bool current) {
                           : ui::SettingStyle::kNormal);
 }
 
+/** Fetch the volume device's inputs into g_sources, behind a loading card:
+ *  the count, or -1 when they could not be had. */
+int loadSources() {
+  ui::showLoading("inputs");
+  if (g_sources == nullptr) {
+    g_sources = static_cast<char (*)[config::kSourceNameMaxLen]>(
+        heap_caps_calloc(config::kMaxSources, config::kSourceNameMaxLen,
+                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  const int n = g_sources != nullptr
+                    ? services::ha::fetchSources(services::ha::controlEntity(),
+                                                 g_sources, config::kMaxSources)
+                    : -1;
+  g_source_count = n > 0 ? n : 0;
+  return n;
+}
+
 /** The list of choices behind one row of the page. */
 void openSettingChoices(Setting setting, int row) {
   g_setting_open = setting;
@@ -1385,18 +1404,7 @@ void openSettingChoices(Setting setting, int row) {
     }
 
     case Setting::kInput: {
-      ui::showLoading("inputs");
-      if (g_sources == nullptr) {
-        g_sources = static_cast<char (*)[config::kSourceNameMaxLen]>(
-            heap_caps_calloc(config::kMaxSources, config::kSourceNameMaxLen,
-                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-      }
-      const int n = g_sources != nullptr
-                        ? services::ha::fetchSources(
-                              services::ha::controlEntity(), g_sources,
-                              config::kMaxSources)
-                        : -1;
-      g_source_count = n > 0 ? n : 0;
+      const int n = loadSources();
       const char* current = services::ha::storedControlInput();
       ui::settingsBegin("Player's input",
                         n < 0 ? "Could not load inputs" : "");
@@ -1591,6 +1599,71 @@ bool applySettingChoice(int row) {
     ui::showSettingPressed(row, true);
     openSettingChoices(g_setting_rows[row], row);
   }
+}
+
+/** What the volume device is on now, and whether it can switch at all,
+ *  from the last state. A frame of its own: a PlayerState is too big to sit
+ *  on the loop's stack under the fetch that follows, which is a TLS
+ *  handshake. */
+[[gnu::noinline]] bool controlSourceNow(char* out, size_t out_len) {
+  PlayerState state;
+  out[0] = '\0';
+  if (!snapshotState(state)) {
+    return true;
+  }
+  snprintf(out, out_len, "%s", state.control_source);
+  return state.control_features == 0 ||
+         (state.control_features & services::ha::kFeatureSelectSource) != 0;
+}
+
+/** The volume device's inputs, a swipe right on now playing's lower half: a
+ *  list of them alone, the one it is on marked. A device that cannot switch
+ *  inputs gets no list. */
+[[gnu::noinline]] void openSources() {
+  if (!services::ha::configured() ||
+      services::ha::selectedEntity()[0] == '\0') {
+    return;
+  }
+  char current[config::kSourceNameMaxLen];
+  if (!controlSourceNow(current, sizeof(current))) {
+    return;
+  }
+  const int n = loadSources();
+  ui::settingsBegin("Source", n < 0    ? "Could not load inputs"
+                              : n == 0 ? "No inputs"
+                                       : "");
+  for (int i = 0; i < g_source_count; ++i) {
+    ui::settingsAdd(g_sources[i], "",
+                    strcmp(g_sources[i], current) == 0
+                        ? ui::SettingStyle::kCurrent
+                        : ui::SettingStyle::kNormal);
+  }
+  g_screen = Screen::kSources;
+  ui::showSettings();
+  g_list_opened_ms = millis();
+}
+
+/** An input tapped: switch the volume device to it and go straight back to
+ *  now playing. Where the player's input on the device is chosen by name, it
+ *  becomes this one too; left to follow the input named after the player,
+ *  it is left alone, since that follows by itself. */
+[[gnu::noinline]] void handleSourceTap(int row) {
+  if (row < 0 || row >= g_source_count) {
+    return;
+  }
+  ui::showSettingPressed(row, true);
+  char source[config::kSourceNameMaxLen];
+  snprintf(source, sizeof(source), "%s", g_sources[row]);
+  services::ha::selectSource(services::ha::controlEntity(), source);
+  if (services::ha::controlIsSeparate() &&
+      services::ha::storedControlInput()[0] != '\0' &&
+      strcmp(source, services::ha::storedControlInput()) != 0) {
+    services::ha::selectControlInput(source);
+    LOG_INFO("Player's input follows the source: %s", source);
+    wifiSettingsChanged();
+  }
+  g_poll_now = true;
+  showNowPlaying();
 }
 
 /** A swipe right: from a list of choices to the page, unchanged, and from
@@ -1801,6 +1874,18 @@ void portalIdle() {
 
     case Intent::kSettingsBack:
       handleSettingsBack();
+      break;
+
+    case Intent::kOpenSources:
+      openSources();
+      break;
+
+    case Intent::kSourceTap:
+      handleSourceTap(in.index);
+      break;
+
+    case Intent::kSourcesBack:
+      showNowPlaying();
       break;
 
     case Intent::kTapCard:
@@ -2127,7 +2212,7 @@ void loop() {
     if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
         g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
         g_screen != Screen::kPlayers && g_screen != Screen::kSettings &&
-        g_screen != Screen::kIsolate) {
+        g_screen != Screen::kIsolate && g_screen != Screen::kSources) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");

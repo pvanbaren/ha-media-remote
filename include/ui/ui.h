@@ -42,6 +42,7 @@ enum class Screen : uint8_t {
   kPlayers,     // choosing the media player, when none is chosen
   kSettings,    // the settings page, or one setting's choices, from the gear
   kIsolate,     // Isolate's question, from the "+N rooms" chip, and its outcome
+  kSources,     // the volume device's inputs, a swipe right on now playing
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -75,6 +76,9 @@ enum class Intent : uint8_t {
   kSettingsBack,      // a swipe right on the settings page or its choices
   kIsolateConfirm,    // Isolate on Isolate's card
   kIsolateCancel,     // Cancel, OK or a swipe right there
+  kOpenSources,       // a swipe right on now playing's lower half
+  kSourceTap,         // `index` is the input tapped on the sources list
+  kSourcesBack,       // a swipe right, or the back button, there
 };
 
 struct Input {
