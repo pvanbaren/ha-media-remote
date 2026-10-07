@@ -32,20 +32,28 @@ What you need:
   search are made of), with its Home Assistant integration.
 - A **Music Assistant token** (optional) for the room's own recommendations.
 
+Install it from the browser at
+**[pvanbaren.github.io/ha-media-remote](https://pvanbaren.github.io/ha-media-remote/)**,
+or build and upload it with PlatformIO:
+
 ```bash
 pio run -e round360-s3 -t upload
 ```
+
+Then set it up on the screen: Wi-Fi, a QR code to sign in to Home Assistant,
+and the player ([Setting it up](#setting-it-up)).
 
 ---
 
 ## Contents
 
 1. [The interface](#the-interface)
-2. [Setting it up: the portal](#setting-it-up-the-portal)
-3. [Building and installing](#building-and-installing)
-4. [How the code is organised](#how-the-code-is-organised)
-5. [Internals](#internals)
-6. [Troubleshooting](#troubleshooting)
+2. [Setting it up](#setting-it-up)
+3. [The portal](#the-portal)
+4. [Building and installing](#building-and-installing)
+5. [How the code is organised](#how-the-code-is-organised)
+6. [Internals](#internals)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -148,8 +156,8 @@ reaches every Music Assistant provider and forgives partial names, so
 remote is for (`kSearchPlaysRadio` plays the artist straight instead).
 
 The keyboard is **alphabetical** by default, seven keys to a row, the last two
-space and backspace. The portal's **Search keyboard** setting switches it to
-**QWERTY** -- QWERTYUIOP, ASDFGHJKL, ZXCVBNM with backspace beside the M, and
+space and backspace. The **Search keyboard** setting, on the device or in
+the portal, switches it to **QWERTY** -- QWERTYUIOP, ASDFGHJKL, ZXCVBNM with backspace beside the M, and
 a space bar on its own row -- with narrower keys, since ten have to fit across
 the top.
 
@@ -174,8 +182,7 @@ Rx/Tx -61 / 11.0 dBm
 
 Under the remote's name are the player and, when Volume & power is a separate
 device, that device, both by their names in Home Assistant. When the player's
-input on that device is chosen in the portal, the input takes the player's
-line. Then come the address, the time since the remote started, the Wi-Fi
+input on that device is chosen, the input takes the player's line. Then come the address, the time since the remote started, the Wi-Fi
 network and its channel, and on one line the signal the remote hears (**Rx**)
 and the power it transmits with (**Tx**).
 
@@ -227,16 +234,19 @@ row a setting's name over its value:
 
 **Tap** a row for its choices, the one in use marked, and **tap** one to
 choose it: it is stored at once, as a portal save would store it, and the page
-comes back showing it. **Swipe right**, or tap the **back button** at the top
+comes back showing it. The tapped row lights the moment the tap registers,
+since loading a list of players or inputs, or storing a choice, can take a
+second or two. **Swipe right**, or tap the **back button** at the top
 left, to back out without choosing, and again to go back to the status page.
 The status page and the Wi-Fi pages have the button too. Player's input and
 Player volume at switch-on are there only while Volume & power is a separate
 device, as in the portal, and
 a new Volume & power device keeps the player's input when it has one by the
-same name. The last row says where the rest is set: the remote's name, the
-Home Assistant link and Music Assistant are typed, so they stay in
-[the portal](#setting-it-up-the-portal), which shows what was chosen here the
-next time a page of it is opened.
+same name. The last row gives the portal's address, for what is typed: the
+remote's name, Music Assistant's token and URL, and a Home Assistant URL and
+token for a remote that was not linked by its QR code. The
+[portal](#the-portal) shows what was chosen here the next time a page of it
+is opened.
 
 ### Status cards
 
@@ -244,7 +254,7 @@ When there is nothing to play yet, a card says why:
 
 | Card | Meaning |
 |---|---|
-| **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured; the setup access point is up. A tap chooses a network on the device |
+| **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured. A tap chooses a network on the device; the setup access point is up for the portal meanwhile |
 | **Connecting** | Joining the saved network |
 | **No Wi-Fi** -- Tap to choose | The saved network did not answer. A tap chooses another |
 | **Link to HA** | Wi-Fi works and Home Assistant has not been found; set its URL and token in the portal |
@@ -253,8 +263,9 @@ When there is nothing to play yet, a card says why:
 | **Choose a player** -- a list | Linked, but no media player chosen; tap one, or choose it in the portal |
 | **Reset** | Settings are being cleared (BOOT held) |
 
-Cards are not interactive. Everything they complain about is fixed in the
-portal, and the device notices the fix by itself within a couple of seconds.
+**Setup** and **No Wi-Fi** take a tap, for the network list, and **Choose a
+player** is the list itself. The rest are waited out, or fixed in the portal;
+the device notices the fix by itself within a couple of seconds.
 
 ### Blanking, and the amplifier
 
@@ -279,12 +290,14 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe sideways, top half | Volume |
 | Now playing | Tap the top half | Switch the volume device on or off |
 | Now playing | Tap the "+N rooms" chip | Offer to turn off the other rooms on this input |
+| Isolate card | Tap Isolate | Turn the other rooms off, and back to now playing |
+| Isolate card | Tap Cancel, or swipe right | Leave them on, and back to now playing |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
 | Status page | Tap the gear | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
 | Status page | Any other tap or swipe | Back to now playing |
-| Settings | Drag up / down, then tap a row | Its choices |
+| Settings | Drag up / down, then tap a row | Its choices; the row lights at once |
 | Settings choices | Tap one | Choose it, and back to the settings |
 | Settings | Swipe right | Back one step |
 | Status, settings, Wi-Fi | Tap the back button, top left | As a swipe right: back one step |
@@ -308,29 +321,108 @@ finger for, is ignored rather than taken as a choice (`kListTapGuardMs`,
 
 ---
 
-## Setting it up: the portal
+## Setting it up
 
-Everything is configured in a web page served by the device. There are no
-settings on the device itself: a `<select>` in a browser is a better list than
-forty rows on a small circle, and it is reachable when the panel is not.
+A remote is set up on the remote itself, with a phone only to sign in to Home
+Assistant:
+
+1. **Install the firmware**, from the browser or over USB (see
+   [Building and installing](#building-and-installing)). The remote starts on
+   its **Setup** card.
+2. **Choose the Wi-Fi network.** Tap the card for the networks in range, tap
+   yours, and type its password on the screen; see
+   [Choosing Wi-Fi on the device](#choosing-wi-fi-on-the-device).
+3. **Link to Home Assistant.** On Wi-Fi, the remote finds Home Assistant and
+   shows a QR code. Scan it with a phone on the same network and sign in; see
+   [Linking to Home Assistant](#linking-to-home-assistant).
+4. **Choose the player.** The remote lists Home Assistant's media players;
+   tap the one for this room.
+
+Now playing comes up. The link fills in the Music Assistant config entry id
+when Home Assistant has the Music Assistant integration, so the swipe-up list
+and the search work straight away.
+
+The rest of what needs no typing is in [the settings](#settings-on-the-device),
+behind the gear on the status page (swipe down on now playing): a separate
+**Volume & power** device -- an amplifier or receiver -- and the player's input
+on it, the player volume at switch-on, Wi-Fi transmit power, the search
+keyboard and the screen rotation.
+
+The few settings that are typed are in [the portal](#the-portal):
+
+- **The remote's name.** Every remote starts as `media-remote`; give each its
+  own -- `kitchen-remote`, `bedroom-remote` -- once there is more than one.
+- **A Music Assistant token**, for this room's own Recent here and Recommended
+  sections, and Music Assistant's URL when it is not the Home Assistant add-on.
+- **Home Assistant's URL and a token**, on a network where the remote cannot
+  find Home Assistant by itself.
+
+### Linking to Home Assistant
+
+Once the remote is on Wi-Fi with nothing linked, it looks for Home Assistant
+on the network: Home Assistant announces itself over mDNS
+(`_home-assistant._tcp`), with its URL. When one answers, the card becomes a
+**QR code**, with the address the code stands for beneath it and Home
+Assistant's name below that. A URL already typed into the portal is used
+instead of looking.
+
+1. **Scan the code** with a phone on the same network, or open the address
+   under it in any browser there. It is the remote's own page, `/ha`, which
+   sends the browser on to Home Assistant's sign-in page.
+2. **Sign in** to Home Assistant as you always do.
+3. Home Assistant sends the browser back to the remote, which takes it from
+   there: it trades the sign-in for a **long-lived access token**, revokes
+   the short session the sign-in made, fills in the **Music Assistant config
+   entry id** if that is blank, and stores the URL and the token.
+
+The token is named `Media Remote (<name>)`, after the remote -- or
+`Media Remote (<name>) 2`, `3` and on, since Home Assistant refuses a second
+token under a name it already has and another remote may share this one's.
+Linking again deletes the token this remote made before, found by the id
+inside it, and no other: never one pasted into the portal, and never another
+remote's of the same name.
+
+The token is listed in Home Assistant under your profile → **Security** →
+**Long-lived access tokens**; deleting it there unlinks the remote.
+
+The remote is the OAuth client, at its own address (`http://<its IP>/`,
+which Home Assistant accepts for a client on the local network), and the
+browser comes back to `/ha_auth` on the same address. That is why the phone
+has to be on the remote's network, and why the address rather than the
+`.local` name: Android does not resolve `.local` names. The code that comes
+back is good for one use, for ten minutes, and only with a sign-in this
+remote started.
+
+Not found (no mDNS on the network, or Home Assistant on another subnet): the
+card says to set the URL and token in [the portal](#the-portal), and the
+remote looks again every half minute.
+
+---
+
+## The portal
+
+A web page served by the remote. It holds every setting the device's own
+settings page does, and the few that are typed: the remote's name, Home
+Assistant's URL and token for a remote that cannot link by its QR code, and
+Music Assistant's URL and token. It is also where firmware updates are
+uploaded. A change made on the device shows in the portal the next time a
+page of it is opened, and one saved in the portal applies on the device.
 
 ### Getting to it
 
-**First time.** With no Wi-Fi saved, the device raises an access point,
-**`MediaRemote-Setup`**. Join it; the setup page usually opens by itself, or
-browse to **`http://192.168.4.1`**. Choose your network and fill in the fields
-below. The device then joins your network. Or **tap the Setup card** and
-choose the network on the device itself
-([Choosing Wi-Fi on the device](#choosing-wi-fi-on-the-device)); the rest of
-the settings are then in the portal on your network.
-
-**Afterwards.** The same portal stays available on your network at
+**On your network.** Once the remote is on Wi-Fi, the portal is at
 **`http://<device-name>.local`** -- `http://media-remote.local` until you name
-it -- or at the device's IP address. **Configure WiFi** holds the settings
-below, under the network name and password (leave those blank to keep the
-current network; `/param` shows the settings alone). **Update** installs
-firmware and **Info** shows the device's details. The status cards show the
-name to look for.
+it -- or at the device's IP address, which the status page shows. The last
+row of the device's settings page gives the name too. **Configure WiFi**
+holds the settings below, under the network name and password (leave those
+blank to keep the current network; `/param` shows the settings alone).
+**Update** installs firmware and **Info** shows the device's details.
+
+**Before Wi-Fi.** With no Wi-Fi saved, the remote also raises an access
+point, **`MediaRemote-Setup`**, for setting it up from a phone rather than on
+the screen. Join it; the setup page usually opens by itself, or browse to
+**`http://192.168.4.1`**. Choose your network and fill in any of the fields
+below. The remote then joins your network.
 
 A few rules hold for every field:
 
@@ -349,44 +441,12 @@ A few rules hold for every field:
   list no longer has -- renamed or removed -- is shown as itself, marked
   *(not listed now)*, rather than as whichever player happens to come first.
 
-### Linking to Home Assistant
-
-Once the remote is on Wi-Fi with nothing linked, it looks for Home Assistant
-on the network: Home Assistant announces itself over mDNS
-(`_home-assistant._tcp`), with its URL. When one answers, the card becomes a
-**QR code**, with Home Assistant's name and the address the code stands for
-beneath it. A URL already typed into the portal is used instead of looking.
-
-1. **Scan the code** with a phone on the same network, or open the address
-   under it in any browser there. It is the remote's own page, `/ha`, which
-   sends the browser on to Home Assistant's sign-in page.
-2. **Sign in** to Home Assistant as you always do.
-3. Home Assistant sends the browser back to the remote, which takes it from
-   there: it trades the sign-in for a **long-lived access token** named
-   `Media Remote (<name>)`, revokes the short session the sign-in made,
-   fills in the **Music Assistant config entry id** if that is blank, and
-   stores the URL and the token.
-
-The player is then the only thing left to choose: the remote lists Home
-Assistant's media players, and a tap chooses one. The token
-is listed in Home Assistant under your profile → **Security** →
-**Long-lived access tokens**; deleting it there unlinks the remote.
-
-The remote is the OAuth client, at its own address (`http://<its IP>/`,
-which Home Assistant accepts for a client on the local network), and the
-browser comes back to `/ha_auth` on the same address. That is why the phone
-has to be on the remote's network, and why the address rather than the
-`.local` name: Android does not resolve `.local` names. The code that comes
-back is good for one use, for ten minutes, and only with a sign-in this
-remote started.
-
-Not found (no mDNS on the network, or Home Assistant on another subnet): the
-card says to set the URL and token in the portal, and the remote looks again
-every half minute.
-
 ### The fields
 
-In the order the page shows them. After a save the confirmation page goes
+In the order the page shows them. Wi-Fi transmit power, the screen rotation,
+the search keyboard, the media player, Volume & power, the player's input and
+the player volume at switch-on are on [the device's
+settings](#settings-on-the-device) as well. After a save the confirmation page goes
 back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
 long enough for a setting that restarts the device to have taken effect. A
 save is only acted on when the request carries the form, which includes a
@@ -432,6 +492,9 @@ endpoint lists it, so it is typed rather than picked:
   switch to **YAML mode**, and copy the `config_entry_id:` line; or
 - **Settings → Devices & services → Music Assistant**, open its devices or
   entities, and read `?config_entry=…` from the address bar.
+
+Linking by the QR code fills it in when it is blank, so it is typed only for
+a remote given its Home Assistant token by hand.
 
 Without it, now playing, the buttons and the volume all work. The list shows
 **Not set up** unless a Music Assistant token is set, the search fails, and
@@ -486,8 +549,8 @@ same name, and clears it otherwise.
 
 **Player volume at switch-on** *(only with a separate volume device)* -- the
 level, in percent, the *player's* own volume is set to each time the remote
-switches the volume device on: play pressed, or something picked from the list
-or the search, while it was off. Never when the player starts by itself, so a
+switches the volume device on: play pressed, something picked from the list
+or the search, or a tap on the top half of now playing, while it was off. Never when the player starts by itself, so a
 cast from a phone keeps the volume it was cast at. Blank, the default, leaves
 it alone (`config::kPlayerWakeVolume`).
 70 is a sensible level to try. With the real knob on the amplifier, the
@@ -556,12 +619,13 @@ build: click **Install** for the board and choose its port. It needs Chrome,
 Edge or Opera on a computer (Web Serial; not Firefox, Safari or a phone).
 The **Qualia** goes into download mode by hand first -- hold BOOT, tap RESET,
 let go of BOOT -- since its USB port is the firmware's own and the browser
-cannot restart it into the bootloader. The **2.8C** is not on the page yet:
-it joins with the first release built with it.
+cannot restart it into the bootloader. The **2.8C** is there from v1.2.0, the
+first release built with it.
 
 It writes the release's `firmware-<board>-merged.bin` from address 0, so like
 any merged image **it wipes the settings**: it is for a blank board, or one
-being set up again. Update a remote that is already set up from its portal.
+being set up again. Update a remote that is already set up from its portal. Either way, the
+remote then starts on its **Setup** card: see [Setting it up](#setting-it-up).
 
 The page is `site/`, published to GitHub Pages by
 `.github/workflows/pages.yml` whenever a release is published: the page, a
@@ -674,7 +738,8 @@ src/
     square/      theme.cpp, now_playing.cpp   <- the Qualia
     headless/    draws nothing, narrates to serial
   hardware/
-    waveshare/  round360/  qualia/  headless/   <- one directory per board
+    waveshare/  round360/  qualia/  lcd28c/  headless/   <- one per board
+    rgb/         the RGB panels' output stage, for qualia/ and lcd28c/
 include/
   board/         one header per board: pins, sizes, scales, timings
   config.h       everything about the application that is a number
@@ -698,12 +763,14 @@ same intent from both.
 circle, the full width on a square) and `now_playing.cpp` holds the one
 screen with a shape in it. The list, the search, the status cards, the
 canvas, the artwork and the text layout are shared, and widen to fit by asking
-`chordHalfWidth()`. The DFR1221 reuses `ui/round/` unchanged at 1.5×.
+`chordHalfWidth()`. The DFR1221 reuses `ui/round/` unchanged at 1.5×, and the
+2.8C at 2×.
 
 **Every dimension scales.** `include/ui/theme.h` is written against a 240 px
 round panel and multiplied by the board's `kUiScale` (width / 240). Two more
 per-board factors sit on top and nowhere else: `kTextScale` for panels whose
-pixels are denser than the design's (the Qualia's 0.75), and `kListScale` for
+pixels are denser than the design's (0.75 on the Qualia and the 2.8C), and
+`kListScale` for
 the lists (the Qualia's ⅔, which shows about six rows instead of three).
 
 **`headless` is a standing check,** not a toy: it builds and runs the whole
@@ -717,12 +784,14 @@ src/app/app.cpp            the state machine: what to show, commands, idle
                            timer, and the network task that owns the stream
 src/services/
   wifi_setup.cpp           WiFiManager: setup AP, LAN portal, every field
+  ha_link.cpp              the QR-code sign-in, and the remote's own token
   ha_client.cpp            templates, service calls, the library and search,
                            Home Assistant settings in NVS
   ha_stream.cpp            the WebSocket state stream, and calls over it
   websocket.cpp            an RFC 6455 client over a Yielding socket
   ha_internal.h            what ha_client and ha_stream share
-  player_list.cpp          cached media_player list for the portal
+  player_list.cpp          cached media_player list, for the portal and the
+                           device's lists
   browse.cpp               the swipe-up list's sections
   search.cpp               the artist search query and results
   history.cpp              the room's recent artists
@@ -738,8 +807,14 @@ src/ui/common/
   canvas.cpp               the composed frame, presenting, in-place scroll
   browse_list.cpp          the list, with section headings
   search.cpp               keyboard and results
-  status_screens.cpp       the cards, and the status page
+  status_screens.cpp       the cards, the sign-in QR code, the status page
   settings_list.cpp        the settings page and each setting's choices
+  player_pick.cpp          the player list, while none is chosen
+  wifi_join.cpp            the Wi-Fi networks and the password keyboard
+  peers_chip.cpp           the "+N rooms" chip on now playing
+  isolate_card.cpp         Isolate's card
+  back_button.cpp          the back button, top left
+  text_glow.cpp            the dark glow behind text over the cover
   artwork.cpp              the worker: list thumbnails and the cover fetch
   cover_art.cpp            cover and thumbnail fetch, cache, decode
   text.cpp                 ellipsising and word wrap
@@ -823,8 +898,9 @@ the same socket -- transport, volume, power, `select_source`, `play_media` --
 and so do Music Assistant's `get_library` and `search`, which ask for the
 service's response back. mbedTLS takes its buffers from internal RAM only,
 and a second TLS session beside the stream's, with a cover being fetched as
-well, is one more than fits. Of the Home Assistant requests, only the
-portal's player list uses REST while the stream is up.
+well, is one more than fits. Of the Home Assistant requests, only the player
+list and a volume device's inputs -- for the portal and the settings page --
+use REST while the stream is up.
 
 **Without a stream it polls**: before the first connection, after a drop, or
 against a server that refuses one. Every `kHaPollPlayingMs` (2 s) while
@@ -856,7 +932,7 @@ members and stepping over every value whole, because an album nests an
 > shifts every field after it by one.
 
 Duplicate friendly names are the norm -- a Music Assistant player and the
-device it wraps share one -- so the portal relabels a duplicate with its
+device it wraps share one -- so the player lists relabel a duplicate with its
 `object_id`, and nothing shown carries the `media_player.` prefix.
 `kMaxPlayers` (96) caps the list.
 
@@ -914,10 +990,12 @@ room, which is a mis-tap rather than a request for music.
 sideways swipe sets the volume in -- calls `media_player.toggle` on the
 volume device, for one that claims `TURN_ON` or `TURN_OFF`. Home Assistant
 decides which, from its own state at that moment, so the tap does not
-depend on what the remote last heard. The remote then asks for the state
-afresh and puts it on screen, the volume grey while the device is off; if
-the device came on, it also gets the player's input and the player volume
-at switch-on, as play's power-on does. A zone amplifier needs the input: a
+depend on what the remote last heard. The remote then waits, up to five
+seconds, for the state stream to report the device's power changed -- the
+volume greys when that arrives -- and if the device came on, it also gets
+the player's input and the player volume at switch-on, as play's power-on
+does. It waits for the stream rather than asking: a request of its own
+needs a second TLS session, which the Qualia has no internal RAM for. A zone amplifier needs the input: a
 Triad output switched off is disconnected from its input, and switched back
 on with none it is silent. A tap is a press that moved less than the tap
 slop and lifted within `kTouchTapMaxMs`, so a volume swipe is never taken
@@ -931,14 +1009,14 @@ it.
 
 **A zone amplifier also gets its input.** A Triad output switched on routes
 nothing and comes up silent, so where the volume device has an input for the
-player (chosen in the portal, or named after it) powering it on also calls
+player (chosen in the settings, or named after it) powering it on also calls
 `select_source`, unless it is already on that input. A device that was on
 already is taken over whatever it is on, since only play pressed on the
 remote, or something picked from its list or search, gets this far. A press
 that pauses never touches the source. `kSelectControlSource` turns this off.
 
-**Switching it on also sets the player's volume**, to the portal's **Player
-volume at switch-on**, if a level is set there; by default it is left alone.
+**Switching it on also sets the player's volume**, to **Player volume at
+switch-on**, if a level is set; by default it is left alone.
 Only when the remote has just switched the volume device on -- not when it was
 on already, and never when the player starts by itself. With a separate
 amplifier the player's `volume_level` is the gain on the signal it hands over;
@@ -1075,12 +1153,20 @@ dimensions come from its JPEG `SOF` or PNG `IHDR` so it is centre-cropped to
 fill. A cover too big for the buffer is streamed through the decoder on every
 repaint instead, which is the case that costs.
 
-**Asked for at the panel's size.** Music Assistant's image proxy accepts
-`size=` from a ladder -- 0, 80, 160, 256, 512, 1024 -- and answers 400 to
-anything else, so the request rounds up to a power of two
+**Asked for at the panel's size, or below it.** Music Assistant's image
+proxy accepts `size=` from a ladder -- 0, 80, 160, 256, 512, 1024 -- and
+answers 400 to anything else, so the request rounds up to a power of two
 (`board::kCoverArtRequestPx`): 256 for a 240 px panel, a 28 KB cover instead of
-88 KB. A refusal is retried with the original URL and rewriting stops for the
-session.
+88 KB. The Qualia and the 2.8C ask for 256 too and scale it up: the cover is
+a backdrop under a scrim, and on the 2.8C a 512 px one took three times as
+long to decode and scale (268 ms against 84). A refusal is retried with the
+original URL and rewriting stops for the session.
+
+**A small cover is scaled in one pass.** One smaller than the panel is decoded
+at its own size into a PSRAM sprite laid out as the frame is, then copied in
+nearest neighbour, a row at a time. Scaling while decoding, through
+LovyanGFX's drawing calls, cost about 200 ms on a 480 px frame whatever the
+source's size.
 
 **Decodes are serialised.** LovyanGFX keeps one PNG decoder in a static and
 reuses it, so two tasks decoding at once corrupt each other -- which once
@@ -1093,16 +1179,24 @@ of 2 whatever it wants, pngle tolerates a short read and TJpgD does not.
 ### Compositing
 
 Every screen composes into one off-screen frame in PSRAM, the panel's size at
-16 bits -- 115 KB on the Waveshare, 259 KB on the DFR1221, 1 MB on the Qualia
--- and presents it, or the rectangle that changed, to the panel. Everything
-draws in screen coordinates. The elapsed chip sits on an opaque pill, so its
-once-a-second update goes straight to the panel without recomposing the cover;
-for the same reason a state update only recomposes when something visible
-changed, and position alone does not.
+16 bits -- 115 KB on the Waveshare, 259 KB on the DFR1221, 450 KB on the
+2.8C, 1 MB on the Qualia -- and presents it, or the rectangle that changed, to
+the panel. Everything draws in screen coordinates. The elapsed chip sits on an
+opaque pill, so its once-a-second update is drawn and presented alone,
+without recomposing the cover; for the same reason a state update only
+recomposes when something visible changed, and position alone does not.
+
+**Two frames are kept** beside it, in PSRAM: the cover under its scrim, and
+that with the track's text and its glow on it, each keyed on what it shows.
+A play, a pause or a volume step restores the second and draws only the
+controls over it; a radio title changing over the same cover restores the
+first and draws the text. Only a new cover is decoded. On the 2.8C that took
+a tap's repaint from 0.5-1 s to about 95 ms.
 
 **Rotation** is below the seam. The round SPI panels turn in their own
-controller, with LovyanGFX turning the touch to match, at no cost. The Qualia
-scans out a framebuffer in a fixed order, so there the frame is drawn upright
+controller, with LovyanGFX turning the touch to match, at no cost. The RGB
+panels, the Qualia's and the 2.8C's, scan out a framebuffer in a fixed order,
+so there the frame is drawn upright
 and turned as it is copied into the scan-out buffer (`rgbPresent()`), and every
 touch is turned back. Upside down costs nothing extra; at ±90° the copy writes
 down columns, a full present is slower, and a list scroll repaints instead of
@@ -1129,8 +1223,8 @@ row on a square panel does not change shape with its height. The bar sits
 flush with the right edge so each row still moves as one run.
 `canvasPanelWrites()` counts every panel write, so the list knows when
 something else drew over it and falls back to a whole repaint; so does a jump
-of more than half the view. The round boards never take this path: their SPI
-panels only write, and their rows change width with height.
+of more than half the view. The 2.8C takes this path too, sharing the output
+stage; the round SPI boards never do, since their panels only write.
 
 **The bus is kept off the PSRAM's neck.** The scan-out reads continuously and
 cannot be starved of a byte: `copyRegion()` and `rgbScroll()` stand off every
@@ -1169,19 +1263,37 @@ request after boot, which is the TLS handshake's run of round trips.
 | Stale rows or a scroll-bar trail after scrolling | Something presented without `canvasPresentRegion()` or `canvasScrollPanel()` |
 | Requests take tens of seconds | The panel bus: `kRgbPclkHz` and the drive in `quietenBus()` |
 
+### The 2.8C
+
+The Qualia's kind of panel in the round screens' shape: an ST7701 on the same
+RGB output stage (`hardware/rgb/`), with the same drive strength and a 12 MHz
+pixel clock -- 43 Hz on its smaller frame. Waveshare's demo runs it at 18 MHz,
+which is 36 MB/s of scan-out from PSRAM, half as much again as the Qualia
+breaks up at.
+
+Unlike the Qualia's panel, the ST7701 has to be told its registers before it
+shows anything: a 3-wire SPI on GPIO 1 and 2, chip-selected through a TCA9554
+expander at `0x20`, which also holds the panel's and the touch controller's
+resets and the buzzer (`hardware/lcd28c/panel.cpp`). The expander powers up
+with every output high, so its first write drives the buzzer low; its three
+sensor interrupt lines are left as inputs. The GT911 touch controller is read
+on a task of its own, as the Qualia's is, at `0x5D`, the address it takes
+with its INT line held low as its reset is released.
+
 ### Memory
 
 Internal RAM is what mbedTLS needs -- 16 KB in and 16 KB out, contiguous, per
 TLS session -- so everything large lives in **PSRAM** and is claimed **once, at
 boot, before Wi-Fi**, while the heap is unfragmented: the frame, the cover
 buffer, the thumbnail sprites, the history, the recommendation pool and its
-response buffer, the recommendation task's stack. What breaks on this class of
+response buffer, the recommendation task's stack. The two kept frames are
+claimed by the first repaint that keeps one, and are likewise never freed. What breaks on this class of
 board is contiguity, not total free memory, and memory claimed once cannot
 fragment anything later.
 
 **Flash** (`partitions/media_remote.csv`, 16 MB on every board): the settings
-partition (NVS, 20 KB at 0x9000), OTA data, two 4 MB app slots, and the rest
-spiffs, unused. The DFR1221's env declares its 16 MB explicitly; the generic
+partition (NVS, 20 KB at 0x9000), OTA data, two 4 MB app slots, spiffs,
+unused, and 64 KB at the end for a core dump. The DFR1221's env declares its 16 MB explicitly; the generic
 board definition it builds on says 8.
 
 **Settings** are in NVS, each group in its own namespace so a reset can clear
