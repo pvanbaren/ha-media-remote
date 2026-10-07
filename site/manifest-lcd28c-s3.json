@@ -1,0 +1,13 @@
+{
+  "name": "Home Assistant Media Remote (Waveshare ESP32-S3-Touch-LCD-2.8C)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/firmware-lcd28c-s3-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
