@@ -12,6 +12,8 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-06
+
 This release adds a fifth board, the Waveshare ESP32-S3-Touch-LCD-2.8C, and two controls on now playing: a tap to switch the amplifier on or off, and Isolate, which turns off the other rooms sharing this one's input. It also makes now playing much faster to repaint on every board.
 
 ### Added
@@ -79,6 +81,7 @@ The first release: a touch remote for one Home Assistant `media_player`, running
 - **Web portal setup:** Wi-Fi, Home Assistant URL and token, player, volume device, rotation, transmit power and more.
 - **Network updates:** two app slots, and settings are kept across updates.
 
-[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pvanbaren/ha-media-remote/releases/tag/v1.0.0
