@@ -171,8 +171,8 @@ A tap on the results that misses every result does the same.
 
 **Swipe right** on the lower half of now playing for a list of the volume
 device's inputs -- a Triad zone's players, a receiver's HDMI and AirPlay --
-the one it is on marked. **Tap** one to switch to it; the remote goes
-straight back to now playing, which follows the new input
+the one it is on marked. **Tap** one to switch to it -- switching the device
+on first, if it is off; the remote goes straight back to now playing, which follows the new input
 ([When the volume device is on another input](#when-the-volume-device-is-on-another-input)).
 Where the player's input on the device is chosen by name, it becomes the new
 one too; left to follow the input named after the player, it is left alone.

@@ -1601,19 +1601,30 @@ bool applySettingChoice(int row) {
   }
 }
 
-/** What the volume device is on now, and whether it can switch at all,
- *  from the last state. A frame of its own: a PlayerState is too big to sit
- *  on the loop's stack under the fetch that follows, which is a TLS
+/** What the sources screen needs of the volume device, from the last state.
+ *  With no state yet, everything is allowed and nothing is known to be off. */
+struct ControlNow {
+  char source[config::kSourceNameMaxLen] = {};
+  bool can_switch = true;
+  bool off = false;
+  bool can_turn_on = true;
+};
+
+/** Fill `out` from the last state. A frame of its own: a PlayerState is too
+ *  big to sit on the loop's stack under the call that follows, a TLS
  *  handshake. */
-[[gnu::noinline]] bool controlSourceNow(char* out, size_t out_len) {
+[[gnu::noinline]] void controlNow(ControlNow& out) {
   PlayerState state;
-  out[0] = '\0';
   if (!snapshotState(state)) {
-    return true;
+    return;
   }
-  snprintf(out, out_len, "%s", state.control_source);
-  return state.control_features == 0 ||
-         (state.control_features & services::ha::kFeatureSelectSource) != 0;
+  snprintf(out.source, sizeof(out.source), "%s", state.control_source);
+  const uint32_t features = state.control_features;
+  out.can_switch =
+      features == 0 || (features & services::ha::kFeatureSelectSource) != 0;
+  out.off = state.control_off;
+  out.can_turn_on =
+      features == 0 || (features & services::ha::kFeatureTurnOn) != 0;
 }
 
 /** The volume device's inputs, a swipe right on now playing's lower half: a
@@ -1624,10 +1635,12 @@ bool applySettingChoice(int row) {
       services::ha::selectedEntity()[0] == '\0') {
     return;
   }
-  char current[config::kSourceNameMaxLen];
-  if (!controlSourceNow(current, sizeof(current))) {
+  ControlNow control;
+  controlNow(control);
+  if (!control.can_switch) {
     return;
   }
+  const char* current = control.source;
   const int n = loadSources();
   ui::settingsBegin("Source", n < 0    ? "Could not load inputs"
                               : n == 0 ? "No inputs"
@@ -1643,8 +1656,11 @@ bool applySettingChoice(int row) {
   g_list_opened_ms = millis();
 }
 
-/** An input tapped: switch the volume device to it and go straight back to
- *  now playing. Where the player's input on the device is chosen by name, it
+/** An input tapped: switch the volume device on, if it is off, and to that
+ *  input, and go straight back to now playing. On first: a Triad zone
+ *  switched on routes nothing, so the input has to come after. The player's
+ *  volume at switch-on is not set, since the input chosen may be another
+ *  player's. Where the player's input on the device is chosen by name, it
  *  becomes this one too; left to follow the input named after the player,
  *  it is left alone, since that follows by itself. */
 [[gnu::noinline]] void handleSourceTap(int row) {
@@ -1654,7 +1670,13 @@ bool applySettingChoice(int row) {
   ui::showSettingPressed(row, true);
   char source[config::kSourceNameMaxLen];
   snprintf(source, sizeof(source), "%s", g_sources[row]);
-  services::ha::selectSource(services::ha::controlEntity(), source);
+  ControlNow control;
+  controlNow(control);
+  const char* entity = services::ha::controlEntity();
+  if (control.off && control.can_turn_on) {
+    services::ha::callService("turn_on", entity);
+  }
+  services::ha::selectSource(entity, source);
   if (services::ha::controlIsSeparate() &&
       services::ha::storedControlInput()[0] != '\0' &&
       strcmp(source, services::ha::storedControlInput()) != 0) {
