@@ -10,6 +10,7 @@
 #include "services/display_settings.h"
 #include "services/ha_client.h"
 #include "services/search.h"
+#include "ui/back_button.h"
 #include "ui/canvas.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -141,12 +142,14 @@ void drawQuery(lgfx::LovyanGFX& gfx) {
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(empty ? theme::kTextMuted : theme::kAccent);
 
+  // Beside the back button, which shares the row.
+  int center_x = 0;
+  int width = 0;
+  back_button::lineSpan(theme::kSearchQueryY, theme::kSearchQueryTextPx,
+                        center_x, width);
   char line[text::kMaxLineLen];
-  text::ellipsize(gfx, empty ? "Artist name" : q,
-                  theme::usableWidthAt(theme::kSearchQueryY,
-                                       theme::kTextEdgeInset),
-                  line, sizeof(line));
-  gfx.drawString(line, theme::kCenterX, theme::kSearchQueryY);
+  text::ellipsize(gfx, empty ? "Artist name" : q, width, line, sizeof(line));
+  gfx.drawString(line, center_x, theme::kSearchQueryY);
 }
 
 void drawKeyboard(lgfx::LovyanGFX& gfx) {
@@ -493,6 +496,7 @@ void draw() {
   } else {
     drawKeyboard(gfx);
   }
+  back_button::draw(gfx);
   ui::canvasPresent();
   if (s_showing_results) {
     notePanelMatches();

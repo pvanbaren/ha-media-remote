@@ -203,8 +203,10 @@ constexpr int kSearchGoHeight = px(28);
 
 /** Results reuse the browse list's row metrics -- same shape, same artwork,
  *  same scrolling -- and start below this, which is the strip they scroll
- *  under and which backs out of the results on a tap. */
-constexpr int kSearchResultTopY = px(38);
+ *  under and which backs out of the results on a tap. Clear of the back
+ *  button on the query's row (ui/back_button.h: centred at 34, radius 11),
+ *  so a scroll that moves the rows in place never moves it with them. */
+constexpr int kSearchResultTopY = px(48);
 
 // --- Status / message screens ---
 constexpr int kStatusLineGap = px(6);

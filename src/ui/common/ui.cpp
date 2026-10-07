@@ -419,6 +419,21 @@ Input browseTouch(const hw::TouchReport& report) {
 
 Input searchTouch(const hw::TouchReport& report) {
   Input out;
+  // The back button does what a swipe right does, results or keyboard.
+  const bool back =
+      report.event == hw::TouchEvent::kSwipeRight ||
+      (report.event == hw::TouchEvent::kTap &&
+       back_button::hit(report.x, report.y));
+  if (back) {
+    // Back out one step at a time: results to keyboard, then keyboard to
+    // wherever the search was opened from, which the app knows.
+    if (search::backToKeyboard()) {
+      search::draw();
+    } else {
+      out.intent = Intent::kSearchBack;
+    }
+    return out;
+  }
   // Only the results scroll. The keyboard is typed on, and a key press must
   // not be second-guessed.
   if (report.event == hw::TouchEvent::kTap && search::showingResults() &&
@@ -456,15 +471,6 @@ Input searchTouch(const hw::TouchReport& report) {
       }
       break;
     }
-    case hw::TouchEvent::kSwipeRight:
-      // Back out one step at a time: results to keyboard, then keyboard to
-      // wherever the search was opened from, which the app knows.
-      if (search::backToKeyboard()) {
-        search::draw();
-      } else {
-        out.intent = Intent::kSearchBack;
-      }
-      break;
     default:
       break;
   }

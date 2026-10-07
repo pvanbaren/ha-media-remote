@@ -162,7 +162,8 @@ the portal, switches it to **QWERTY** -- QWERTYUIOP, ASDFGHJKL, ZXCVBNM with bac
 a space bar on its own row -- with narrower keys, since ten have to fit across
 the top.
 
-**Swipe right** backs out one step at a time: results to the keyboard (with
+**Swipe right**, or the back button at the top left, backs out one step at a
+time: results to the keyboard (with
 the query kept, so a near miss can be edited), then the keyboard to the list,
 or to now playing if that is where the search was opened.
 A tap on the results that misses every result does the same.
@@ -318,7 +319,7 @@ wakes the screen leave it alone. Details in
 | Settings | Drag up / down, then tap a row | Its choices; the row lights at once |
 | Settings choices | Tap one | Choose it, and back to the settings |
 | Settings | Swipe right | Back one step |
-| Status, settings, Wi-Fi | Tap the back button, top left | As a swipe right: back one step |
+| Status, settings, Wi-Fi, search | Tap the back button, top left | As a swipe right: back one step |
 | Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
 | Wi-Fi networks | Tap a network | Join it, or type its password |
 | Wi-Fi networks | Swipe right | Back one step |
