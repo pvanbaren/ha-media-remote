@@ -7,8 +7,10 @@
 #
 # Pushing a v* tag also drafts a GitHub release with every board's images
 # attached, named for the board. The draft takes its notes from the tag's
-# message; check it and publish it by hand. Publishing it puts its merged
-# images on the install page (pages.yml).
+# version in CHANGELOG.md, with .github/release-footer.md after them, and
+# fails if the changelog has no section for it; check it and publish it by
+# hand. Publishing it puts its merged images on the install page
+# (pages.yml).
 
 name: Build
 
@@ -77,10 +79,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      # For the tag's message, which a shallow checkout leaves behind.
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       # Only the boards with a panel: headless is for development.
       - uses: actions/download-artifact@v7
@@ -100,10 +99,28 @@ jobs:
           done
           ls -l release
 
+      # The version's section of CHANGELOG.md: from its "## [1.2.0]"
+      # heading to the next version's, or to the link definitions at the
+      # foot. No section, no release -- a tag pushed before the changelog
+      # was brought up to date would otherwise draft one with no notes.
+      - name: Take the notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v head="## [$version]" '
+            index($0, "## [") == 1 { if (on) exit; on = index($0, head) == 1; next }
+            /^\[[^]]+\]: / { if (on) exit }
+            on
+          ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md ||
+            { echo "CHANGELOG.md has no section for $version"; exit 1; }
+          printf '\n' >> notes.md
+          cat .github/release-footer.md >> notes.md
+          cat notes.md
+
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$GITHUB_REF_NAME" release/*
-          --draft --verify-tag --notes-from-tag
+          --draft --verify-tag --notes-file notes.md
           --title "$GITHUB_REF_NAME"

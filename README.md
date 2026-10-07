@@ -611,6 +611,13 @@ GitHub Actions builds all five on every push and pull request
 images to download: `firmware.bin` for a network update and
 `firmware-merged.bin` for a blank board.
 
+**Releasing.** What changes goes into [`CHANGELOG.md`](CHANGELOG.md), under
+*Unreleased*, as it is made. To release, rename that heading to the version
+and the date and push a `v` tag: the workflow drafts a GitHub release with
+every board's images, its notes that version's section of the changelog
+followed by `.github/release-footer.md`, and refuses a tag the changelog has
+no section for. Publishing the draft puts it on the install page.
+
 ### First install, from the browser
 
 **[pvanbaren.github.io/ha-media-remote](https://pvanbaren.github.io/ha-media-remote/)**
@@ -835,6 +842,8 @@ scripts/
 partitions/media_remote.csv  the flash layout, shared by every board
 .github/workflows/build.yml  CI: builds every board on each push
 .github/workflows/pages.yml  the install page, on each published release
+.github/release-footer.md    how to update, after each release's notes
+CHANGELOG.md                 every release's changes, and its notes
 site/                        the install page and its board manifests
 ```
 
