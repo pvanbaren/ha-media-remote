@@ -457,11 +457,12 @@ Input searchTouch(const hw::TouchReport& report) {
       break;
     }
     case hw::TouchEvent::kSwipeRight:
-      // Back out one step at a time: results to keyboard, keyboard to list.
+      // Back out one step at a time: results to keyboard, then keyboard to
+      // wherever the search was opened from, which the app knows.
       if (search::backToKeyboard()) {
         search::draw();
       } else {
-        out.intent = Intent::kOpenBrowse;
+        out.intent = Intent::kSearchBack;
       }
       break;
     default:
@@ -680,6 +681,13 @@ Input poll(Screen screen, const PlayerState* state) {
   }
   if (report.event == hw::TouchEvent::kSwipeDown) {
     out.intent = Intent::kOpenStatus;
+    return out;
+  }
+  // Straight to the search, without the list on the way. Only a swipe that
+  // started in the lower half gets here: one in the top half is the volume,
+  // claimed by driveVolume() as soon as it commits sideways.
+  if (report.event == hw::TouchEvent::kSwipeLeft) {
+    out.intent = Intent::kOpenSearch;
     return out;
   }
   if (report.event != hw::TouchEvent::kTap) {

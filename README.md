@@ -149,7 +149,8 @@ untouched (`kListIdleReturnMs`).
 
 ### Artist search
 
-**Swipe left** on the list for a keyboard. Type part of a name -- the search
+**Swipe left** on the list for a keyboard, or on the lower half of now
+playing to go straight there. Type part of a name -- the search
 reaches every Music Assistant provider and forgives partial names, so
 "radioh" finds Radiohead -- press **SEARCH**, and tap a result. The artist's
 **radio** starts: an endless queue seeded from them, which is what a wall
@@ -162,7 +163,8 @@ a space bar on its own row -- with narrower keys, since ten have to fit across
 the top.
 
 **Swipe right** backs out one step at a time: results to the keyboard (with
-the query kept, so a near miss can be edited), then the keyboard to the list.
+the query kept, so a near miss can be edited), then the keyboard to the list,
+or to now playing if that is where the search was opened.
 A tap on the results that misses every result does the same.
 
 ### The status page
@@ -294,6 +296,7 @@ wakes the screen leave it alone. Details in
 | Isolate card | Tap Cancel, or swipe right | Leave them on, and back to now playing |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
+| Now playing | Swipe left, lower half | Artist search |
 | Status page | Tap the gear | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
 | Status page | Any other tap or swipe | Back to now playing |

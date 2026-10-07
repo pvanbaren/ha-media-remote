@@ -549,7 +549,12 @@ bool powerOffControl() {
 
 
 
-/** Open the artist search, a swipe left from the browse list.
+/** Whether the search open now was opened from now playing rather than the
+ *  list, so backing out of it goes back there. Loop only. */
+bool g_search_from_now_playing = false;
+
+/** Open the artist search, a swipe left from the browse list or from now
+ *  playing.
  *
  *  Starts on an empty query every time rather than keeping the last one. A
  *  search is a thing you do once and then forget; coming back to somebody
@@ -559,6 +564,7 @@ bool powerOffControl() {
       services::ha::selectedEntity()[0] == '\0') {
     return;
   }
+  g_search_from_now_playing = g_screen != Screen::kBrowse;
   g_screen = Screen::kSearch;
   ui::showSearch();
   g_list_opened_ms = millis();
@@ -1736,6 +1742,14 @@ void portalIdle() {
 
     case Intent::kOpenSearch:
       openSearch();
+      break;
+
+    case Intent::kSearchBack:
+      if (g_search_from_now_playing) {
+        showNowPlaying();
+      } else {
+        openBrowse();
+      }
       break;
 
     case Intent::kOpenStatus:

@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Added
+
+- **Search from now playing:** a swipe left on the lower half of now playing opens the artist search directly, without going through the list. A swipe right on its keyboard goes back to now playing. A sideways swipe on the top half still sets the volume.
+
 ## [1.2.0] - 2026-10-06
 
 This release adds a fifth board, the Waveshare ESP32-S3-Touch-LCD-2.8C, and two controls on now playing: a tap to switch the amplifier on or off, and Isolate, which turns off the other rooms sharing this one's input. It also makes now playing much faster to repaint on every board.

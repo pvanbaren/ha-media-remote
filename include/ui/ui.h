@@ -36,7 +36,7 @@ enum class Screen : uint8_t {
   kMessage,     // a status card: needs setup, no player, HA unreachable
   kNowPlaying,
   kBrowse,      // the library list
-  kSearch,      // artist search, reached from the list
+  kSearch,      // artist search, from the list or now playing
   kStatus,      // the device's own status, a swipe down from now playing
   kWifi,        // choosing a Wi-Fi network and typing its password
   kPlayers,     // choosing the media player, when none is chosen
@@ -55,6 +55,8 @@ enum class Intent : uint8_t {
   kIsolate,           // the "+N rooms" chip: offer to turn the others off
   kOpenBrowse,
   kOpenSearch,
+  kSearchBack,        // a swipe right on the search's keyboard: back to
+                      // the list or now playing, whichever opened it
   kBackToNowPlaying,
   kPlayBrowseRow,     // `index` is a browse row
   kRunSearch,         // the typed query is in services::search
