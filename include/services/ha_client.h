@@ -82,10 +82,12 @@ struct PlayerState {
    *  configured ones, whatever the room is hearing -- for the status page. */
   char player_name[config::kFriendlyNameMaxLen] = {};
   char control_name[config::kFriendlyNameMaxLen] = {};
-  /** Where play/pause and skip go when it is not the entity being shown: the
-   *  native entity behind a Music Assistant player that another app -- a
-   *  phone's cast -- is playing on, since that app answers to it and Music
-   *  Assistant may not. `supported_features` is then that entity's too.
+  /** Where play/pause and skip go when it is not the entity the room is
+   *  hearing: the native entity behind a Music Assistant player that is not
+   *  playing from Music Assistant -- a phone's cast, or a TV app while the
+   *  Music Assistant player sits idle -- whose state play and pause are
+   *  decided from. `supported_features` is then that entity's too, and
+   *  where the Music Assistant player is idle, so is everything shown.
    *  Empty otherwise. */
   char transport_entity[config::kEntityIdMaxLen] = {};
   /** The other zones of the volume device's integration on the same input --

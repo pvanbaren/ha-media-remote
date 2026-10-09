@@ -109,9 +109,20 @@ void reportError(const char* message);
  *  needs next to it. */
 void logHeap(const char* what);
 
+/** `twin` for stateTemplate() when it is not known: the template looks the
+ *  native entity up by name itself, which reads every media_player. */
+constexpr char kTwinUnknown[] = "?";
+
 /** The state template for `entity_id` and the configured volume/power
- *  entity, ready to render. Empty (with lastError() set) for a bad id. */
-String stateTemplate(const char* entity_id);
+ *  entity, ready to render. `twin` is the native entity behind `entity_id`
+ *  when that is a Music Assistant player (twinTemplate()), empty where there
+ *  is none, or kTwinUnknown. Empty (with lastError() set) for a bad id. */
+String stateTemplate(const char* entity_id, const char* twin);
+/** A template rendering the native entity behind `entity_id` -- the
+ *  media_player of the same name that is not Music Assistant's -- or nothing,
+ *  for a player that is not Music Assistant's or has none. Empty for a bad
+ *  id. */
+String twinTemplate(const char* entity_id);
 /** Parse one rendering of stateTemplate() into `out`, stamping sampled_ms. */
 void parseState(const String& body, PlayerState& out);
 

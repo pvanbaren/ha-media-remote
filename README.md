@@ -998,11 +998,27 @@ through the device.** While something other than Music Assistant is
 casting to the Chromecast a Music Assistant player wraps -- the player
 reports it as its `app_id`, `youtube_music` say -- play, pause, next and
 previous go to the native entity of the same name, which that app answers
-to, and the buttons are greyed by that entity's features. Music Assistant
-might otherwise start its own queue over the cast, or pass next and previous
-nowhere. What is shown still comes from the Music Assistant player, which
-follows the cast, and the list and the search still play through it. The
-subscription reads every `media_player` while such a cast is on, too.
+to, and the buttons are greyed by that entity's features. The track and the
+art still come from the Music Assistant player, which follows the cast, and
+the list and the search still play through it. Whether it is playing comes
+from the native entity, since Music Assistant reports a cast that is
+buffering as playing, and one started from a phone while paused sits
+buffering until it is played. Play and pause are decided from that state, so
+the buttons go to the entity it was read from -- although Music Assistant
+2.10.5 does pass play, pause and next on to a cast.
+
+The same goes for a device playing something of its own that Music Assistant
+does not report at all -- a TV in Disney Plus while its Music Assistant
+player sits idle. Then the native entity is playing or paused and the Music
+Assistant player is not, so the buttons go to the native entity, and what is
+shown comes from it too: its title (or the app's name), its art and its
+state, which play and pause are decided from.
+
+The native entity is found once, by name, when the stream opens, and passed
+into the subscription, which then reads just that entity besides the player.
+A rename shows up the next time the stream opens. Without an answer to that
+lookup the subscription looks for the entity itself, reading every
+`media_player`.
 
 ### Powering the volume device
 

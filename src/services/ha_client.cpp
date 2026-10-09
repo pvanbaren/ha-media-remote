@@ -95,6 +95,8 @@ constexpr char kStateTemplateFmt[] =
     // that one named after the player -- a zone amplifier listing its players
     // as inputs -- or nothing. See selectPlayerSource().
     "{%% set ci = '%s' %%}"
+    // The native entity behind `e`; see `t` below.
+    "{%% set et = '%s' %%}"
     "{%% set sl = state_attr(c,'source_list') or [] %%}"
     "{%% set fn = state_attr(e,'friendly_name') %%}"
     "{%% set ps = ci if ci else (fn if fn in sl else '') %%}"
@@ -128,41 +130,73 @@ constexpr char kStateTemplateFmt[] =
     "states(c) in ['playing','paused'] and state_attr(c,'entity_picture') "
     "else e) %%}"
     // Where the transport buttons go: `m`, unless `m` is a Music Assistant
-    // player that something other than Music Assistant is casting to -- a
-    // phone casting YouTube Music to the Chromecast it wraps, which the
-    // player reports as its app_id -- when it is the native entity of the
-    // same name, which that app answers to. Sent to the Music Assistant
-    // player, play could start its own queue over the cast and next and
-    // previous go nowhere. Only then are all media_players read.
+    // player that is not playing from Music Assistant, when it is the native
+    // entity of the same name, which whatever is playing answers to. That is
+    // a Music Assistant player something else is casting to -- a phone
+    // casting YouTube Music to the Chromecast it wraps, which the player
+    // reports as its app_id -- or one sitting idle while its native entity
+    // plays or pauses something of its own: a TV in Disney Plus, which Music
+    // Assistant does not report at all. There, sent to the idle Music
+    // Assistant player, play would start its own queue rather than the TV's.
+    // A cast it does pass on -- Music Assistant 2.10.5 played, skipped and
+    // paused a phone's YouTube Music cast -- but it goes to the native entity
+    // all the same, since the playing state comes from that entity (below),
+    // and the buttons then act on the entity their state was read from.
+    //
+    // The native entity behind the player, `et`, is looked up once by
+    // twinTemplate() and passed in, so following it reads that entity and no
+    // more. Only for another entity -- `c` on another input, where every
+    // media_player is read already -- or where `et` is not known is it looked
+    // up here by name.
     "{%% set t = m %%}"
+    "{%% set ma_cast = state_attr(m,'app_id') not in "
+    "[none,'','music_assistant'] %%}"
+    "{%% set ma_idle = states(m) not in ['playing','paused'] %%}"
     "{%% if state_attr(m,'mass_player_type') is not none and "
-    "state_attr(m,'app_id') not in [none,'','music_assistant'] %%}"
+    "(ma_cast or ma_idle) %%}"
+    "{%% if m == e and et != '?' %%}"
+    "{%% set twins = [et] if et else [] %%}"
+    "{%% else %%}"
     "{%% set twins = states.media_player"
     "|selectattr('name','eq',state_attr(m,'friendly_name'))"
     "|rejectattr('attributes.mass_player_type','defined')"
-    "|rejectattr('state','in',['unavailable','unknown','off'])|list %%}"
-    "{%% set t = (twins|map(attribute='entity_id')|list|first) or m %%}"
+    "|map(attribute='entity_id')|list %%}"
     "{%% endif %%}"
+    "{%% set twins = twins|reject('is_state',['unavailable','unknown','off'])"
+    "|list %%}"
+    "{%% if not ma_cast %%}"
+    "{%% set twins = twins|select('is_state',['playing','paused'])|list %%}"
+    "{%% endif %%}"
+    "{%% set t = (twins|first) or m %%}"
+    "{%% endif %%}"
+    // What is shown: `m`, or `t` where `m` is idle and `t` is not, so the
+    // track and the art are those of what the buttons control. A cast Music
+    // Assistant reports keeps `m`, which carries its track.
+    "{%% set d = t if ma_idle else m %%}"
     // An app that says what it is but not what it is playing -- a Roku does
     // that for every app but its TV tuner -- is titled with its own name
     // while it plays, rather than as nothing playing, and the name is then
     // not repeated underneath.
-    "{%% set mt = state_attr(m,'media_title') or '' %%}"
-    "{%% set an = state_attr(m,'app_name') or '' %%}"
-    "{%% set at = an if not mt and states(m) in ['playing','paused'] "
+    "{%% set mt = state_attr(d,'media_title') or '' %%}"
+    "{%% set an = state_attr(d,'app_name') or '' %%}"
+    "{%% set at = an if not mt and states(d) in ['playing','paused'] "
     "else '' %%}"
-    "{{states(m)}}\037"
+    // The state, though, is always `t`'s, since play and pause are decided
+    // from it. Music Assistant reports a cast that is buffering as playing:
+    // one cast from a phone while paused sits buffering until it is played,
+    // and from `m` the button showed pause, and pressed, paused nothing.
+    "{{states(t)}}\037"
     "{{mt or at}}\037"
-    "{{state_attr(m,'media_artist') or state_attr(m,'media_album_name') or "
-    "state_attr(m,'media_series_title') or ('' if at else an)}}\037"
-    "{{state_attr(m,'entity_picture') or ''}}\037"
+    "{{state_attr(d,'media_artist') or state_attr(d,'media_album_name') or "
+    "state_attr(d,'media_series_title') or ('' if at else an)}}\037"
+    "{{state_attr(d,'entity_picture') or ''}}\037"
     // The buttons' feature bits: the entity they will be sent to.
     "{{state_attr(t,'supported_features')|int(0)}}\037"
-    "{{(state_attr(m,'media_duration') or 0)|float(0)|round(1)}}\037"
-    "{{(state_attr(m,'media_position') or 0)|float(0)|round(1)}}\037"
-    "{%% set pu = state_attr(m,'media_position_updated_at') %%}"
+    "{{(state_attr(d,'media_duration') or 0)|float(0)|round(1)}}\037"
+    "{{(state_attr(d,'media_position') or 0)|float(0)|round(1)}}\037"
+    "{%% set pu = state_attr(d,'media_position_updated_at') %%}"
     "{{((as_timestamp(now())-as_timestamp(pu)) if pu else 0)|float(0)|round(1)}}\037"
-    "{{state_attr(m,'friendly_name') or m}}\037"
+    "{{state_attr(d,'friendly_name') or d}}\037"
     "{{state_attr(c,'volume_level')|float(-1)|round(3)}}\037"
     "{{1 if state_attr(c,'is_volume_muted') else 0}}\037"
     "{{state_attr(c,'supported_features')|int(0)}}\037"
@@ -170,10 +204,10 @@ constexpr char kStateTemplateFmt[] =
     "{{ps}}\037"
     "{{cs}}\037"
     // The artist alone, not the subtitle's fallbacks, and what is playing by
-    // them: what the room's history is kept by (services::history). From `m`,
-    // since that is what the room is hearing.
-    "{{state_attr(m,'media_artist') or ''}}\037"
-    "{{state_attr(m,'media_content_id') or ''}}\037"
+    // them: what the room's history is kept by (services::history). From what
+    // is shown, since that is what the room is hearing.
+    "{{state_attr(d,'media_artist') or ''}}\037"
+    "{{state_attr(d,'media_content_id') or ''}}\037"
     "{{m if m != e else ''}}\037"
     // Both configured entities by name, for the status page.
     "{{state_attr(e,'friendly_name') or e}}\037"
@@ -184,6 +218,20 @@ constexpr char kStateTemplateFmt[] =
     "{{peers|length}}\037"
     "{{peers|map('state_attr','friendly_name')|join('\035')}}\037"
     "{{peers|join(',')}}\036";
+
+// The native entity behind a Music Assistant player: the media_player of the
+// same name that is not Music Assistant's. It reads every media_player, so it
+// is rendered once as the stream opens and the answer passed into the state
+// template, rather than read there on every change in the house.
+constexpr char kTwinTemplateFmt[] =
+    "{%% set e = '%s' %%}"
+    "{%% set ma = integration_entities('music_assistant') %%}"
+    "{%% if e in ma %%}"
+    "{{(states.media_player"
+    "|selectattr('name','eq',state_attr(e,'friendly_name'))"
+    "|rejectattr('entity_id','in',ma)|map(attribute='entity_id')|list"
+    "|first) or ''}}"
+    "{%% endif %%}";
 
 // Every input on one entity, for the portal's dropdown.
 constexpr char kSourcesTemplateFmt[] =
@@ -1116,7 +1164,10 @@ int fetchPlayers(PlayerEntry* out, size_t capacity) {
 }
 
 bool fetchState(const char* entity_id, PlayerState& out) {
-  const String tmpl = detail::stateTemplate(entity_id);
+  // Rendered once and not followed, so looking the native entity up by name
+  // costs nothing that lasts.
+  const String tmpl =
+      detail::stateTemplate(entity_id, detail::kTwinUnknown);
   if (tmpl.length() == 0) {
     return false;
   }
@@ -1131,7 +1182,17 @@ bool fetchState(const char* entity_id, PlayerState& out) {
 
 namespace detail {
 
-String stateTemplate(const char* entity_id) {
+String twinTemplate(const char* entity_id) {
+  if (!validEntityId(entity_id)) {
+    setError("bad entity id");
+    return String();
+  }
+  char tmpl[sizeof(kTwinTemplateFmt) + config::kEntityIdMaxLen];
+  snprintf(tmpl, sizeof(tmpl), kTwinTemplateFmt, entity_id);
+  return String(tmpl);
+}
+
+String stateTemplate(const char* entity_id, const char* twin) {
   if (!validEntityId(entity_id)) {
     setError("bad entity id");
     return String();
@@ -1160,9 +1221,16 @@ String stateTemplate(const char* entity_id) {
   }
   input[n] = '\0';
 
-  char tmpl[sizeof(kStateTemplateFmt) + 2 * config::kEntityIdMaxLen +
+  // Anything but an entity id or the marker is dropped: it goes into a
+  // quoted literal unescaped.
+  if (strcmp(twin, kTwinUnknown) != 0 && !validEntityId(twin)) {
+    twin = "";
+  }
+
+  char tmpl[sizeof(kStateTemplateFmt) + 3 * config::kEntityIdMaxLen +
             sizeof(input)];
-  snprintf(tmpl, sizeof(tmpl), kStateTemplateFmt, entity_id, control, input);
+  snprintf(tmpl, sizeof(tmpl), kStateTemplateFmt, entity_id, control, input,
+           twin);
   return String(tmpl);
 }
 

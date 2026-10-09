@@ -399,6 +399,81 @@ bool refuse(const char* why) {
   return false;
 }
 
+/** The native entity behind the player (detail::twinTemplate()), into `out`:
+ *  rendered once during the handshake, before the state is subscribed to, so
+ *  the state template need not read every media_player to find it each time
+ *  anything in the house changes. render_template has no one-off form, so
+ *  this subscribes and drops the subscription at its first answer. Without
+ *  an answer it is kTwinUnknown, and the state template looks for itself. */
+void lookUpTwin(const char* entity_id, char* out, size_t out_len) {
+  snprintf(out, out_len, "%s", detail::kTwinUnknown);
+  const String tmpl = detail::twinTemplate(entity_id);
+  if (tmpl.length() == 0) {
+    return;
+  }
+  String request("\"type\":\"render_template\",\"template\":");
+  detail::appendJson(request, tmpl.c_str());
+  const int id = sendRequest(request.c_str());
+  if (id == 0) {
+    return;
+  }
+
+  const unsigned long started = millis();
+  bool answered = false;
+  String text;
+  while (!answered) {
+    const unsigned long spent = millis() - started;
+    if (spent >= config::kHaHttpTimeoutMs ||
+        !receive(text, config::kHaHttpTimeoutMs - spent)) {
+      break;
+    }
+    int msg_id = 0;
+    char type[24] = {};
+    bool success = true;
+    const char* event = nullptr;
+    eachMember(text.c_str(), [&](const char* key, const char* value) {
+      if (strcmp(key, "id") == 0) {
+        msg_id = atoi(value);
+      } else if (strcmp(key, "type") == 0 && *value == '"') {
+        detail::readJson(value, type, sizeof(type));
+      } else if (strcmp(key, "success") == 0) {
+        success = *value == 't';
+      } else if (strcmp(key, "event") == 0) {
+        event = value;
+      }
+    });
+    if (msg_id != id) {
+      continue;
+    }
+    if (strcmp(type, "result") == 0 && !success) {
+      break;  // refused; the subscription never was
+    }
+    if (strcmp(type, "event") == 0) {
+      eachMember(event, [&](const char* key, const char* value) {
+        if (strcmp(key, "result") == 0 && *value == '"' &&
+            detail::readJson(value, out, out_len) != nullptr) {
+          answered = true;
+        }
+      });
+      if (!answered) {
+        break;  // an error rendering it
+      }
+    }
+  }
+
+  // Dropped either way. Anything it sends meanwhile carries an id nothing is
+  // waiting for, and is ignored.
+  String unsubscribe("\"type\":\"unsubscribe_events\",\"subscription\":");
+  unsubscribe += id;
+  sendRequest(unsubscribe.c_str());
+  if (!answered) {
+    snprintf(out, out_len, "%s", detail::kTwinUnknown);
+    LOG_WARN("HA: no answer looking up the entity behind %s", entity_id);
+  } else if (out[0] != '\0') {
+    LOG_INFO("HA: %s is Music Assistant's, over %s", entity_id, out);
+  }
+}
+
 }  // namespace
 
 bool streamOpen(const char* entity_id) {
@@ -408,8 +483,8 @@ bool streamOpen(const char* entity_id) {
   if (!configured() || WiFi.status() != WL_CONNECTED) {
     return false;
   }
-  const String tmpl = detail::stateTemplate(entity_id);
-  if (tmpl.length() == 0) {
+  // A bad id fails here, before any connection is made for it.
+  if (detail::twinTemplate(entity_id).length() == 0) {
     return false;
   }
 
@@ -469,6 +544,13 @@ bool streamOpen(const char* entity_id) {
   typeOf(text, type, sizeof(type));
   if (strcmp(type, "auth_ok") != 0) {
     return refuse("token rejected");
+  }
+
+  char twin[config::kEntityIdMaxLen];
+  lookUpTwin(entity_id, twin, sizeof(twin));
+  const String tmpl = detail::stateTemplate(entity_id, twin);
+  if (tmpl.length() == 0) {
+    return refuse("no state template");
   }
 
   String subscribe("\"type\":\"render_template\",\"template\":");
