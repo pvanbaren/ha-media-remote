@@ -188,15 +188,13 @@ constexpr bool kTouchSampleTask = true;
 /** Thumbnail edge in px at kUiBaseSize: 38 becomes 76 here, about 11.5 KB a
  *  sprite. */
 constexpr int kThumbPx = 38;
-/** 256 px art, scaled up to the panel, as the Qualia does. The cover is a
- *  backdrop behind a scrim and text, and decoding it is the slow part of a
- *  new track's repaint: 512 px -- the next step up from the panel on the
- *  image proxy's ladder -- measured 210 to 570 ms to decode here, and a
- *  quarter of the pixels is roughly a quarter of that. Raise it back to
- *  kDisplayWidth if the softness shows. */
-constexpr int kCoverArtRequestPx = 256;
-/** Cached compressed: a 256 px JPEG is tens of KB, and the room above that
- *  is what lets kCoverArtRequestPx go back up without touching this. */
+/** Panel-size art, which the image proxy's ladder rounds up to 512 px. A
+ *  256 px cover scaled up to the panel looked soft; 512 px costs about
+ *  0.16 s more per track change (on one album, 203 ms to download and
+ *  240 ms to frame against 117 and 84 ms at 256). Drop it to 256 if that
+ *  delay shows more than the softness did. */
+constexpr int kCoverArtRequestPx = kDisplayWidth;
+/** Cached compressed: a 512 px JPEG is under 100 KB, well inside this. */
 constexpr size_t kCoverArtBufferBytes = 256u * 1024u;
 
 /** Shortest gap between full repaints of a scrolling list. A full repaint is

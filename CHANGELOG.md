@@ -18,6 +18,10 @@ GitHub release from that version's section, with
 - **Back button on the search:** at the top left, beside the query, as on the other pages. It does what a swipe right does: from the results back to the keyboard, and from the keyboard back to the list or now playing. The results start a little lower to leave it room.
 - **Search from now playing:** a swipe left on the lower half of now playing opens the artist search directly, without going through the list. A swipe right on its keyboard goes back to now playing. A sideways swipe on the top half still sets the volume.
 
+### Changed
+
+- **Sharper covers on the 2.8C:** it asks for 512 px covers instead of 256 px, so the backdrop is no longer scaled up. A new track's cover takes about 0.16 s longer to appear.
+
 ## [1.2.0] - 2026-10-06
 
 This release adds a fifth board, the Waveshare ESP32-S3-Touch-LCD-2.8C, and two controls on now playing: a tap to switch the amplifier on or off, and Isolate, which turns off the other rooms sharing this one's input. It also makes now playing much faster to repaint on every board.
