@@ -1383,6 +1383,14 @@ void prepareSta() {
 
 void startStaConnect(const String& ssid, const String& pass) {
   prepareSta();
+  // After a drop the core's own auto-reconnect is already connecting, and the
+  // driver then refuses a new config ("sta is connecting, cannot set config"),
+  // which cost the whole first attempt -- and left the station in a state the
+  // next one failed from as well. Stopped first, the attempt goes through.
+  // Called on the driver rather than WiFi.disconnect(), which logs an error
+  // where there is nothing to stop, as on a first connect. The core does not
+  // reconnect after a disconnect asked for (WIFI_REASON_ASSOC_LEAVE).
+  esp_wifi_disconnect();
   if (ssid.length() > 0) {
     WiFi.begin(ssid.c_str(), pass.c_str());
   } else {
