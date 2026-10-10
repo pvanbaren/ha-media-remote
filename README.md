@@ -185,23 +185,25 @@ that cannot switch inputs has no list.
 **Swipe down** on now playing for the remote's own details:
 
 ```
-living-room
+<  living-room   ⚙
 Living Room Speaker
 Living Room Receiver
 192.168.1.40
 Up 2h 13m
 HomeNet (ch 6)
-Rx/Tx -61 / 11.0 dBm
-        ⚙
+Rx -61 dBm
+Tx 11.0 dBm
 ```
 
 Under the remote's name are the player and, when Volume & power is a separate
 device, that device, both by their names in Home Assistant. When the player's
-input on that device is chosen, the input takes the player's line. Then come the address, the time since the remote started, the Wi-Fi
-network and its channel, and on one line the signal the remote hears (**Rx**)
-and the power it transmits with (**Tx**).
+input on that device is chosen, the input takes the player's line. Then come
+the address, the time since the remote started, the Wi-Fi network and its
+channel, the signal the remote hears (**Rx**) and the power it transmits with
+(**Tx**).
 
-The page refreshes every second. The **gear** at its foot opens
+The page refreshes every second. The **gear** at the top right, across the
+title row from the back button, opens
 [the settings](#settings-on-the-device), and a **swipe left** goes on to
 [the Wi-Fi networks](#choosing-wi-fi-on-the-device); any other tap or swipe
 goes back to now playing, and it goes back by itself after a minute untouched

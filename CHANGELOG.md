@@ -21,6 +21,7 @@ GitHub release from that version's section, with
 ### Changed
 
 - **A device playing outside Music Assistant is controlled directly:** where the player is a Music Assistant entity that is idle while the native entity of the same name plays or pauses something of its own, such as a TV in Disney Plus, now playing shows the native entity's title, art and state, and play, pause, next and previous go to it.
+- **Status page:** the gear is at the top right, across the title row from the back button, and the received signal and transmit power have a line each again.
 - **Sharper covers on the 2.8C:** it asks for 512 px covers instead of 256 px, so the backdrop is no longer scaled up. A new track's cover takes about 0.16 s longer to appear.
 
 ## [1.2.0] - 2026-10-06

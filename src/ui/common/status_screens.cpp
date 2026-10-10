@@ -156,13 +156,23 @@ void statusScreenMessage(const char* title, const char* line1,
 
 namespace {
 
-/** The gear under the status page's lines, which opens the settings: at the
- *  foot of the panel, where a round one still has the width for it and a
- *  thumb reaches it without covering the lines. */
-constexpr int kGearY = ui::theme::kSize - ui::theme::px(26);
+/** The gear that opens the settings: top right, at the right end of the
+ *  title row, mirroring the back button at its left end, which leaves the
+ *  foot of the panel to the lines. */
+constexpr int kGearY = ui::theme::kSearchQueryY;
 constexpr int kGearRadius = ui::theme::px(12);
-/** Generous, as a tap target on glass should be. */
-constexpr int kGearHitRadius = ui::theme::px(26);
+/** Generous, as a tap target on glass should be, but short of the line
+ *  below the title, as the back button's is. */
+constexpr int kGearHitRadius = ui::theme::px(22);
+/** Between the bezel, or the panel's edge, and the gear; and between the
+ *  gear and a line beside it. As the back button's. */
+constexpr int kGearEdgeGap = ui::theme::px(6);
+constexpr int kGearTextGap = ui::theme::px(4);
+
+int gearCenterX() {
+  return ui::theme::kCenterX + ui::theme::chordHalfWidth(kGearY) -
+         kGearEdgeGap - kGearRadius;
+}
 
 void drawGear(lgfx::LovyanGFX& gfx, int cx, int cy, int r, uint16_t color,
               uint16_t background) {
@@ -210,15 +220,15 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
   } else {
     snprintf(up, sizeof(up), "%lum %lus", s / 60UL, s % 60UL);
   }
-  // The channel rides on the network's line, and what the device hears and
-  // sends share one, rather than each taking a line of its own: with a
-  // separate volume device there are six lines under the name, and the
-  // 240 px circle has room for about that many above the gear.
+  // The channel rides on the network's line. What the device hears and what
+  // it sends each have a line, now that the gear is up on the title row and
+  // the foot of the panel is theirs.
   char wifi[48];
-  char signal[24];
+  char rx[16];
+  char tx[16];
   snprintf(wifi, sizeof(wifi), "%s (ch %d)", status.ssid, status.channel);
-  snprintf(signal, sizeof(signal), "%d / %.1f dBm", status.rssi,
-           status.tx_dbm);
+  snprintf(rx, sizeof(rx), "%d dBm", status.rssi);
+  snprintf(tx, sizeof(tx), "%.1f dBm", status.tx_dbm);
 
   struct Pair {
     const char* label;
@@ -243,7 +253,8 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
     pairs[n++] = {"", status.ip};
     pairs[n++] = {"Up", up};
     pairs[n++] = {"", wifi};
-    pairs[n++] = {"Rx/Tx", signal};
+    pairs[n++] = {"Rx", rx};
+    pairs[n++] = {"Tx", tx};
   } else {
     pairs[n++] = {"Up", up};
     pairs[n++] = {"", "No Wi-Fi"};
@@ -251,22 +262,30 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
 
   // The name and the lines under it, stacked around the centre, as the
   // cards are: the block sits in the same optical place however many lines
-  // it has -- unless that would reach the gear, when it rises clear of it.
+  // it has -- unless that would run off the foot of the panel, when it rises.
   const int title_h = ui::theme::textPx(30);
   const int line_h = ui::theme::textPx(22);
   const int total = title_h + ui::theme::kStatusLineGap + n * line_h;
-  const int lowest = kGearY - kGearRadius - ui::theme::kStatusLineGap;
+  const int lowest = ui::theme::kSize - ui::theme::kStatusLineGap;
   int top = ui::theme::kCenterY - total / 2;
   if (top + total > lowest) {
     top = lowest - total;
   }
   int y = top + title_h / 2;
-  // The name is the line that can come up beside the back button, and is
-  // then centred in what the button leaves of its row.
+  // The name is the line that can come up between the back button and the
+  // gear, and is then centred in what they leave of its row.
   {
     int name_x = 0;
     int name_w = 0;
     ui::back_button::lineSpan(y, title_h, name_x, name_w);
+    if (abs(y - kGearY) < title_h / 2 + kGearRadius) {
+      const int left = name_x - name_w / 2;
+      int right = name_x + name_w / 2;
+      const int clear = gearCenterX() - kGearRadius - kGearTextGap;
+      right = clear < right ? clear : right;
+      name_x = (left + right) / 2;
+      name_w = right > left ? right - left : 0;
+    }
     displayFontApplyHeight(gfx, ui::theme::kStatusTitleTextPx);
     gfx.setTextDatum(textdatum_t::middle_center);
     gfx.setTextColor(ui::theme::kTextPrimary);
@@ -281,14 +300,14 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
     y += line_h;
   }
 
-  drawGear(gfx, ui::theme::kCenterX, kGearY, kGearRadius,
+  drawGear(gfx, gearCenterX(), kGearY, kGearRadius,
            ui::theme::kTextSecondary, ui::theme::kBackground);
   ui::back_button::draw(gfx);
   ui::canvasPresent();
 }
 
 bool statusScreenGearHit(int x, int y) {
-  const int dx = x - ui::theme::kCenterX;
+  const int dx = x - gearCenterX();
   const int dy = y - kGearY;
   return dx * dx + dy * dy <= kGearHitRadius * kGearHitRadius;
 }
