@@ -217,6 +217,8 @@ void showNeedsHaSetup();
 void showHaSignIn(const char* qr_text, const char* url, const char* name);
 void showNoPlayer();
 void showHaUnreachable(const char* detail);
+/** Home Assistant refused the token: a tap links the remote again. */
+void showHaTokenRejected();
 void showPortal();
 void showConnecting(const char* ssid);
 void tickConnecting();

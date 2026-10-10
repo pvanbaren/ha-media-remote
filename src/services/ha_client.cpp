@@ -296,6 +296,10 @@ char s_last_error[128] = {};
  *  server, the token, the player, the volume/power entity -- changes, so the
  *  stream can notice it is subscribed to the wrong thing and start again. */
 std::atomic<uint32_t> s_generation{0};
+/** Home Assistant refused the token -- 401 or 403 over REST, auth_invalid on
+ *  the stream -- and has not accepted a request since. Set and cleared on the
+ *  poll task, read on the loop. */
+std::atomic<bool> s_token_rejected{false};
 
 void setError(const char* fmt, ...) {
   va_list args;
@@ -896,6 +900,7 @@ bool httpPost(const char* path, const String& body, String& response,
 
     if (code == 401 || code == 403) {
       setError("token rejected (%d)", code);
+      s_token_rejected = true;
     } else if (detail.length() > 0) {
       setError("HTTP %d: %s", code, detail.c_str());
     } else {
@@ -909,6 +914,7 @@ bool httpPost(const char* path, const String& body, String& response,
                  millis() - started_ms);
   http.end();
   s_last_error[0] = '\0';
+  s_token_rejected = false;
   return true;
 }
 
@@ -1047,6 +1053,19 @@ const char* token() { return s_token; }
 const char* storedBaseUrl() { return s_base_url; }
 bool hasStoredToken() { return s_token[0] != '\0'; }
 
+bool tokenRejected() { return s_token_rejected; }
+
+void forgetToken() {
+  s_token[0] = '\0';
+  s_token_rejected = false;
+  ++s_generation;
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, false)) {
+    prefs.remove(kPrefsTokenKey);
+    prefs.end();
+  }
+}
+
 void saveCredentials(const char* base_url, const char* token_in) {
   Preferences prefs;
   if (!prefs.begin(kPrefsNamespace, false)) {
@@ -1073,6 +1092,9 @@ void saveCredentials(const char* base_url, const char* token_in) {
     }
     prefs.putString(kPrefsUrlKey, s_base_url);
     ++s_generation;
+    // Another server, or the same one by another address, may well take the
+    // token: tried at once, as a new token is.
+    s_token_rejected = false;
   }
 
   // The portal shows a stored token as a placeholder rather than echoing it,
@@ -1082,6 +1104,9 @@ void saveCredentials(const char* base_url, const char* token_in) {
     snprintf(s_token, sizeof(s_token), "%s", token);
     prefs.putString(kPrefsTokenKey, s_token);
     ++s_generation;
+    // A new token has not been refused yet: the poll task, holding off a
+    // refused one, tries this one at once.
+    s_token_rejected = false;
   }
   prefs.end();
 }
@@ -1744,6 +1769,8 @@ const char* readJson(const char* p, char* out, size_t out_len) {
 const char* skipJson(const char* p) { return skipJsonValue(p); }
 
 void reportError(const char* message) { setError("%s", message); }
+
+void noteTokenRejected(bool rejected) { s_token_rejected = rejected; }
 
 uint32_t settingsGeneration() { return s_generation; }
 

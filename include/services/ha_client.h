@@ -148,6 +148,12 @@ const char* token();
 const char* storedBaseUrl();
 bool hasStoredToken();
 void clearCredentials();
+/** True since Home Assistant last refused the token -- 401 or 403 over REST,
+ *  or auth_invalid on the stream -- until a request is accepted again. */
+bool tokenRejected();
+/** Drop the stored token and keep the URL: the remote is then unlinked, and
+ *  the sign-in QR code can go up to link it again. */
+void forgetToken();
 
 /** entity_id of the player being controlled; empty until one is chosen. */
 const char* selectedEntity();

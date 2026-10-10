@@ -105,6 +105,8 @@ bool eachElement(const char* p, F&& f) {
 
 /** Record `message` as lastError() and log it. */
 void reportError(const char* message);
+/** What the stream's handshake made of the token, for tokenRejected(). */
+void noteTokenRejected(bool rejected);
 /** Log the internal heap alongside `what`: the numbers a failed TLS handshake
  *  needs next to it. */
 void logHeap(const char* what);

@@ -118,6 +118,7 @@ void showHaSignIn(const char*, const char* url, const char* name) {
 }
 void showNoPlayer() { say("no player selected"); }
 void showHaUnreachable(const char* detail) { say("HA unreachable: %s", detail); }
+void showHaTokenRejected() { say("HA token rejected, tap to link again"); }
 void showPortal() { say("setup portal"); }
 void showConnecting(const char* ssid) { say("connecting to %s", ssid); }
 void tickConnecting() {}

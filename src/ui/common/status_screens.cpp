@@ -391,6 +391,14 @@ void statusScreenHaUnreachable(const char* detail) {
   resetSpinner();
 }
 
+void statusScreenHaTokenRejected() {
+  // Not "not reachable": Home Assistant answered, and the fix is not in the
+  // network but a sign-in, which the card offers.
+  statusScreenMessage("Home Assistant", "Token rejected", "Tap to link again",
+                      config::kColorBlack, ui::theme::kWarning);
+  resetSpinner();
+}
+
 void statusScreenNoPlayer() {
   // The player is chosen in the portal, not here -- the card is not a
   // control -- so it says where, as the Link to HA card does.

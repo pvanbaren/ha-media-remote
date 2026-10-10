@@ -881,6 +881,7 @@ void showNoPlayer() {
 }
 
 void showHaUnreachable(const char* detail) { statusScreenHaUnreachable(detail); }
+void showHaTokenRejected() { statusScreenHaTokenRejected(); }
 
 void showPortal() { statusScreenPortal(); }
 

@@ -543,8 +543,16 @@ bool streamOpen(const char* entity_id) {
   }
   typeOf(text, type, sizeof(type));
   if (strcmp(type, "auth_ok") != 0) {
-    return refuse("token rejected");
+    // auth_invalid is Home Assistant saying no to the token, which the
+    // card then offers to link again. Anything else is only a failed open,
+    // and says nothing either way: a refusal a poll has just seen stands.
+    if (strcmp(type, "auth_invalid") == 0) {
+      detail::noteTokenRejected(true);
+      return refuse("token rejected");
+    }
+    return refuse("no auth_ok");
   }
+  detail::noteTokenRejected(false);
 
   char twin[config::kEntityIdMaxLen];
   lookUpTwin(entity_id, twin, sizeof(twin));

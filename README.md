@@ -277,12 +277,14 @@ When there is nothing to play yet, a card says why:
 | **Link to HA** | Wi-Fi works and Home Assistant has not been found; set its URL and token in the portal |
 | **Scan to link** -- a QR code | Home Assistant found; scan the code and sign in to link the remote |
 | **Home Assistant** -- not reachable | Requests are failing; the last line is the reason |
+| **Home Assistant** -- Token rejected, Tap to link again | Home Assistant answers but refuses the token -- deleted under your profile, say. A tap forgets it, keeps the URL, and puts the **Scan to link** code up |
 | **Choose a player** -- a list | Linked, but no media player chosen; tap one, or choose it in the portal |
 | **Reset** | Settings are being cleared (BOOT held) |
 
-**Setup** and **No Wi-Fi** take a tap, for the network list, and **Choose a
-player** is the list itself. The rest are waited out, or fixed in the portal;
-the device notices the fix by itself within a couple of seconds.
+**Setup** and **No Wi-Fi** take a tap, for the network list, **Token
+rejected** one to link again, and **Choose a player** is the list itself. The
+rest are waited out, or fixed in the portal; the device notices the fix by
+itself within a couple of seconds.
 
 ### Blanking, and the amplifier
 
@@ -404,7 +406,13 @@ inside it, and no other: never one pasted into the portal, and never another
 remote's of the same name.
 
 The token is listed in Home Assistant under your profile → **Security** →
-**Long-lived access tokens**; deleting it there unlinks the remote.
+**Long-lived access tokens**; deleting it there unlinks the remote. The remote
+then shows **Token rejected -- Tap to link again**, and a tap brings the QR
+code back. While the token is refused the remote stops asking Home Assistant
+for anything, trying the token again only every ten minutes
+(`kHaTokenRetryMs`): every try is a failed sign-in in Home Assistant's log,
+and enough of them could get its address banned where IP banning is on. A
+new token, linked again or saved in the portal, is tried at once.
 
 The remote is the OAuth client, at its own address (`http://<its IP>/`,
 which Home Assistant accepts for a client on the local network), and the
@@ -1413,7 +1421,7 @@ HA: stream closed soon after opening, polling; next try in 5 s
 | Symptom | Look at |
 |---|---|
 | `HTTP 400` | The response body names the template or JSON problem |
-| `token rejected` | Re-paste the token -- Home Assistant's, or Music Assistant's for `MA:` lines |
+| `token rejected` | Tap the card to link again, or re-paste the token -- Home Assistant's, or Music Assistant's for `MA:` lines |
 | `HTTP 404` | A trailing path on the base URL, or an entity that no longer exists |
 | `connection refused` / timeouts | The URL's host and port, or https against a plain-http server |
 | `transport failure (heap free …, largest …)` | A TLS handshake that could not allocate; something new is using internal RAM |

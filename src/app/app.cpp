@@ -314,7 +314,11 @@ void showNowPlaying() {
     // the console, so say which.
     LOG_WARN("UI: now playing skipped, no state snapshot (%s)",
                   services::ha::lastError());
-    ui::showHaUnreachable(services::ha::lastError());
+    if (services::ha::tokenRejected()) {
+      ui::showHaTokenRejected();  // a tap links again: handleWifiIntent()
+    } else {
+      ui::showHaUnreachable(services::ha::lastError());
+    }
     showMessageScreen();
     return;
   }
@@ -703,6 +707,14 @@ void showNeedsPlayer() {
 [[gnu::noinline]] void openPlayers() {
   ui::showLoading("players");
   const bool fetched = services::players::refresh();
+  // Refused rather than unreachable, and nothing listed from before: no list
+  // will come until the remote is linked again, which the card offers.
+  if (!fetched && services::ha::tokenRejected() &&
+      services::players::entryCount() == 0) {
+    ui::showHaTokenRejected();
+    showMessageScreen();
+    return;
+  }
   g_screen = Screen::kPlayers;
   ui::showPlayers(fetched || services::players::entryCount() > 0
                       ? ""
@@ -1081,6 +1093,13 @@ const char* serviceFor(Intent intent) {
     return;
   }
   if (services::ha::selectedEntity()[0] == '\0') {
+    return;
+  }
+  // Not while the token is refused: every forced poll is another failed
+  // sign-in in Home Assistant's log, and enough of them can get the remote's
+  // address banned. The poll task still tries on its own, slower, schedule,
+  // and a token put in through the portal is picked up by it.
+  if (services::ha::tokenRejected()) {
     return;
   }
   g_poll_now = true;
@@ -1698,17 +1717,35 @@ struct ControlNow {
   }
 }
 
+/** The token-rejected card tapped: forget the token, keep the URL, and put
+ *  the sign-in QR code up, as for a remote never linked. handleHaLink() then
+ *  finishes the link when a phone comes back with a code. */
+[[gnu::noinline]] void relinkHa() {
+  LOG_INFO("HA: token rejected, linking again");
+  services::ha::forgetToken();
+  services::ha_link::reset();
+  g_ha_discover_tried = true;
+  g_ha_discover_ms = millis();
+  services::ha_link::discover();  // the stored URL: at once, no query
+  showNeedsHa();
+  showMessageScreen();
+}
+
 /** What the Wi-Fi screens and the cards that lead to them ask for. The same
  *  from the setup portal's loop and from the running remote; only the join
  *  differs, since in the portal it is the portal's loop that makes it. */
 [[gnu::noinline]] void handleWifiIntent(const ui::Input& in) {
   switch (in.intent) {
     case Intent::kTapCard:
-      // The Setup card, or No Wi-Fi: a tap opens the network list. Any other
-      // card is about Home Assistant, and a tap there does nothing.
+      // The Setup card, or No Wi-Fi: a tap opens the network list. The token
+      // rejected card links again. Any other card is about Home Assistant,
+      // and a tap there does nothing.
       if (wifiPortalActive() || WiFi.status() != WL_CONNECTED) {
         g_wifi_from_settings = false;  // from a card
         openWifi(nullptr);
+      } else if (services::ha::configured() &&
+                 services::ha::tokenRejected()) {
+        relinkHa();
       } else if (services::ha::configured() &&
                  services::ha::selectedEntity()[0] == '\0') {
         openPlayers();  // a card left up while there is no player
@@ -1950,6 +1987,8 @@ void haPollTask(void*) {
   unsigned long stream_retry_at = 0;
   unsigned long stream_backoff = config::kHaStreamRetryMinMs;
   unsigned long stream_opened_ms = 0;
+  /** When a refused token was last tried, or 0 while it is not refused. */
+  unsigned long rejected_try_ms = 0;
   auto stream_failed = [&](const char* how) {
     LOG_WARN("HA: stream %s, polling; next try in %lu s", how,
                   stream_backoff / 1000);
@@ -1982,8 +2021,25 @@ void haPollTask(void*) {
     char entity[config::kEntityIdMaxLen] = {};
     services::ha::copySelectedEntity(entity, sizeof(entity));
 
-    if (WiFi.status() == WL_CONNECTED && services::ha::configured() &&
-        entity[0] != '\0') {
+    // A refused token is not offered again on every pass: each try is a
+    // failed sign-in in Home Assistant's log, and enough of them get the
+    // remote's address banned where IP banning is on. It is tried once every
+    // kHaTokenRetryMs, in case the refusal was the server's mistake; a new
+    // token -- linked again, or saved in the portal -- clears the refusal.
+    bool hold = false;
+    if (services::ha::tokenRejected()) {
+      if (rejected_try_ms != 0 &&
+          millis() - rejected_try_ms < config::kHaTokenRetryMs) {
+        hold = true;
+      } else {
+        rejected_try_ms = millis();
+      }
+    } else {
+      rejected_try_ms = 0;
+    }
+
+    if (!hold && WiFi.status() == WL_CONNECTED &&
+        services::ha::configured() && entity[0] != '\0') {
       if (g_turn_off_control) {
         g_turn_off_control = false;
         powerOffControl();

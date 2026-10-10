@@ -311,6 +311,11 @@ constexpr unsigned long kHaPollPlayingMs = 2000;
 constexpr unsigned long kHaPollIdleMs = 8000;
 /** Re-poll this soon after a transport press so the UI catches up. */
 constexpr unsigned long kHaPollAfterCommandMs = 400;
+/** How often a token Home Assistant refused is tried again, in case the
+ *  refusal was the server's mistake. Every try is a failed sign-in in its
+ *  log, and enough of them get the remote's address banned where IP banning
+ *  is on; a new token is tried at once. */
+constexpr unsigned long kHaTokenRetryMs = 600000;
 
 /** Take state from Home Assistant's WebSocket API rather than polling for it
  *  (see services::ha::streamOpen). Polling above is what runs while the
