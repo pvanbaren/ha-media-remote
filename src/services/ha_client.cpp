@@ -123,8 +123,8 @@ constexpr char kStateTemplateFmt[] =
     "{%% set cands = active or awake or named %%}"
     "{%% set mass = cands|selectattr('attributes.mass_player_type','defined')"
     "|list %%}"
-    "{%% set sp = ((mass or cands)|map(attribute='entity_id')|list|first) "
-    "or '' %%}"
+    "{%% set ids = (mass or cands)|map(attribute='entity_id')|list %%}"
+    "{%% set sp = ids[0] if ids else '' %%}"
     "{%% endif %%}"
     "{%% set m = sp if sp else (c if other and "
     "states(c) in ['playing','paused'] and state_attr(c,'entity_picture') "
@@ -167,7 +167,9 @@ constexpr char kStateTemplateFmt[] =
     "{%% if not ma_cast %%}"
     "{%% set twins = twins|select('is_state',['playing','paused'])|list %%}"
     "{%% endif %%}"
-    "{%% set t = (twins|first) or m %%}"
+    // Indexed, not |first: on an empty list that renders an undefined, which
+    // report_errors sends back as a template error on every rendering.
+    "{%% set t = twins[0] if twins else m %%}"
     "{%% endif %%}"
     // What is shown: `m`, or `t` where `m` is idle and `t` is not, so the
     // track and the art are those of what the buttons control. A cast Music
@@ -227,10 +229,10 @@ constexpr char kTwinTemplateFmt[] =
     "{%% set e = '%s' %%}"
     "{%% set ma = integration_entities('music_assistant') %%}"
     "{%% if e in ma %%}"
-    "{{(states.media_player"
+    "{%% set ids = states.media_player"
     "|selectattr('name','eq',state_attr(e,'friendly_name'))"
-    "|rejectattr('entity_id','in',ma)|map(attribute='entity_id')|list"
-    "|first) or ''}}"
+    "|rejectattr('entity_id','in',ma)|map(attribute='entity_id')|list %%}"
+    "{{ids[0] if ids else ''}}"
     "{%% endif %%}";
 
 // Every input on one entity, for the portal's dropdown.
