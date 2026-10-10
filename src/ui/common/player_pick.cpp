@@ -58,7 +58,10 @@ int rowHalfWidth(int top) {
   return half > 0 ? half : 0;
 }
 
-void drawRow(lgfx::LovyanGFX& gfx, int row, int top) {
+/** A pressed row is lit in the accent with dark text, as a settings row is,
+ *  so a tap is seen to land before the choice is stored and the next screen
+ *  loads. */
+void drawRow(lgfx::LovyanGFX& gfx, int row, int top, bool pressed = false) {
   const int half = rowHalfWidth(top);
   if (half <= 0) {
     return;
@@ -67,23 +70,43 @@ void drawRow(lgfx::LovyanGFX& gfx, int row, int top) {
   const int w = half * 2;
   const int cy = top + theme::kListRowHeight / 2;
   gfx.fillRoundRect(x, top, w, theme::kListRowHeight, theme::kListRowRadius,
-                    theme::kSurface);
+                    pressed ? theme::kAccent : theme::kSurface);
 
   displayFontApplyHeight(gfx, theme::kListRowTextPx);
   gfx.setTextDatum(textdatum_t::middle_center);
   const services::ha::PlayerEntry* entry = services::players::entryAt(row);
   if (entry == nullptr) {
-    gfx.setTextColor(theme::kAccent);
+    gfx.setTextColor(pressed ? theme::kBackground : theme::kAccent);
     gfx.drawString("Refresh", theme::kCenterX, cy);
     return;
   }
   // Unavailable players are still offered -- one that is off now may well
   // be on later -- but greyed, so the live ones stand out.
-  gfx.setTextColor(entry->available ? theme::kTextPrimary : theme::kTextMuted);
+  gfx.setTextColor(pressed           ? theme::kBackground
+                   : entry->available ? theme::kTextPrimary
+                                      : theme::kTextMuted);
   char label[text::kMaxLineLen];
   text::ellipsize(gfx, entry->name[0] != '\0' ? entry->name : entry->entity_id,
                   w - 2 * theme::kListTextInset, label, sizeof(label));
   gfx.drawString(label, theme::kCenterX, cy);
+}
+
+/** Light `row` on the glass at once, over the frame as last composed: its
+ *  own rectangle, less any of it scrolled up under the title. */
+void showPressed(int row) {
+  const int top = rowTop(row);
+  const int y0 = top > kListTop ? top : kListTop;
+  const int bottom = top + theme::kListRowHeight;
+  const int y1 = bottom < theme::kSize ? bottom : theme::kSize;
+  const int half = rowHalfWidth(top);
+  if (y1 <= y0 || half <= 0) {
+    return;
+  }
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  gfx.setClipRect(0, y0, theme::kSize, y1 - y0);
+  drawRow(gfx, row, top, true);
+  gfx.clearClipRect();
+  ui::canvasPresentRegion(theme::kCenterX - half, y0, half * 2, y1 - y0);
 }
 
 }  // namespace
@@ -149,6 +172,10 @@ Result handleTap(int x, int y) {
     if (x < theme::kCenterX - half || x > theme::kCenterX + half) {
       return Result::kNone;
     }
+    // Lit before anything else happens: storing the choice and loading what
+    // follows, or fetching the list again, takes a moment, and the screen
+    // that comes next replaces the lit row.
+    showPressed(row);
     const services::ha::PlayerEntry* entry = services::players::entryAt(row);
     if (entry == nullptr) {
       return Result::kRefresh;
