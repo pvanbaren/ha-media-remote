@@ -10,7 +10,7 @@ on the server; Music Assistant adds the list and the search.
 
 ![The now-playing screen on the Qualia's 720×720 square panel and the DFRobot's 360×360 round one](assets/media-remote-players.jpg)
 
-Four panels are supported:
+Five panels are supported:
 
 | Board | Panel | Flash / PSRAM | Env |
 |---|---|---|---|
@@ -18,8 +18,9 @@ Four panels are supported:
 | DFRobot DFR1221 | 1.85" round, 360×360 ST77916 (quad SPI), CST816S touch | 16 MB / 8 MB | `round360-s3` |
 | Adafruit Qualia ESP32-S3 (5800) | 4" square (5794), 720×720 TL040HDS20 (RGB-666 parallel), FT6336 touch | 16 MB / 8 MB | `qualia-720` |
 | Waveshare ESP32-S3-Touch-LCD-2.8C | 2.8" round, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `lcd28c-s3` |
+| Makerfabs MaTouch ESP32-S3 Rotary 2.1" | 2.1" round, 480×480 ST7701 (RGB parallel), CST826 touch, rotary encoder (not used yet) | 16 MB / 8 MB | `matouch21-s3` |
 
-A fifth target, `headless`, runs the whole remote with no display and
+A sixth target, `headless`, runs the whole remote with no display and
 narrates to the serial console.
 
 What you need:
@@ -631,6 +632,7 @@ pio run -e waveshare-s3      # 1.28" round (the default env)
 pio run -e round360-s3       # 1.85" round 360x360
 pio run -e qualia-720        # 4" square 720x720
 pio run -e lcd28c-s3         # 2.8" round 480x480
+pio run -e matouch21-s3      # 2.1" round 480x480
 pio run -e headless          # no panel
 ```
 
@@ -638,7 +640,7 @@ Each board's build embeds only the fonts it uses and compiles only its own
 `src/hardware/<board>/` and `src/ui/<shape>/` (see
 [the code](#how-the-code-is-organised)).
 
-GitHub Actions builds all five on every push and pull request
+GitHub Actions builds every board on every push and pull request
 (`.github/workflows/build.yml`). Each run's page under **Actions** has the
 images to download: `firmware.bin` for a network update and
 `firmware-merged.bin` for a blank board.
@@ -691,6 +693,7 @@ device keeps its settings across a USB flash.
 - **DFR1221**: the S3's own USB port.
 - **2.8C**: the S3's own USB port too, whatever Waveshare's wiki says about a
   CH343.
+- **MaTouch 2.1"**: the S3's own USB port, which also carries the console.
 - **Qualia**: the firmware's USB port reboots into the bootloader on a
   different COM port partway through. If PlatformIO reports the old port gone,
   run the upload again, or name the bootloader's port with `--upload-port`.
@@ -744,6 +747,7 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 | DFR1221 | 23, 26, 30, 36 |
 | Qualia | 34, 38, 45, 54, and 23, 26, 30 for the lists |
 | 2.8C | 23, 26, 30, 36 -- the DFR1221's, at a text scale of 0.75 |
+| MaTouch 2.1" | 23, 26, 30, 36 -- the 2.8C's |
 
 The character set is 305 glyphs: ASCII, the Latin-1 letters and
 punctuation, all of Latin Extended-A, Romanian's ș and ț, ẞ, and the dashes
@@ -777,8 +781,10 @@ src/
     square/      theme.cpp, now_playing.cpp   <- the Qualia
     headless/    draws nothing, narrates to serial
   hardware/
-    waveshare/  round360/  qualia/  lcd28c/  headless/   <- one per board
-    rgb/         the RGB panels' output stage, for qualia/ and lcd28c/
+    waveshare/  round360/  qualia/  lcd28c/  matouch21/  headless/
+                 <- one per board
+    rgb/         the RGB panels' output stage, for qualia/, lcd28c/ and
+                 matouch21/
 include/
   board/         one header per board: pins, sizes, scales, timings
   config.h       everything about the application that is a number
@@ -803,12 +809,12 @@ circle, the full width on a square) and `now_playing.cpp` holds the one
 screen with a shape in it. The list, the search, the status cards, the
 canvas, the artwork and the text layout are shared, and widen to fit by asking
 `chordHalfWidth()`. The DFR1221 reuses `ui/round/` unchanged at 1.5×, and the
-2.8C at 2×.
+2.8C and the MaTouch at 2×.
 
 **Every dimension scales.** `include/ui/theme.h` is written against a 240 px
 round panel and multiplied by the board's `kUiScale` (width / 240). Two more
 per-board factors sit on top and nowhere else: `kTextScale` for panels whose
-pixels are denser than the design's (0.75 on the Qualia and the 2.8C), and
+pixels are denser than the design's (0.75 on the Qualia, the 2.8C and the MaTouch), and
 `kListScale` for
 the lists (the Qualia's ⅔, which shows about six rows instead of three).
 
@@ -867,6 +873,7 @@ src/hardware/
   rgb/rgb_panel.cpp        an RGB panel's framebuffer, copy and scroll
   qualia/expander.cpp      the TCA9554: panel reset, backlight, buttons
   lcd28c/panel.cpp         the 2.8C's TCA9554, and its ST7701's register init
+  matouch21/panel.cpp      the MaTouch's ST7701 register init, bit-banged
 scripts/
   build_ui_font.py         the VLW font generator
   board_header_stamp.py    rebuilds everything when the board header changes
@@ -887,7 +894,7 @@ site/                        the install page and its board manifests
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
-| Touch sampler (Qualia and 2.8C) | Reads the touch controller into a queue of timestamped changes |
+| Touch sampler (Qualia, 2.8C, MaTouch) | Reads the touch controller into a queue of timestamped changes |
 
 They share three kinds of thing, each with its own discipline:
 
@@ -1214,9 +1221,10 @@ repaint instead, which is the case that costs.
 proxy accepts `size=` from a ladder -- 0, 80, 160, 256, 512, 1024 -- and
 answers 400 to anything else, so the request rounds up to a power of two
 (`board::kCoverArtRequestPx`): 256 for a 240 px panel, a 28 KB cover instead of
-88 KB. The Qualia and the 2.8C ask for 256 too and scale it up: the cover is
-a backdrop under a scrim, and on the 2.8C a 512 px one took three times as
-long to decode and scale (268 ms against 84). A refusal is retried with the
+88 KB. The Qualia asks for 256 too and scales it up: the cover is a
+backdrop under a scrim. The 480 px round panels, the 2.8C and the MaTouch,
+ask for 512, which a 256 px cover scaled up made look soft; on the 2.8C that
+costs about 0.16 s more per track change. A refusal is retried with the
 original URL and rewriting stops for the session.
 
 **A small cover is scaled in one pass.** One smaller than the panel is decoded
@@ -1237,7 +1245,7 @@ of 2 whatever it wants, pngle tolerates a short read and TJpgD does not.
 
 Every screen composes into one off-screen frame in PSRAM, the panel's size at
 16 bits -- 115 KB on the Waveshare, 259 KB on the DFR1221, 450 KB on the
-2.8C, 1 MB on the Qualia -- and presents it, or the rectangle that changed, to
+2.8C and the MaTouch, 1 MB on the Qualia -- and presents it, or the rectangle that changed, to
 the panel. Everything draws in screen coordinates. The elapsed chip sits on an
 opaque pill, so its once-a-second update is drawn and presented alone,
 without recomposing the cover; for the same reason a state update only
@@ -1252,7 +1260,7 @@ a tap's repaint from 0.5-1 s to about 95 ms.
 
 **Rotation** is below the seam. The round SPI panels turn in their own
 controller, with LovyanGFX turning the touch to match, at no cost. The RGB
-panels, the Qualia's and the 2.8C's, scan out a framebuffer in a fixed order,
+panels, the Qualia's, the 2.8C's and the MaTouch's, scan out a framebuffer in a fixed order,
 so there the frame is drawn upright
 and turned as it is copied into the scan-out buffer (`rgbPresent()`), and every
 touch is turned back. Upside down costs nothing extra; at ±90° the copy writes
@@ -1280,7 +1288,7 @@ row on a square panel does not change shape with its height. The bar sits
 flush with the right edge so each row still moves as one run.
 `canvasPanelWrites()` counts every panel write, so the list knows when
 something else drew over it and falls back to a whole repaint; so does a jump
-of more than half the view. The 2.8C takes this path too, sharing the output
+of more than half the view. The 2.8C and the MaTouch take this path too, sharing the output
 stage; the round SPI boards never do, since their panels only write.
 
 **The bus is kept off the PSRAM's neck.** The scan-out reads continuously and
@@ -1336,6 +1344,31 @@ with every output high, so its first write drives the buzzer low; its three
 sensor interrupt lines are left as inputs. The GT911 touch controller is read
 on a task of its own, as the Qualia's is, at `0x5D`, the address it takes
 with its INT line held low as its reset is released.
+
+### The MaTouch 2.1"
+
+The Makerfabs MaTouch ESP32-S3 Rotary 2.1" is the 2.8C's kind of panel -- a
+480×480 round ST7701 on the RGB output stage, at 12 MHz -- without the
+expander: its chip select is GPIO 1, it has no reset line (the init starts
+with a software reset), and touch has a bus of its own. The rotary encoder
+and its push switch are wired (GPIO 13, 10 and 14) but not read yet.
+
+Its pins and init are those of Makerfabs' factory test as built against
+Arduino_GFX 1.3.8, whose image shows true colours on this glass, and three
+things about them were found on it:
+
+- **Red is 4/41/5/40/6 and blue 11/15/12/16/21**, with the panel in BGR
+  order and 18-bit colour, as that build has it. Makerfabs' older sketches
+  label the two groups the other way round.
+- **The init is bit-banged** (`hardware/matouch21/panel.cpp`), as
+  Arduino_GFX's software SPI sends it. Through the S3's SPI peripheral, at
+  4 MHz the colours came out wrong whatever the colour settings, and at
+  500 kHz the panel stayed dark. GPIO 0, its data line, is the BOOT button
+  too, and is handed back to it after.
+- **The CST826 touch controller** (`0x15`, no interrupt or reset wired) is
+  polled. It reports the far edge as 480, sometimes answers with nothing but
+  `0xFF`, and now and then says no finger in the middle of a press; the edge
+  is clamped, those reads ignored, and a press held through 60 ms of misses.
 
 ### Memory
 
