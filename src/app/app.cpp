@@ -1127,6 +1127,14 @@ const char* serviceFor(Intent intent) {
     return;
   }
   if (services::ha::selectedEntity()[0] == '\0') {
+    // Linked meanwhile -- the URL and the token saved in the portal while
+    // the Link to HA card or the QR code was up -- with no player yet: on to
+    // the list, as a link made on the device goes. Not from the token
+    // rejected card, which waits for its tap.
+    if (!services::ha::tokenRejected()) {
+      LOG_INFO("UI: linked in the portal, choosing a player");
+      openPlayers();
+    }
     return;
   }
   // Not while the token is refused: every forced poll is another failed
