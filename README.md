@@ -326,9 +326,13 @@ wakes the screen leave it alone. Details in
 | Settings | Swipe right | Back one step |
 | Status, settings, Wi-Fi, search | Tap the back button, top left | As a swipe right: back one step |
 | Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
+| Not reachable, Token rejected, No Wi-Fi or Link to HA card | Swipe down | The status page; back returns to the card |
+| Not reachable, Token rejected, No Wi-Fi or Link to HA card | Tap the gear, top right | Open the settings |
+| Sign-in QR code | Swipe down | The status page |
 | Wi-Fi networks | Tap a network | Join it, or type its password |
 | Wi-Fi networks | Swipe right | Back one step |
 | Player list | Drag up / down, then tap a player | Choose it; the last row fetches the list again |
+| Player list | Tap the gear, top right | Open the settings |
 | List | Drag up / down | Scroll; it glides on release |
 | List | Tap a row | Play it |
 | List | Tap the title strip, or swipe right | Back to now playing |

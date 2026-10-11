@@ -114,46 +114,6 @@ void presentDot(int x, int y, int radius) {
 
 }  // namespace
 
-void statusScreenMessage(const char* title, const char* line1,
-                         const char* line2, uint16_t background,
-                         uint16_t foreground) {
-  lgfx::LovyanGFX& gfx = ui::canvas();
-  displayFontEnsureLoaded(gfx);
-  gfx.fillScreen(background);
-
-  // Stack the lines around the centre so a one-, two- or three-line card all
-  // sit in the same optical place.
-  const int gap = ui::theme::kStatusLineGap;
-  // Slots for the text, so they shrink with it on a board that sets its type
-  // smaller than its layout.
-  const int title_h = ui::theme::textPx(30);
-  const int body_h = ui::theme::textPx(20);
-
-  int total = title_h;
-  if (line1 != nullptr && line1[0] != '\0') {
-    total += gap + body_h;
-  }
-  if (line2 != nullptr && line2[0] != '\0') {
-    total += gap + body_h;
-  }
-
-  int y = ui::theme::kCenterY - total / 2 + title_h / 2;
-  drawCentredLine(gfx, title, y, ui::theme::kStatusTitleTextPx, foreground);
-  y += title_h / 2;
-
-  if (line1 != nullptr && line1[0] != '\0') {
-    y += gap + body_h / 2;
-    drawCentredLine(gfx, line1, y, ui::theme::kStatusBodyTextPx, foreground);
-    y += body_h / 2;
-  }
-  if (line2 != nullptr && line2[0] != '\0') {
-    y += gap + body_h / 2;
-    drawCentredLine(gfx, line2, y, ui::theme::kStatusBodyTextPx, foreground);
-  }
-
-  ui::canvasPresent();
-}
-
 namespace {
 
 /** The gear that opens the settings: top right, at the right end of the
@@ -203,7 +163,73 @@ void drawGear(lgfx::LovyanGFX& gfx, int cx, int cy, int r, uint16_t color,
   gfx.fillCircle(cx, cy, static_cast<int>(lroundf(r * 0.34f)), background);
 }
 
+/** What the card on screen offers besides its tap; see statusScreenMessage(). */
+uint8_t s_card_ways = 0;
+
 }  // namespace
+
+void statusScreenMessage(const char* title, const char* line1,
+                         const char* line2, uint16_t background,
+                         uint16_t foreground, uint8_t ways) {
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  displayFontEnsureLoaded(gfx);
+  gfx.fillScreen(background);
+
+  // Stack the lines around the centre so a one-, two- or three-line card all
+  // sit in the same optical place.
+  const int gap = ui::theme::kStatusLineGap;
+  // Slots for the text, so they shrink with it on a board that sets its type
+  // smaller than its layout.
+  const int title_h = ui::theme::textPx(30);
+  const int body_h = ui::theme::textPx(20);
+
+  int total = title_h;
+  if (line1 != nullptr && line1[0] != '\0') {
+    total += gap + body_h;
+  }
+  if (line2 != nullptr && line2[0] != '\0') {
+    total += gap + body_h;
+  }
+
+  int y = ui::theme::kCenterY - total / 2 + title_h / 2;
+  drawCentredLine(gfx, title, y, ui::theme::kStatusTitleTextPx, foreground);
+  y += title_h / 2;
+
+  if (line1 != nullptr && line1[0] != '\0') {
+    y += gap + body_h / 2;
+    drawCentredLine(gfx, line1, y, ui::theme::kStatusBodyTextPx, foreground);
+    y += body_h / 2;
+  }
+  if (line2 != nullptr && line2[0] != '\0') {
+    y += gap + body_h / 2;
+    drawCentredLine(gfx, line2, y, ui::theme::kStatusBodyTextPx, foreground);
+  }
+
+  if ((ways & kCardGearToSettings) != 0) {
+    // Quieter than the card's own words on black, where those are white or
+    // amber; on a coloured card, in its text colour, which is what reads.
+    statusScreenDrawGear(gfx,
+                         background == config::kColorBlack
+                             ? ui::theme::kTextSecondary
+                             : foreground,
+                         background);
+  }
+  s_card_ways = ways;
+  ui::canvasPresent();
+}
+
+uint8_t statusScreenCardWays() { return s_card_ways; }
+
+void statusScreenForgetCard() { s_card_ways = 0; }
+
+void statusScreenDrawGear(lgfx::LovyanGFX& gfx, uint16_t color,
+                          uint16_t background) {
+  drawGear(gfx, gearCenterX(), kGearY, kGearRadius, color, background);
+}
+
+int statusScreenGearClearance() {
+  return kGearEdgeGap + 2 * kGearRadius + kGearTextGap;
+}
 
 void statusScreenDevice(const ui::DeviceStatus& status) {
   lgfx::LovyanGFX& gfx = ui::canvas();
@@ -248,6 +274,10 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
   }
   if (status.control[0] != '\0') {
     pairs[n++] = {"", status.control};
+  }
+  // What is wrong with the link, under what it is a link to.
+  if (status.ha[0] != '\0') {
+    pairs[n++] = {"HA", status.ha};
   }
   if (status.connected) {
     pairs[n++] = {"", status.ip};
@@ -300,8 +330,7 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
     y += line_h;
   }
 
-  drawGear(gfx, gearCenterX(), kGearY, kGearRadius,
-           ui::theme::kTextSecondary, ui::theme::kBackground);
+  statusScreenDrawGear(gfx, ui::theme::kTextSecondary, ui::theme::kBackground);
   ui::back_button::draw(gfx);
   ui::canvasPresent();
 }
@@ -324,7 +353,8 @@ void statusScreenPortal() {
 
 void statusScreenConnectFailed() {
   statusScreenMessage("No Wi-Fi", "Saved network failed", "Tap to choose",
-                      config::kColorBlack, config::kTextOnBlack);
+                      config::kColorBlack, config::kTextOnBlack,
+                      kCardSwipeToStatus | kCardGearToSettings);
   resetSpinner();
 }
 
@@ -338,7 +368,8 @@ void statusScreenNeedsHaSetup() {
   char url_line[64];
   snprintf(url_line, sizeof(url_line), "%s.local", services::device::name());
   statusScreenMessage("Link to HA", "Set URL and token at", url_line,
-                      config::kColorYellow, config::kTextOnYellow);
+                      config::kColorYellow, config::kTextOnYellow,
+                      kCardSwipeToStatus | kCardGearToSettings);
   resetSpinner();
 }
 
@@ -380,6 +411,9 @@ void statusScreenHaSignIn(const char* qr_text, const char* url,
                   ui::theme::kStatusBodyTextPx, config::kTextOnBlack);
   drawCentredLine(gfx, name, url_y + ui::theme::textPx(20),
                   ui::theme::kStatusBodyTextPx, ui::theme::kTextMuted);
+  // A swipe down to the status page, but no gear: the code fills the card,
+  // and a gear by it would crowd what a camera has to find.
+  s_card_ways = kCardSwipeToStatus;
   ui::canvasPresent();
   resetSpinner();
 }
@@ -387,7 +421,8 @@ void statusScreenHaSignIn(const char* qr_text, const char* url,
 void statusScreenHaUnreachable(const char* detail) {
   statusScreenMessage("Home Assistant", "not reachable",
                       detail != nullptr ? detail : "", config::kColorBlack,
-                      ui::theme::kWarning);
+                      ui::theme::kWarning,
+                      kCardSwipeToStatus | kCardGearToSettings);
   resetSpinner();
 }
 
@@ -395,7 +430,8 @@ void statusScreenHaTokenRejected() {
   // Not "not reachable": Home Assistant answered, and the fix is not in the
   // network but a sign-in, which the card offers.
   statusScreenMessage("Home Assistant", "Token rejected", "Tap to link again",
-                      config::kColorBlack, ui::theme::kWarning);
+                      config::kColorBlack, ui::theme::kWarning,
+                      kCardSwipeToStatus | kCardGearToSettings);
   resetSpinner();
 }
 

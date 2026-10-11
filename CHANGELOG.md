@@ -20,6 +20,8 @@ GitHub release from that version's section, with
 - **Makerfabs MaTouch ESP32-S3 Rotary 2.1":** a 2.1" round 480 px ST7701 panel with CST826 touch, built as `matouch21-s3`. Its knob turns the volume on now playing and scrolls the lists, a row a click; a press plays or pauses on now playing, goes back one step elsewhere, and taps a card. The USB-C port is the S3's own USB, so uploads and the serial console need no driver.
 - **Back on Wi-Fi after a router outage:** a remote that started while its router was down -- after a power cut, say -- opened the setup portal and stayed there. It now tries the saved network again every minute while nobody is using the portal, and carries on by itself once the router is back.
 - **Link again from a rejected token:** when Home Assistant refuses the remote's token -- deleted under your profile, say -- the card says **Token rejected** and **Tap to link again**, and a tap puts the sign-in QR code back up, keeping the URL. Until then the remote stops asking Home Assistant for anything, trying the token again only every ten minutes, so it does not fill Home Assistant's log with failed sign-ins or get its address banned.
+- **Status and settings from a card:** on the cards that say something is wrong -- Home Assistant not reachable, Token rejected, No Wi-Fi, Link to HA -- a swipe down opens the status page, to see what, and a gear at the top right opens the settings, to change the network or the transmit power, or restart. The sign-in QR code has the swipe down, and the player list shown before a player is chosen has the gear. Going back lands on the card again.
+- **Offline mark:** when Home Assistant has not been heard from for 10 s, the elapsed time on now playing turns amber and says **Offline**, or **Token rejected**, instead of running on from a state that may be stale. The status page says the same on an **HA** line, with the error. Both go when Home Assistant answers again.
 
 ### Changed
 
@@ -28,6 +30,11 @@ GitHub release from that version's section, with
 - **Losing Wi-Fi while running:** when the network dropped and could not be rejoined, the Connecting card stayed frozen over the screen, taps still went to what was underneath, and attempt followed blocking attempt. The No Wi-Fi card now replaces it (a tap chooses a network), the remote keeps trying in the background without blocking, and it goes back to now playing when the link returns.
 - **Status page:** the gear is at the top right, across the title row from the back button, and the received signal and transmit power have a line each again.
 - **Sharper covers on the 2.8C:** it asks for 512 px covers instead of 256 px, so the backdrop is no longer scaled up. A new track's cover takes about 0.16 s longer to appear.
+- **Settings before linking:** with the remote not yet linked to Home Assistant, the settings page leaves out Media player and Volume & power, which are chosen from Home Assistant's lists.
+
+### Fixed
+
+- After choosing a media player or a Volume & power device on the device, the settings page and the status page showed the old one until they were opened again.
 
 ## [1.2.0] - 2026-10-06
 

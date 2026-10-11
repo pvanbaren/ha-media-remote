@@ -320,6 +320,10 @@ constexpr unsigned long kHaPollPlayingMs = 2000;
 constexpr unsigned long kHaPollIdleMs = 8000;
 /** Re-poll this soon after a transport press so the UI catches up. */
 constexpr unsigned long kHaPollAfterCommandMs = 400;
+/** How long Home Assistant may go unheard -- no stream, every poll failing --
+ *  before now playing says it is offline. Longer than a poll or two, so one
+ *  dropped request does not flash it up. */
+constexpr unsigned long kHaOfflineMarkMs = 10000;
 /** How often a token Home Assistant refused is tried again, in case the
  *  refusal was the server's mistake. Every try is a failed sign-in in its
  *  log, and enough of them get the remote's address banned where IP banning

@@ -103,6 +103,10 @@ struct PlayerState {
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */
   bool hold_label = false;
+  /** Set by the app, not the server: Home Assistant has not been heard from
+   *  for config::kHaOfflineMarkMs, so this is the last state there was and
+   *  now playing says so. */
+  bool offline = false;
   /** Seconds. duration <= 0 means the player reports no progress. */
   float duration_s = 0.0f;
   /** Position already advanced by the age of HA's last position update. */

@@ -92,6 +92,10 @@ std::atomic<bool> g_volume_dragging{false};
  *  is owed once the finger lifts. Without this a new title that landed
  *  mid-drag stayed off the screen until something else changed. */
 std::atomic<bool> g_repaint_after_drag{false};
+/** Home Assistant has not been heard from for config::kHaOfflineMarkMs: now
+ *  playing is the last state there was, and says so. Written by the poll
+ *  task, which sets g_state_dirty when it changes. */
+std::atomic<bool> g_ha_offline{false};
 
 /** The level last commanded on the control entity, and when -- or -1 when
  *  nothing is outstanding. Held behind g_state_mutex with g_state.
@@ -154,6 +158,7 @@ bool snapshotState(PlayerState& out) {
   bool valid = false;
   if (xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     out = g_state;
+    out.offline = g_ha_offline;
     valid = g_state_valid;
     xSemaphoreGive(g_state_mutex);
   }
@@ -297,6 +302,14 @@ void openPlayers();
 void leaveIsolate();
 
 void showNowPlaying() {
+  // Off the network the last state is no use, and the card is what says so;
+  // with this, going back from the status page or the settings, opened from
+  // that card, brings the card back rather than a frozen now playing.
+  if (g_wifi_lost && WiFi.status() != WL_CONNECTED) {
+    ui::showConnectFailed();
+    showMessageScreen();
+    return;
+  }
   if (!services::ha::configured()) {
     LOG_INFO("UI: now playing skipped, Home Assistant not configured");
     showNeedsHa();
@@ -605,6 +618,8 @@ bool g_search_from_now_playing = false;
  *  Loop only. */
 unsigned long g_status_drawn_ms = 0;
 
+const char* playerName(char* out, size_t out_len, bool control);
+
 /** Draw the status page from what the device and its link say now. */
 void drawStatus() {
   WifiLinkStatus link;
@@ -620,22 +635,34 @@ void drawStatus() {
   status.tx_dbm = link.tx_dbm;
   // The media player, and where they differ the Volume & power device and
   // the player's input on it as chosen in the portal -- empty for the input
-  // named after the player. By their names in Home Assistant, from the last
-  // state; the entity ids until there is one.
-  char player[config::kEntityIdMaxLen];
-  char control[config::kEntityIdMaxLen];
-  services::ha::copySelectedEntity(player, sizeof(player));
-  services::ha::copyControlEntity(control, sizeof(control));
-  PlayerState state;
-  const bool named = snapshotState(state);
-  status.player = named && state.player_name[0] != '\0'
-                      ? state.player_name
-                      : services::ha::entityLabel(player);
+  // named after the player. By their names in Home Assistant (playerName()).
+  char player[config::kFriendlyNameMaxLen];
+  char control[config::kFriendlyNameMaxLen];
+  status.player = services::ha::selectedEntity()[0] != '\0'
+                      ? playerName(player, sizeof(player), false)
+                      : "";
   if (services::ha::controlIsSeparate()) {
-    status.control = named && state.control_name[0] != '\0'
-                         ? state.control_name
-                         : services::ha::entityLabel(control);
+    status.control = playerName(control, sizeof(control), true);
     status.input = services::ha::storedControlInput();
+  }
+  // Whether there is a state at all, without a PlayerState on this frame as
+  // well as the ones playerName() takes.
+  bool named = false;
+  if (g_state_mutex != nullptr &&
+      xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    named = g_state_valid;
+    xSemaphoreGive(g_state_mutex);
+  }
+  // What a card or the offline mark would say, so a swipe down from either
+  // explains it.
+  char ha[64];
+  if (!services::ha::configured()) {
+    status.ha = "Not linked";
+  } else if (services::ha::tokenRejected()) {
+    status.ha = "Token rejected";
+  } else if (g_ha_offline || (!named && services::ha::lastError()[0] != '\0')) {
+    snprintf(ha, sizeof(ha), "Offline (%s)", services::ha::lastError());
+    status.ha = services::ha::lastError()[0] != '\0' ? ha : "Offline";
   }
   ui::showStatus(status);
   g_status_drawn_ms = millis();
@@ -1304,8 +1331,25 @@ int g_source_count = 0;
 const char* const kRotationNames[4] = {"Upright", "+90 (clockwise)", "180",
                                        "-90 (counter-clockwise)"};
 
-/** The player's name from the last state, as the status page shows it, or
- *  its entity id until there is one. */
+/** `entity`'s name in the cached player list, or "" when it is not there. */
+const char* listedName(const char* entity) {
+  for (int i = 0; i < services::players::entryCount(); ++i) {
+    const services::ha::PlayerEntry* entry = services::players::entryAt(i);
+    if (entry != nullptr && strcmp(entry->entity_id, entity) == 0) {
+      return entry->name;
+    }
+  }
+  return "";
+}
+
+/** The player's name, as the status and settings pages show it: from the
+ *  player lists first, then the last state, then its entity id.
+ *
+ *  The lists first because the last state can be the old player's. One just
+ *  chosen on the device is in them -- it was chosen from them -- while the
+ *  state goes on naming the one before until the next poll lands, and the
+ *  settings page, drawn at once, showed the old name until it was opened
+ *  again. */
 const char* playerName(char* out, size_t out_len, bool control) {
   char entity[config::kEntityIdMaxLen];
   if (control) {
@@ -1313,10 +1357,11 @@ const char* playerName(char* out, size_t out_len, bool control) {
   } else {
     services::ha::copySelectedEntity(entity, sizeof(entity));
   }
+  const char* name = listedName(entity);
   PlayerState state;
-  const char* name = snapshotState(state)
-                         ? (control ? state.control_name : state.player_name)
-                         : "";
+  if (name[0] == '\0' && snapshotState(state)) {
+    name = control ? state.control_name : state.player_name;
+  }
   snprintf(out, out_len, "%s",
            name[0] != '\0' ? name : services::ha::entityLabel(entity));
   return out;
@@ -1356,14 +1401,21 @@ void showSettingsPage(int focus) {
                 link.connected ? link.ssid : "Not connected");
 
   char value[config::kSourceNameMaxLen];
-  addSettingRow(Setting::kPlayer, "Media player",
-                services::ha::selectedEntity()[0] != '\0'
-                    ? playerName(value, sizeof(value), false)
-                    : "None");
-  const bool separate = services::ha::controlIsSeparate();
-  addSettingRow(Setting::kControl, "Volume & power",
-                separate ? playerName(value, sizeof(value), true)
-                         : "The media player");
+  // The player and its devices are chosen from lists Home Assistant gives,
+  // so not before the remote is linked to it.
+  const bool linked = services::ha::configured();
+  if (linked) {
+    addSettingRow(Setting::kPlayer, "Media player",
+                  services::ha::selectedEntity()[0] != '\0'
+                      ? playerName(value, sizeof(value), false)
+                      : "None");
+  }
+  const bool separate = linked && services::ha::controlIsSeparate();
+  if (linked) {
+    addSettingRow(Setting::kControl, "Volume & power",
+                  separate ? playerName(value, sizeof(value), true)
+                           : "The media player");
+  }
   if (separate) {
     const char* input = services::ha::storedControlInput();
     addSettingRow(Setting::kInput, "Player's input",
@@ -2033,6 +2085,8 @@ void haPollTask(void*) {
   unsigned long stream_retry_at = 0;
   unsigned long stream_backoff = config::kHaStreamRetryMinMs;
   unsigned long stream_opened_ms = 0;
+  /** When Home Assistant was last heard from, by stream or by poll. */
+  unsigned long heard_ms = millis();
   /** When a refused token was last tried, or 0 while it is not refused. */
   unsigned long rejected_try_ms = 0;
   auto stream_failed = [&](const char* how) {
@@ -2082,6 +2136,12 @@ void haPollTask(void*) {
       }
     } else {
       rejected_try_ms = 0;
+    }
+
+    // Held, nothing below runs to mark now playing offline; it is, though.
+    if (hold && !g_ha_offline.exchange(true)) {
+      LOG_INFO("HA: token refused, marking now playing");
+      g_state_dirty = true;
     }
 
     if (!hold && WiFi.status() == WL_CONNECTED &&
@@ -2157,6 +2217,19 @@ void haPollTask(void*) {
         // Only worth a repaint when there is nothing already on screen; a
         // single dropped poll should not replace a good frame with an error
         // card.
+        g_state_dirty = true;
+      }
+
+      // An open stream is Home Assistant heard from, an event or not. Gone
+      // quiet for long enough, now playing gets its offline mark; heard again,
+      // it loses it. Either way a repaint, since nothing else changed.
+      if (got || streaming) {
+        heard_ms = millis();
+      }
+      const bool offline = millis() - heard_ms >= config::kHaOfflineMarkMs;
+      if (offline != g_ha_offline.exchange(offline)) {
+        LOG_INFO("HA: %s", offline ? "offline, marking now playing"
+                                   : "heard from again");
         g_state_dirty = true;
       }
 

@@ -630,7 +630,12 @@ Input wifiTouch(const hw::TouchReport& report) {
 Input playersTouch(const hw::TouchReport& report) {
   Input out;
   // Nothing to back out to: with no player there is nothing else to show.
+  // The gear, top right, goes to the settings instead.
   if (report.event != hw::TouchEvent::kTap || !listTapAllowed(report)) {
+    return out;
+  }
+  if (statusScreenGearHit(report.x, report.y)) {
+    out.intent = Intent::kOpenSettings;
     return out;
   }
   switch (player_pick::handleTap(report.x, report.y)) {
@@ -736,6 +741,14 @@ bool init(uint8_t rotation) {
 Input poll(Screen screen, const PlayerState* state) {
   Input out;
 
+  // A card's swipe and gear belong to the card. Anything the app shows in
+  // its place goes up under another screen -- the list's "Starting" frame
+  // comes back as a card's screen, but by way of the list -- so seeing any
+  // other screen is enough to know the card has gone.
+  if (screen != Screen::kMessage) {
+    statusScreenForgetCard();
+  }
+
   // A touch on a blanked panel only wakes it. Handled before anything else
   // reads the touch state, so the same press cannot also press a button.
   if (displayIsBlanked()) {
@@ -799,8 +812,18 @@ Input poll(Screen screen, const PlayerState* state) {
   if (screen == Screen::kMessage) {
     // Most of what the cards complain about is fixed in the portal, and the
     // app notices on its own. A tap is passed up all the same: the Setup and
-    // No Wi-Fi cards open the network list on it.
-    if (report.event == hw::TouchEvent::kTap) {
+    // No Wi-Fi cards open the network list on it. A card about something
+    // wrong also has a swipe down to the status page, to see what, and the
+    // gear to the settings, to change it.
+    const uint8_t ways = statusScreenCardWays();
+    if (report.event == hw::TouchEvent::kTap &&
+        (ways & kCardGearToSettings) != 0 &&
+        statusScreenGearHit(report.x, report.y)) {
+      out.intent = Intent::kOpenSettings;
+    } else if (report.event == hw::TouchEvent::kSwipeDown &&
+               (ways & kCardSwipeToStatus) != 0) {
+      out.intent = Intent::kOpenStatus;
+    } else if (report.event == hw::TouchEvent::kTap) {
       out.intent = Intent::kTapCard;
     }
     return out;

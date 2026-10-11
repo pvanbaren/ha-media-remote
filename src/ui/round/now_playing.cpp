@@ -322,6 +322,13 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
 /** Formats "1:23 / 4:56", or leaves `out` empty when there is no duration. */
 void formatElapsed(const PlayerState& state, char* out, size_t out_len) {
   out[0] = '\0';
+  // Offline, the time would run on from a state that may be long stale: the
+  // chip says why instead.
+  if (state.offline) {
+    snprintf(out, out_len, "%s",
+             services::ha::tokenRejected() ? "Token rejected" : "Offline");
+    return;
+  }
   const float position = services::ha::interpolatedPosition(state);
   if (position < 0.0f || state.duration_s <= 0.0f) {
     return;
@@ -350,7 +357,7 @@ void drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
 
   gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
                     h, theme::kElapsedPillRadius, theme::kSurface);
-  gfx.setTextColor(theme::kTextSecondary);
+  gfx.setTextColor(state.offline ? theme::kWarning : theme::kTextSecondary);
   gfx.drawString(label, theme::kCenterX, theme::kElapsedY);
 }
 

@@ -127,6 +127,9 @@ struct DeviceStatus {
   /** The player's input on that device as chosen in the portal; empty when it
    *  is the input named after the player. Shown in the player's place. */
   const char* input = "";
+  /** What is wrong with the link to Home Assistant -- not linked, the token
+   *  refused, offline -- or empty when nothing is. */
+  const char* ha = "";
 };
 /** The status page, or its next refresh: it is redrawn whole each time. */
 void showStatus(const DeviceStatus& status);

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <LovyanGFX.hpp>
+
 #include "ui/ui.h"
 
 /** Full-screen messages shown before -- or instead of -- the remote UI.
@@ -41,10 +43,30 @@ void statusScreenNoPlayer();
 /** The status page: the device's name, what it controls, then its address,
  *  uptime and link. */
 void statusScreenDevice(const ui::DeviceStatus& status);
-/** Whether (x, y) is on the status page's gear, which opens the settings. */
-bool statusScreenGearHit(int x, int y);
 
-/** Generic centred card, used by the screens above. */
+/** The gear that opens the settings, top right on the title row, where the
+ *  status page, the cards that offer it and the player list all put it. */
+void statusScreenDrawGear(lgfx::LovyanGFX& gfx, uint16_t color,
+                          uint16_t background);
+/** Whether (x, y) is on that gear. */
+bool statusScreenGearHit(int x, int y);
+/** How far in from the chord's edge the gear reaches, with the gap a line
+ *  beside it needs: what a centred title on its row gives up on each side. */
+int statusScreenGearClearance();
+
+/** What a card on screen offers besides its own tap: a swipe down to the
+ *  status page, and the gear to the settings. The cards about something wrong
+ *  offer them -- the way to see what, and to change it -- and the passing
+ *  ones (loading, connecting, restarting) do not. */
+constexpr uint8_t kCardSwipeToStatus = 1;
+constexpr uint8_t kCardGearToSettings = 2;
+/** The ways the card last drawn offers. */
+uint8_t statusScreenCardWays();
+/** Something else is on screen now: no card's ways apply. */
+void statusScreenForgetCard();
+
+/** Generic centred card, used by the screens above. `ways` says what it
+ *  offers besides a tap, and draws the gear when that is among them. */
 void statusScreenMessage(const char* title, const char* line1,
                          const char* line2, uint16_t background,
-                         uint16_t foreground);
+                         uint16_t foreground, uint8_t ways = 0);

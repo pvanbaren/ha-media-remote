@@ -9,6 +9,7 @@
 #include "hardware/display_font.h"
 #include "services/player_list.h"
 #include "ui/canvas.h"
+#include "ui/status_screens.h"
 #include "ui/text.h"
 #include "ui/theme.h"
 
@@ -141,10 +142,16 @@ void draw() {
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(noted ? theme::kWarning : theme::kTextPrimary);
   char line[text::kMaxLineLen];
+  // Centred between the gear on the right and as much again on the left.
   text::ellipsize(gfx, noted ? s_note : "Choose a player",
-                  theme::usableWidthAt(kTitleY, theme::kTextEdgeInset), line,
-                  sizeof(line));
+                  theme::usableWidthAt(kTitleY, theme::kTextEdgeInset) -
+                      2 * statusScreenGearClearance(),
+                  line, sizeof(line));
   gfx.drawString(line, theme::kCenterX, kTitleY);
+  // The settings, which are otherwise only reached from now playing: the
+  // network, the transmit power and a restart are as much use with no player
+  // chosen as with one.
+  statusScreenDrawGear(gfx, theme::kTextSecondary, theme::kBackground);
   ui::canvasPresent();
 }
 
