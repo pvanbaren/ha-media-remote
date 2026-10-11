@@ -24,6 +24,8 @@
  */
 /** A framebuffer panel, for hardware/lgfx_config.hpp; see qualia_720.h. */
 #define BOARD_PANEL_RGB 1
+/** A knob, for hardware/encoder.h. */
+#define BOARD_HAS_ENCODER 1
 
 namespace board {
 
@@ -131,10 +133,15 @@ constexpr bool kTouchSampleTask = true;
 
 // --- Rotary encoder --------------------------------------------------------
 /** Quadrature on two pins with pull-ups, and the knob's push switch, active
- *  low. Not read yet: the remote has no use for it until the UI takes it. */
+ *  low. */
 constexpr gpio_num_t kEncoderPinA = GPIO_NUM_13;
 constexpr gpio_num_t kEncoderPinB = GPIO_NUM_10;
 constexpr gpio_num_t kEncoderPinPush = GPIO_NUM_14;
+/** Quadrature edges per click of the knob: every edge of both pins counts. */
+constexpr int kEncoderCountsPerDetent = 4;
+/** The pins count up anticlockwise on this board, so the count is turned
+ *  round: clockwise is up. */
+constexpr bool kEncoderReverse = true;
 
 // --- Artwork ---------------------------------------------------------------
 constexpr int kThumbPx = 38;

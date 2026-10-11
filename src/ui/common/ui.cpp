@@ -9,6 +9,7 @@
 #include "config.h"
 #include "log.h"
 #include "hardware/display.h"
+#include "hardware/encoder.h"
 #include "hardware/touch.h"
 #include "services/browse.h"
 #include "services/search.h"
@@ -73,6 +74,21 @@ unsigned long s_list_draw_ms = 0;
  *  yet. Held until the ration allows a repaint, and flushed on release so the
  *  list never settles a few pixels from where it was left. */
 bool s_list_redraw_pending = false;
+
+// --- The knob, on a board with one ------------------------------------------
+/** A turn owns the level, as a finger does, until the knob has rested for
+ *  kKnobSettleMs. */
+bool s_knob_adjusting = false;
+float s_knob_level = 0.0f;
+unsigned long s_knob_turned_ms = 0;
+/** The knob scrolled a list the glass has not caught up with yet. */
+bool s_knob_redraw_pending = false;
+/** Volume per click: fifty clicks from silent to full. */
+constexpr float kKnobVolumeStep = 0.02f;
+/** How long the knob rests before a turn is over and the final level sent. */
+constexpr unsigned long kKnobSettleMs = 400;
+/** A list moves a row per click. */
+constexpr int kKnobScrollPx = theme::kListRowHeight + theme::kListRowGap;
 
 /** What a scrollable screen offers the drag handler. Function pointers rather
  *  than virtuals: there are two, both known at compile time, and neither
@@ -345,22 +361,115 @@ void driveList(const ScrollableList& list, bool active) {
   }
 }
 
-void driveListScrolling(Screen screen) {
-  if (screen == Screen::kBrowse) {
-    driveList(kBrowseList, true);
-  } else if (screen == Screen::kSearch) {
-    // Only the results scroll; the keyboard has nothing to move, and
-    // scrollByPx() says so.
-    driveList(kSearchResults, search::showingResults());
-  } else if (screen == Screen::kWifi) {
-    driveList(kWifiNetworks, wifi_join::onList());
-  } else if (screen == Screen::kPlayers) {
-    driveList(kPlayerList, true);
-  } else if (screen == Screen::kSettings || screen == Screen::kSources) {
-    driveList(kSettingsList, true);
-  } else {
-    driveList(kBrowseList, false);
+/** The list on `screen` that scrolls, or nullptr when it has none. */
+const ScrollableList* scrollableOn(Screen screen) {
+  switch (screen) {
+    case Screen::kBrowse:
+      return &kBrowseList;
+    case Screen::kSearch:
+      // Only the results scroll; the keyboard has nothing to move, and
+      // scrollByPx() says so.
+      return search::showingResults() ? &kSearchResults : nullptr;
+    case Screen::kWifi:
+      return wifi_join::onList() ? &kWifiNetworks : nullptr;
+    case Screen::kPlayers:
+      return &kPlayerList;
+    case Screen::kSettings:
+    case Screen::kSources:
+      return &kSettingsList;
+    default:
+      return nullptr;
   }
+}
+
+void driveListScrolling(Screen screen) {
+  const ScrollableList* list = scrollableOn(screen);
+  driveList(list != nullptr ? *list : kBrowseList, list != nullptr);
+}
+
+/** Turn the knob: the volume on now playing, a row a click on a screen with a
+ *  list, nothing elsewhere. A finger on the glass comes first, and the knob
+ *  waits while one is down.
+ *
+ *  Returns true when the caller should be told the level changed. */
+bool driveKnob(Screen screen, const PlayerState* state, Input& out) {
+  const int detents = hw::encoderTakeDetents();
+  const unsigned long now = millis();
+
+  // A turn is over once the knob has rested, or now playing has gone. It
+  // closes with an authoritative set, told to the app before the flag drops,
+  // as a drag's release is: the throttle below may have held back the last
+  // level, and a poll landing between the two would carry the old one.
+  if (s_knob_adjusting &&
+      (screen != Screen::kNowPlaying ||
+       (detents == 0 && now - s_knob_turned_ms >= kKnobSettleMs))) {
+    s_knob_adjusting = false;
+    out.intent = Intent::kSetVolume;
+    out.level = s_knob_level;
+    return true;
+  }
+
+  const ScrollableList* list = scrollableOn(screen);
+  if (list == nullptr) {
+    s_knob_redraw_pending = false;
+  }
+  if (detents != 0 && !hw::touchIsDown() && !s_vol_dragging) {
+    if (screen == Screen::kNowPlaying) {
+      if (state == nullptr || !now_playing::volumeAvailable(*state)) {
+        return false;
+      }
+      if (!s_knob_adjusting) {
+        s_knob_adjusting = true;
+        s_drag_state = *state;
+        s_knob_level = state->volume;
+        s_vol_sent_ms = 0;
+      }
+      s_knob_turned_ms = now;
+      s_knob_level += detents * kKnobVolumeStep;
+      if (s_knob_level < 0.0f) {
+        s_knob_level = 0.0f;
+      } else if (s_knob_level > 1.0f) {
+        s_knob_level = 1.0f;
+      }
+      s_drag_state.volume = s_knob_level;
+      now_playing::refreshVolume(s_drag_state, s_knob_level);
+      if (now - s_vol_sent_ms >= config::kVolumeSendIntervalMs) {
+        s_vol_sent_ms = now;
+        out.intent = Intent::kSetVolume;
+        out.level = s_knob_level;
+        return true;
+      }
+      return false;
+    }
+    // Clockwise goes down the list, as a finger dragging up does.
+    if (list != nullptr && list->scrollByPx(detents * kKnobScrollPx)) {
+      s_list_velocity = 0.0f;
+      s_list_moved_ms = now;
+      s_knob_redraw_pending = true;
+    }
+  }
+  // Repainted only as often as the board can finish one; see driveList().
+  if (s_knob_redraw_pending && list != nullptr && !hw::touchIsDown() &&
+      now - s_list_draw_ms >= board::kListRedrawMinMs) {
+    s_knob_redraw_pending = false;
+    s_list_draw_ms = now;
+    list->redraw();
+  }
+  return false;
+}
+
+/** A press of the knob, off now playing, as the gesture it stands for: on a
+ *  card a tap, which is all a card takes; anywhere else a swipe right, which
+ *  is back on every screen that has one. */
+hw::TouchReport knobPressAsTouch(Screen screen) {
+  hw::TouchReport report;
+  report.event = screen == Screen::kMessage ? hw::TouchEvent::kTap
+                                            : hw::TouchEvent::kSwipeRight;
+  report.x = board::kDisplayWidth / 2;
+  report.y = board::kDisplayHeight / 2;
+  report.down_ms = millis();
+  report.unwatched_ms = 0;
+  return report;
 }
 
 /** Whether a tap on a scrolling list is a tap, rather than a press that
@@ -620,6 +729,7 @@ bool init(uint8_t rotation) {
   cover::init();
   artwork::init();
   hw::touchInit();
+  hw::encoderInit();
   return true;
 }
 
@@ -633,7 +743,10 @@ Input poll(Screen screen, const PlayerState* state) {
     // slow pass -- so a completed gesture wakes the panel too, not only a
     // finger seen resting on it.
     hw::TouchReport discard;
-    if (hw::touchIsDown() || hw::touchPoll(discard)) {
+    // The knob wakes it as well, and its clicks and press are spent doing so.
+    const bool turned = hw::encoderTakeDetents() != 0;
+    const bool pressed = hw::encoderTakePress();
+    if (turned || pressed || hw::touchIsDown() || hw::touchPoll(discard)) {
       wake();
       out.intent = Intent::kWokeFromTouch;
     }
@@ -643,11 +756,23 @@ Input poll(Screen screen, const PlayerState* state) {
   if (driveVolume(screen, state, out)) {
     return out;
   }
+  if (driveKnob(screen, state, out)) {
+    return out;
+  }
   driveListScrolling(screen);
 
   hw::TouchReport report;
   if (!hw::touchPoll(report)) {
-    return out;
+    if (!hw::encoderTakePress()) {
+      return out;
+    }
+    // On now playing the knob's press is play and pause, the button it is
+    // most often reached for instead of.
+    if (screen == Screen::kNowPlaying) {
+      out.intent = Intent::kPlayPause;
+      return out;
+    }
+    report = knobPressAsTouch(screen);
   }
 
   if (screen == Screen::kSearch) {
@@ -994,8 +1119,16 @@ bool idleWork(Screen screen) {
   return true;
 }
 
-unsigned long lastInteractionMs() { return hw::touchLastActivityMs(); }
+unsigned long lastInteractionMs() {
+  const unsigned long touch = hw::touchLastActivityMs();
+  const unsigned long knob = hw::encoderLastActivityMs();
+  // The later of the two, wrap-safe; 0 is "never".
+  if (knob == 0) {
+    return touch;
+  }
+  return touch == 0 || static_cast<long>(knob - touch) > 0 ? knob : touch;
+}
 
-bool volumeDragging() { return s_vol_dragging; }
+bool volumeDragging() { return s_vol_dragging || s_knob_adjusting; }
 
 }  // namespace ui

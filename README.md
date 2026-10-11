@@ -18,7 +18,7 @@ Five panels are supported:
 | DFRobot DFR1221 | 1.85" round, 360×360 ST77916 (quad SPI), CST816S touch | 16 MB / 8 MB | `round360-s3` |
 | Adafruit Qualia ESP32-S3 (5800) | 4" square (5794), 720×720 TL040HDS20 (RGB-666 parallel), FT6336 touch | 16 MB / 8 MB | `qualia-720` |
 | Waveshare ESP32-S3-Touch-LCD-2.8C | 2.8" round, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `lcd28c-s3` |
-| Makerfabs MaTouch ESP32-S3 Rotary 2.1" | 2.1" round, 480×480 ST7701 (RGB parallel), CST826 touch, rotary encoder (not used yet) | 16 MB / 8 MB | `matouch21-s3` |
+| Makerfabs MaTouch ESP32-S3 Rotary 2.1" | 2.1" round, 480×480 ST7701 (RGB parallel), CST826 touch, rotary encoder | 16 MB / 8 MB | `matouch21-s3` |
 
 A sixth target, `headless`, runs the whole remote with no display and
 narrates to the serial console.
@@ -337,6 +337,11 @@ wakes the screen leave it alone. Details in
 | Search results | Tap a result | Play that artist's radio |
 | Search | Swipe right | Back one step |
 | Blank screen | Any touch | Wake it; the volume device is left as it is |
+| Knob (MaTouch 2.1") | Turn, on now playing | Volume, 2% a click |
+| Knob (MaTouch 2.1") | Turn, on a list | Scroll a row a click |
+| Knob (MaTouch 2.1") | Press, on now playing | Play / pause |
+| Knob (MaTouch 2.1") | Press, elsewhere | As a swipe right: back one step; on a card, as a tap |
+| Knob (MaTouch 2.1") | Turn or press, screen blank | Wake it |
 | Hardware | Hold **BOOT** for 3 s (Qualia: the **DOWN** button) | Clear the settings and reboot into setup |
 
 A tap on a list that was still moving, or on one the loop did not see the
@@ -865,6 +870,7 @@ src/ui/common/
   text.cpp                 ellipsising and word wrap
 src/hardware/
   touch_gestures.cpp       press tracking, tap / swipe, the touch queue
+  encoder.cpp              the knob, on a board with one
   display_font.cpp         picks the embedded face for a height
   <board>/display.cpp      panel bring-up, backlight, sleep, rotation
   <board>/touch_raw.cpp    reads the touch controller
@@ -1350,8 +1356,10 @@ with its INT line held low as its reset is released.
 The Makerfabs MaTouch ESP32-S3 Rotary 2.1" is the 2.8C's kind of panel -- a
 480×480 round ST7701 on the RGB output stage, at 12 MHz -- without the
 expander: its chip select is GPIO 1, it has no reset line (the init starts
-with a software reset), and touch has a bus of its own. The rotary encoder
-and its push switch are wired (GPIO 13, 10 and 14) but not read yet.
+with a software reset), and touch has a bus of its own. It also has a knob:
+a rotary encoder on GPIO 13 and 10, counted by the S3's pulse counter, and
+its push switch on GPIO 14, caught on an interrupt (`hardware/encoder.cpp`,
+for any board whose header defines `BOARD_HAS_ENCODER`).
 
 Its pins and init are those of Makerfabs' factory test as built against
 Arduino_GFX 1.3.8, whose image shows true colours on this glass, and three
@@ -1366,9 +1374,11 @@ things about them were found on it:
   500 kHz the panel stayed dark. GPIO 0, its data line, is the BOOT button
   too, and is handed back to it after.
 - **The CST826 touch controller** (`0x15`, no interrupt or reset wired) is
-  polled. It reports the far edge as 480, sometimes answers with nothing but
-  `0xFF`, and now and then says no finger in the middle of a press; the edge
-  is clamped, those reads ignored, and a press held through 60 ms of misses.
+  polled. It reports the far edge as 480, now and then answers with noise
+  when idle, and sometimes says no finger in the middle of a press; the edge
+  is clamped, any read that is not one or two fingers on the glass ignored,
+  and a press held through 60 ms of misses.
+- **The knob counts up anticlockwise**, so `kEncoderReverse` turns it round.
 
 ### Memory
 
