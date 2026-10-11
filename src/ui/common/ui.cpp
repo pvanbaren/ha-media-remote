@@ -830,14 +830,17 @@ Input poll(Screen screen, const PlayerState* state) {
   }
   if (screen == Screen::kStatus) {
     // The gear opens the settings, and a swipe left goes on to the Wi-Fi
-    // networks, as one does from the list to the search; any other tap or
-    // swipe goes back -- the back button among them, which is there to say
-    // so.
+    // networks, as one does from the list to the search. A swipe up undoes
+    // the swipe down that opened it, back to whatever screen that was; any
+    // other tap or swipe goes back to now playing -- the back button among
+    // them, which is there to say so.
     if (report.event == hw::TouchEvent::kTap &&
         statusScreenGearHit(report.x, report.y)) {
       out.intent = Intent::kOpenSettings;
     } else if (report.event == hw::TouchEvent::kSwipeLeft) {
       out.intent = Intent::kOpenWifi;
+    } else if (report.event == hw::TouchEvent::kSwipeUp) {
+      out.intent = Intent::kStatusBack;
     } else if (report.event != hw::TouchEvent::kNone) {
       out.intent = Intent::kBackToNowPlaying;
     }

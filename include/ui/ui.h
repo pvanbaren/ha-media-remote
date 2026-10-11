@@ -79,6 +79,8 @@ enum class Intent : uint8_t {
   kOpenSources,       // a swipe right on now playing's lower half
   kSourceTap,         // `index` is the input tapped on the sources list
   kSourcesBack,       // a swipe right, or the back button, there
+  kStatusBack,        // a swipe up on the status page: back to the screen
+                      // it was opened from
 };
 
 struct Input {

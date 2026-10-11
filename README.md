@@ -320,6 +320,7 @@ wakes the screen leave it alone. Details in
 | Sources | Swipe right, or the back button | Back to now playing |
 | Status page | Tap the gear | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
+| Status page | Swipe up | Back to the screen it was opened from: now playing, a card, the settings or the network list |
 | Status page | Any other tap or swipe | Back to now playing |
 | Settings | Drag up / down, then tap a row | Its choices; the row lights at once |
 | Settings choices | Tap one | Choose it, and back to the settings |

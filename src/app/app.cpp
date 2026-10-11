@@ -668,12 +668,40 @@ void drawStatus() {
   g_status_drawn_ms = millis();
 }
 
+/** The screen the status page was opened from, for a swipe up back to it. */
+Screen g_status_from = Screen::kNowPlaying;
+
 /** Open the status page, a swipe down from now playing: the device's name,
  *  address, uptime and Wi-Fi link, on the device itself. */
 [[gnu::noinline]] void openStatus() {
+  if (g_screen != Screen::kStatus) {
+    g_status_from = g_screen;
+  }
   g_screen = Screen::kStatus;
   drawStatus();
   g_list_opened_ms = millis();
+}
+
+void openSettings();
+void openWifi(const char* note);
+
+/** A swipe up on the status page: back to the screen it was opened from.
+ *  Now playing and the cards are both reached through showNowPlaying(),
+ *  which picks whichever applies now; the settings page and the network
+ *  list are opened afresh, as their back steps would; anything else is now
+ *  playing. */
+[[gnu::noinline]] void leaveStatus() {
+  switch (g_status_from) {
+    case Screen::kSettings:
+      openSettings();
+      break;
+    case Screen::kWifi:
+      openWifi(nullptr);
+      break;
+    default:
+      showNowPlaying();
+      break;
+  }
 }
 
 /** Once a second while it is showing: uptime and signal both move. */
@@ -2031,6 +2059,10 @@ void portalIdle() {
 
     case Intent::kSettingsBack:
       handleSettingsBack();
+      break;
+
+    case Intent::kStatusBack:
+      leaveStatus();
       break;
 
     case Intent::kOpenSources:
