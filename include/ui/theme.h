@@ -220,6 +220,35 @@ int chordHalfWidth(int y);
 /** Widest run of pixels usable at row `y`, inset from the bezel. */
 int usableWidthAt(int y, int inset);
 
+/** Narrowest a list row's tile gets: on a round panel, a row passing the top
+ *  or bottom of the glass keeps this much width and has its corners cut by
+ *  the bezel, rather than pinching down to a sliver as it goes. */
+constexpr int kListRowMinHalfWidth = listPx(60);
+
+/** Half the width of a list row's tile, `top` its first line and `height` its
+ *  height: the chord at whichever of its edges sits further from the centre,
+ *  since a rectangle on a circle is pinched there, less kListRowInset -- and
+ *  no less than kListRowMinHalfWidth. 0 for a row wholly off the panel.
+ *
+ *  Measured at the first and last lines of the row that are on the panel, not
+ *  at top and top + height: chordHalfWidth() is 0 off the panel, and top +
+ *  height is one past the row's last line besides, so asking there gave every
+ *  row that reached the bottom edge no width at all, and it was not drawn --
+ *  fatal to the browse list's scrollInPlace(), whose strip at the bottom is
+ *  nearly always that row. */
+inline int listRowHalfWidth(int top, int height) {
+  const int first = top > 0 ? top : 0;
+  const int last =
+      top + height - 1 < kSize - 1 ? top + height - 1 : kSize - 1;
+  if (last < first) {
+    return 0;  // entirely off the panel
+  }
+  const int a = chordHalfWidth(first);
+  const int b = chordHalfWidth(last);
+  const int half = (a < b ? a : b) - kListRowInset;
+  return half > kListRowMinHalfWidth ? half : kListRowMinHalfWidth;
+}
+
 /**
  * Paint the list's background over `height` rows starting at `top`.
  *

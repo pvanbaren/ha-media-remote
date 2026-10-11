@@ -65,18 +65,9 @@ void clampScroll() {
   s_scroll_px = s_scroll_px < 0 ? 0 : s_scroll_px;
 }
 
-/** As the search results' rows: the chord at whichever edge is further in. */
+/** The row's tile: see theme::listRowHalfWidth(). */
 int rowHalfWidth(int top) {
-  const int first = top > 0 ? top : 0;
-  const int bottom = top + theme::kListRowHeight - 1;
-  const int last = bottom < theme::kSize - 1 ? bottom : theme::kSize - 1;
-  if (last < first) {
-    return 0;
-  }
-  const int a = theme::chordHalfWidth(first);
-  const int b = theme::chordHalfWidth(last);
-  const int half = (a < b ? a : b) - theme::kListRowInset;
-  return half > 0 ? half : 0;
+  return theme::listRowHalfWidth(top, theme::kListRowHeight);
 }
 
 /** 0 to 4 bars, from what this device hears. */

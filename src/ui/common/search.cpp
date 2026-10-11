@@ -210,22 +210,9 @@ void clampScroll() {
   }
 }
 
-/** Widest the row can be: the chord at whichever edge is further out. */
+/** The row's tile: see theme::listRowHalfWidth(). */
 int resultHalfWidth(int top) {
-  // At the row's first and last lines on the panel: chordHalfWidth() is 0
-  // off it, and top + height is one past the row besides, so a row reaching
-  // the bottom edge used to get no width and was not drawn. See
-  // rowHalfWidth() in browse_list.cpp.
-  const int first = top > 0 ? top : 0;
-  const int bottom = top + theme::kListRowHeight - 1;
-  const int last = bottom < theme::kSize - 1 ? bottom : theme::kSize - 1;
-  if (last < first) {
-    return 0;
-  }
-  const int a = theme::chordHalfWidth(first);
-  const int b = theme::chordHalfWidth(last);
-  const int half = (a < b ? a : b) - theme::kListRowInset;
-  return half > 0 ? half : 0;
+  return theme::listRowHalfWidth(top, theme::kListRowHeight);
 }
 
 /** One result row: artwork on the left where it has arrived, name beside it. */

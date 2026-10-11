@@ -104,28 +104,9 @@ void clampScroll() {
   }
 }
 
-/** Widest a row can be without crossing the bezel: the narrower of its top and
- *  bottom edges, since a rectangle on a circle is pinched at whichever edge
- *  sits further from the centre. */
+/** The row's tile: see theme::listRowHalfWidth(). */
 int rowHalfWidth(int top, int height) {
-  // Measured at the first and last lines of the row that are on the panel,
-  // not at top and top + height. chordHalfWidth() is 0 off the panel, and
-  // top + height is one past the row's last line besides -- so asking there
-  // gave every row that reached the bottom edge no width at all, and it was
-  // not drawn. Easy to miss in a whole repaint, where the row simply arrived
-  // late; fatal to scrollInPlace(), whose strip at the bottom is nearly
-  // always that row, and which then moved a band of bare backdrop up the
-  // screen on every step.
-  const int first = top > 0 ? top : 0;
-  const int last = top + height - 1 < theme::kSize - 1 ? top + height - 1
-                                                       : theme::kSize - 1;
-  if (last < first) {
-    return 0;  // entirely off the panel
-  }
-  const int a = theme::chordHalfWidth(first);
-  const int b = theme::chordHalfWidth(last);
-  const int half = (a < b ? a : b) - theme::kListRowInset;
-  return half > 0 ? half : 0;
+  return theme::listRowHalfWidth(top, height);
 }
 
 /**
