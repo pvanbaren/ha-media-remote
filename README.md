@@ -307,7 +307,7 @@ wakes the screen leave it alone. Details in
 | Where | Gesture | Effect |
 |---|---|---|
 | Now playing | Tap a transport button | Previous / play-pause / next |
-| Now playing | Swipe sideways, top half | Volume |
+| Now playing | Swipe sideways, top half | Volume; with the volume device off, the swipe switches it on, as play does, where it can be |
 | Now playing | Tap the top half | Switch the volume device on or off |
 | Now playing | Tap the "+N rooms" chip | Offer to turn off the other rooms on this input |
 | Isolate card | Tap Isolate | Turn the other rooms off, and back to now playing |

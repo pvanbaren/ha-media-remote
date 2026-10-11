@@ -1982,10 +1982,10 @@ void portalIdle() {
       togglePower();
       break;
 
-    case Intent::kKnobPowerOn:
+    case Intent::kPowerOnForVolume:
       // Someone here turning the volume up wants to hear it: what play's
       // power-on does, input and switch-on volume with it.
-      LOG_INFO("UI: knob turned with %s off, switching it on",
+      LOG_INFO("UI: volume asked of %s while off, switching it on",
                services::ha::controlEntity());
       powerOnControl();
       g_poll_now = true;

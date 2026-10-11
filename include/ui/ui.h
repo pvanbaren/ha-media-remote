@@ -81,8 +81,9 @@ enum class Intent : uint8_t {
   kSourcesBack,       // a swipe right, or the back button, there
   kStatusBack,        // a swipe up on the status page: back to the screen
                       // it was opened from
-  kKnobPowerOn,       // the knob turned on now playing with the volume
-                      // device off: switch it on, so the volume can follow
+  kPowerOnForVolume,  // a volume swipe or a turn of the knob on now playing
+                      // with the volume device off: switch it on, so the
+                      // volume can follow
 };
 
 struct Input {

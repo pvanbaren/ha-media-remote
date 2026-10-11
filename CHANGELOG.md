@@ -30,6 +30,7 @@ GitHub release from that version's section, with
 - **Losing Wi-Fi while running:** when the network dropped and could not be rejoined, the Connecting card stayed frozen over the screen, taps still went to what was underneath, and attempt followed blocking attempt. The No Wi-Fi card now replaces it (a tap chooses a network), the remote keeps trying in the background without blocking, and it goes back to now playing when the link returns.
 - **Status page:** the gear is at the top right, across the title row from the back button, and the received signal and transmit power have a line each again. A swipe up goes back to the screen it was opened from -- a card, say, or the settings -- where the other gestures still go to now playing.
 - **Sharper covers on the 2.8C:** it asks for 512 px covers instead of 256 px, so the backdrop is no longer scaled up. A new track's cover takes about 0.16 s longer to appear.
+- **Volume with the volume device off:** a sideways swipe across the top of now playing switches the device on first, as play does -- its input and the player volume at switch-on with it -- and the next swipe sets the level. Before, the swipe went to a device that was off, so nothing could be heard. A device that cannot be switched on from Home Assistant takes the level as before.
 - **Settings before linking:** with the remote not yet linked to Home Assistant, the settings page leaves out Media player and Volume & power, which are chosen from Home Assistant's lists.
 
 ### Fixed

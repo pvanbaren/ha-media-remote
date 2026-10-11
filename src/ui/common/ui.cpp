@@ -45,6 +45,9 @@ using Action = now_playing::Action;
 // --- Volume drag -----------------------------------------------------------
 /** The finger owns the level while it is down. */
 bool s_vol_dragging = false;
+/** The press in progress was a volume swipe on a device that was off, and
+ *  has asked for it to be switched on; it does nothing more until it lifts. */
+bool s_vol_powering = false;
 float s_vol_level = 0.0f;
 float s_vol_drawn = -1.0f;
 int s_vol_last_x = 0;
@@ -154,10 +157,12 @@ bool powerOnForVolume(const PlayerState& state) {
 bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
   if (screen != Screen::kNowPlaying) {
     s_vol_dragging = false;
+    s_vol_powering = false;
     return false;
   }
 
   if (!hw::touchIsDown()) {
+    s_vol_powering = false;
     if (!s_vol_dragging) {
       return false;
     }
@@ -176,6 +181,9 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
   int y = 0;
   hw::touchPosition(x, y);
 
+  if (s_vol_powering) {
+    return false;
+  }
   if (!s_vol_dragging) {
     const int travel_x = hw::touchDragDx();
     const int travel_y = hw::touchDragDy();
@@ -186,6 +194,15 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
     // top half stays a volume swipe even once it has wandered below centre.
     if (!now_playing::volumeSwipeRegion(x - travel_x, y - travel_y)) {
       return false;
+    }
+    // A device that is off: the swipe switches it on, as a turn of the knob
+    // does, and the next one sets the level. The press is claimed, so its
+    // release is not read as a swipe to the search or the inputs.
+    if (state != nullptr && powerOnForVolume(*state)) {
+      hw::touchCancel();
+      s_vol_powering = true;
+      out.intent = Intent::kPowerOnForVolume;
+      return true;
     }
     if (state == nullptr || !now_playing::volumeAvailable(*state)) {
       return false;
@@ -437,7 +454,7 @@ bool driveKnob(Screen screen, const PlayerState* state, Input& out) {
         if (s_knob_power_ms == 0 ||
             now - s_knob_power_ms >= kKnobPowerRetryMs) {
           s_knob_power_ms = now;
-          out.intent = Intent::kKnobPowerOn;
+          out.intent = Intent::kPowerOnForVolume;
           return true;
         }
         return false;
