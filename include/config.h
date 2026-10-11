@@ -28,6 +28,11 @@ constexpr unsigned long kPortalSavedReturnMs = 15000;
 constexpr unsigned long kWifiConnectAttemptMs = 15000;
 constexpr uint8_t kWifiConnectAttempts = 3;
 constexpr unsigned long kWifiPortalTimeoutSec = 0;  // 0 = no timeout while configuring
+/** While the setup portal is up because the saved network did not answer at
+ *  boot -- the router down with the power, say -- how often to try it again.
+ *  Only while nobody is on the portal's access point or the device's own
+ *  network screens: a try takes the radio off the access point's channel. */
+constexpr unsigned long kPortalSavedRetryMs = 60000;
 /** Wi-Fi transmit power until one is chosen in the portal, in the quarter-dBm
  *  steps esp_wifi uses: 44 is 11 dBm. Well below the 19.5 dBm the ESP32-S3
  *  can do; see prepareSta() in wifi_setup.cpp for why, and the portal's
@@ -38,6 +43,10 @@ constexpr unsigned long kWifiConnectingFrameMs = 50;
 constexpr unsigned long kWifiDownGraceMs = 4000;
 /** Minimum interval between background reconnect tries. */
 constexpr unsigned long kWifiReconnectIntervalMs = 15000;
+/** Once a background reconnect has failed and the No Wi-Fi card is up, how
+ *  often to nudge the stack to try again. A nudge does not block: the core's
+ *  own auto-reconnect is trying meanwhile, and the card stays answerable. */
+constexpr unsigned long kWifiLostNudgeMs = 60000;
 
 // Touch is the primary input; BOOT only exists as the Wi-Fi/HA escape hatch,
 // so it has no short-tap action. The pin itself is in board/.

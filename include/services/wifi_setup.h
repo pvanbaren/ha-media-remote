@@ -33,6 +33,10 @@ struct WifiObserver {
   /** A join asked for on the device did not connect; the setup portal is up
    *  again behind it. */
   void (*joinFailed)(const char* ssid) = nullptr;
+  /** True while someone is on the device's own network screens, when the
+   *  setup portal must not try the saved network again: the try would take
+   *  the radio from under the scan and the join. */
+  bool (*portalBusy)() = nullptr;
 };
 
 /** Install the observer. Call once in setup(), before wifiSetupConnect().

@@ -115,6 +115,10 @@ constexpr float kVolumeConfirmEpsilon = 0.02f;
 unsigned long g_message_recheck_ms = 0;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
+/** A background reconnect failed and the No Wi-Fi card went up in its place;
+ *  from then on the stack is only nudged, and the card is taken down when
+ *  the link comes back. Loop only. */
+bool g_wifi_lost = false;
 
 /** millis() when the player last went idle, or 0 while it is doing something. */
 unsigned long g_idle_since = 0;
@@ -1044,6 +1048,16 @@ const char* serviceFor(Intent intent) {
 [[gnu::noinline]] void handleWifiState() {
   if (WiFi.status() == WL_CONNECTED) {
     g_wifi_down_since = 0;
+    if (g_wifi_lost) {
+      // Back by itself -- the core's auto-reconnect, or a nudge below. The
+      // No Wi-Fi card comes down, unless a network screen opened from it is
+      // up, which takes itself down.
+      g_wifi_lost = false;
+      LOG_INFO("WiFi back: %s", WiFi.SSID().c_str());
+      if (g_screen == Screen::kMessage) {
+        showNowPlaying();
+      }
+    }
     return;
   }
   if (g_screen == Screen::kWifi) {
@@ -1055,16 +1069,36 @@ const char* serviceFor(Intent intent) {
     LOG_WARN("WiFi lost - will reconnect");
   }
 
+  // The card is up: nudge, without blocking, so a tap on the card still
+  // opens the network list. The core's own auto-reconnect is trying anyway.
+  if (g_wifi_lost) {
+    if (millis() - g_last_reconnect_ms >= config::kWifiLostNudgeMs) {
+      g_last_reconnect_ms = millis();
+      LOG_INFO("WiFi still down, asking the stack to try again");
+      WiFi.reconnect();
+    }
+    return;
+  }
+
   const unsigned long down_ms = millis() - g_wifi_down_since;
   if (down_ms < config::kWifiDownGraceMs ||
       millis() - g_last_reconnect_ms < config::kWifiReconnectIntervalMs) {
     return;
   }
 
+  // One full attempt, behind the Connecting card. If it fails, the card it
+  // leaves is replaced, rather than left frozen over a screen whose taps
+  // still went to what was underneath.
   g_last_reconnect_ms = millis();
   if (wifiReconnect()) {
     g_wifi_down_since = 0;
     showNowPlaying();
+  } else {
+    g_wifi_lost = true;
+    LOG_WARN("WiFi reconnect failed - No Wi-Fi card up, nudging every %lu s",
+             config::kWifiLostNudgeMs / 1000UL);
+    ui::showConnectFailed();
+    showMessageScreen();
   }
 }
 
@@ -1213,6 +1247,10 @@ void onPortalStarted() {
   ui::showPortal();
   g_screen = Screen::kMessage;
 }
+
+/** The setup portal asking whether it may try the saved network again: not
+ *  while the network list or the password page is up. */
+bool portalBusy() { return g_screen == Screen::kWifi; }
 
 // --- Settings on the device -----------------------------------------------------
 
@@ -2190,6 +2228,7 @@ void setup() {
       .playerChanged = ui::clearArtwork,
       .portalIdle = portalIdle,
       .joinFailed = onJoinFailed,
+      .portalBusy = portalBusy,
   });
 
   bootButtonInit();

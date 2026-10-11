@@ -1532,8 +1532,37 @@ bool joinNetwork(const char* ssid, const char* pass) {
   return false;
 }
 
-bool openConfigPortal() {
+/**
+ * The setup portal, until a network is joined -- from a browser on its
+ * access point, or from the device's own network list.
+ *
+ * With `retry_saved`, the portal is up because the saved network did not
+ * answer at boot rather than because there is none, and the network is tried
+ * again every kPortalSavedRetryMs: a power cut that took the router down too
+ * left the remote in the portal for good once the router was back. A try
+ * takes the radio off the access point's channel for a few seconds, so it
+ * waits for the access point to have no one on it and the device's network
+ * screens to be shut, and is abandoned after kWifiConnectAttemptMs.
+ */
+bool openConfigPortal(bool retry_saved = false) {
+  // The saved network, while the stack still has it: from here on it is
+  // only asked for by name.
+  char saved_ssid[33] = {};
+  char saved_pass[65] = {};
+  if (retry_saved) {
+    wifi_config_t conf = {};
+    if (esp_wifi_get_config(WIFI_IF_STA, &conf) == ESP_OK &&
+        conf.sta.ssid[0] != '\0') {
+      memcpy(saved_ssid, conf.sta.ssid, sizeof(conf.sta.ssid));
+      memcpy(saved_pass, conf.sta.password, sizeof(conf.sta.password));
+    }
+    retry_saved = saved_ssid[0] != '\0';
+  }
+
   stopLanWebPortal();
+  // The core's own reconnect would chase a failed try for as long as the
+  // portal is up, and keep the access point hopping channels with it.
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
   delay(50);
@@ -1543,11 +1572,38 @@ bool openConfigPortal() {
   s_in_setup_portal = true;
   s_join_pending = false;
   bool joined = false;
+  unsigned long last_retry_ms = millis();
+  bool retrying = false;
   while (s_wm.getConfigPortalActive()) {
     bootButtonPollLongPress();
     if (s_wm.process()) {
       joined = true;
       break;
+    }
+
+    if (retrying) {
+      if (wifiLinkUp()) {
+        LOG_INFO("Setup portal: %s is back, closing the portal", saved_ssid);
+        s_wm.stopConfigPortal();
+        // Closing the portal turns the access point off; the station should
+        // stay joined, and is joined again here if it did not.
+        joined = wifiLinkUp() ||
+                 tryConnectWithUi(String(saved_ssid), String(saved_pass), false);
+        break;
+      }
+      if (millis() - last_retry_ms >= config::kWifiConnectAttemptMs) {
+        WiFi.disconnect(false);  // the station only; the access point stays
+        retrying = false;
+        last_retry_ms = millis();
+      }
+    } else if (retry_saved &&
+               millis() - last_retry_ms >= config::kPortalSavedRetryMs &&
+               WiFi.softAPgetStationNum() == 0 &&
+               (s_observer.portalBusy == nullptr || !s_observer.portalBusy())) {
+      LOG_INFO("Setup portal: trying %s again", saved_ssid);
+      WiFi.begin(saved_ssid, saved_pass);
+      retrying = true;
+      last_retry_ms = millis();
     }
     // The display's turn: the network list and the password page live here,
     // since nothing else answers the finger until this loop returns.
@@ -1863,13 +1919,16 @@ bool wifiSetupConnect() {
     return true;
   }
 
-  if (storedWifiCredentials()) {
-    LOG_WARN("Saved WiFi could not connect — opening setup portal");
+  const bool had_saved = storedWifiCredentials();
+  if (had_saved) {
+    LOG_WARN("Saved WiFi could not connect — opening setup portal, trying "
+             "it again every %lu s",
+             config::kPortalSavedRetryMs / 1000UL);
   } else {
     LOG_INFO("No saved WiFi — opening setup portal");
   }
 
-  if (openConfigPortal() && wifiLinkUp()) {
+  if (openConfigPortal(had_saved) && wifiLinkUp()) {
     WiFi.setAutoReconnect(true);
     LOG_INFO("Connected: %s  IP %s", WiFi.SSID().c_str(),
                   WiFi.localIP().toString().c_str());

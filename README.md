@@ -271,9 +271,9 @@ When there is nothing to play yet, a card says why:
 
 | Card | Meaning |
 |---|---|
-| **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured. A tap chooses a network on the device; the setup access point is up for the portal meanwhile |
+| **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured, or the saved network did not answer at boot. A tap chooses a network on the device; the setup access point is up for the portal meanwhile. A saved network is tried again every minute (`kPortalSavedRetryMs`) while nobody is on the access point or the network screens, so a remote that came up before its router joins once the router is back |
 | **Connecting** | Joining the saved network |
-| **No Wi-Fi** -- Tap to choose | The saved network did not answer. A tap chooses another |
+| **No Wi-Fi** -- Tap to choose | The network dropped and one full attempt to rejoin failed. A tap chooses another; meanwhile the remote keeps trying in the background, nudging the stack every minute (`kWifiLostNudgeMs`), and goes back to now playing when the link returns |
 | **Link to HA** | Wi-Fi works and Home Assistant has not been found; set its URL and token in the portal |
 | **Scan to link** -- a QR code | Home Assistant found; scan the code and sign in to link the remote |
 | **Home Assistant** -- not reachable | Requests are failing; the last line is the reason |
@@ -447,11 +447,14 @@ holds the settings below, under the network name and password (leave those
 blank to keep the current network; `/param` shows the settings alone).
 **Update** installs firmware and **Info** shows the device's details.
 
-**Before Wi-Fi.** With no Wi-Fi saved, the remote also raises an access
-point, **`MediaRemote-Setup`**, for setting it up from a phone rather than on
-the screen. Join it; the setup page usually opens by itself, or browse to
+**Before Wi-Fi.** With no Wi-Fi saved, or when the saved network does not
+answer at boot, the remote also raises an access point,
+**`MediaRemote-Setup`**, for setting it up from a phone rather than on the
+screen. Join it; the setup page usually opens by itself, or browse to
 **`http://192.168.4.1`**. Choose your network and fill in any of the fields
-below. The remote then joins your network.
+below. The remote then joins your network. A saved network that did not
+answer is tried again every minute while nobody is on the access point, and
+the portal closes by itself when it joins.
 
 A few rules hold for every field:
 
