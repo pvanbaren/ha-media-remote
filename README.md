@@ -342,7 +342,7 @@ wakes the screen leave it alone. Details in
 | Search results | Tap a result | Play that artist's radio |
 | Search | Swipe right | Back one step |
 | Blank screen | Any touch | Wake it; the volume device is left as it is |
-| Knob (MaTouch 2.1") | Turn, on now playing | Volume, 2% a click |
+| Knob (MaTouch 2.1") | Turn, on now playing | Volume, 2% a click; with the volume device off, the first turn switches it on, as play does, where it can be |
 | Knob (MaTouch 2.1") | Turn, on a list | Scroll a row a click |
 | Knob (MaTouch 2.1") | Press, on now playing | Play / pause |
 | Knob (MaTouch 2.1") | Press, elsewhere | As a swipe right: back one step; on a card, as a tap |

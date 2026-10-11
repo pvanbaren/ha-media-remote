@@ -89,6 +89,10 @@ constexpr float kKnobVolumeStep = 0.02f;
 constexpr unsigned long kKnobSettleMs = 400;
 /** A list moves a row per click. */
 constexpr int kKnobScrollPx = theme::kListRowHeight + theme::kListRowGap;
+/** When the knob last asked for the volume device to be switched on, and
+ *  how long it waits before asking again while the state still says off. */
+unsigned long s_knob_power_ms = 0;
+constexpr unsigned long kKnobPowerRetryMs = 3000;
 
 /** What a scrollable screen offers the drag handler. Function pointers rather
  *  than virtuals: there are two, both known at compile time, and neither
@@ -119,6 +123,16 @@ constexpr ScrollableList kSettingsList{settings_list::scrollByPx,
 
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
+
+/** Whether a volume swipe or a turn of the knob should switch the volume
+ *  device on rather than set its level: it is off, and it can be switched on
+ *  -- a device reporting no features at all counting as one that can, as
+ *  everywhere else. One that cannot gets the level as it is, as before. */
+bool powerOnForVolume(const PlayerState& state) {
+  return state.control_off &&
+         (state.control_features == 0 ||
+          (state.control_features & services::ha::kFeatureTurnOn) != 0);
+}
 
 /** Drive the volume arc from a horizontal swipe across the top of the panel.
  *
@@ -415,6 +429,20 @@ bool driveKnob(Screen screen, const PlayerState* state, Input& out) {
   }
   if (detents != 0 && !hw::touchIsDown() && !s_vol_dragging) {
     if (screen == Screen::kNowPlaying) {
+      // The volume of a device that is off goes nowhere: a turn switches it
+      // on first, as play would, and the turns after the state says it is on
+      // set the level. One request, however many clicks, until the state
+      // catches up or kKnobPowerRetryMs passes.
+      if (state != nullptr && powerOnForVolume(*state)) {
+        if (s_knob_power_ms == 0 ||
+            now - s_knob_power_ms >= kKnobPowerRetryMs) {
+          s_knob_power_ms = now;
+          out.intent = Intent::kKnobPowerOn;
+          return true;
+        }
+        return false;
+      }
+      s_knob_power_ms = 0;
       if (state == nullptr || !now_playing::volumeAvailable(*state)) {
         return false;
       }
