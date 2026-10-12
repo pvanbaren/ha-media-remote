@@ -355,6 +355,11 @@ A tap on a list that was still moving, or on one the loop did not see the
 finger for, is ignored rather than taken as a choice (`kListTapGuardMs`,
 `kTouchWatchGapMs`): a swipe misread as a tap would start the wrong artist.
 
+Which card or screen the remote shows for each startup and error condition --
+no Wi-Fi, Home Assistant not found, not reachable or refusing the token, no
+player -- what a tap, a swipe down and the gear do on it, and what takes it
+away, is set out in [docs/error-cards.md](docs/error-cards.md).
+
 ---
 
 ## Setting it up
