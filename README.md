@@ -274,7 +274,8 @@ When there is nothing to play yet, a card says why:
 |---|---|
 | **Setup** -- Join `MediaRemote-Setup`, or tap | No Wi-Fi configured, or the saved network did not answer at boot. A tap chooses a network on the device; the setup access point is up for the portal meanwhile. A saved network is tried again every minute (`kPortalSavedRetryMs`) while nobody is on the access point or the network screens, so a remote that came up before its router joins once the router is back |
 | **Connecting** | Joining the saved network |
-| **No Wi-Fi** -- Tap to choose | The network dropped and one full attempt to rejoin failed. A tap chooses another; meanwhile the remote keeps trying in the background, nudging the stack every minute (`kWifiLostNudgeMs`), and goes back to now playing when the link returns |
+| **No Wi-Fi** -- Signal lost, retrying, Tap to choose | The network dropped while the remote was running and one full attempt to rejoin failed. A tap chooses another; meanwhile the remote keeps trying in the background, nudging the stack every minute (`kWifiLostNudgeMs`), and goes back to now playing when the link returns |
+| **No Wi-Fi** -- Saved network failed, Tap to choose | The saved network did not come up and no setup portal is open for it -- leaving the network list without joining one, say. A tap chooses a network |
 | **Link to HA** | Wi-Fi works and Home Assistant has not been found; set its URL and token in the portal |
 | **Scan to link** -- a QR code | Home Assistant found; scan the code and sign in to link the remote |
 | **Home Assistant** -- not reachable | Requests are failing; the last line is the reason |
@@ -309,6 +310,7 @@ wakes the screen leave it alone. Details in
 | Now playing | Tap a transport button | Previous / play-pause / next |
 | Now playing | Swipe sideways, top half | Volume; with the volume device off, the swipe switches it on, as play does, where it can be |
 | Now playing | Tap the top half | Switch the volume device on or off |
+| Now playing | Tap the amber **Token rejected** chip | Link again: the sign-in QR code, keeping the URL |
 | Now playing | Tap the "+N rooms" chip | Offer to turn off the other rooms on this input |
 | Isolate card | Tap Isolate | Turn the other rooms off, and back to now playing |
 | Isolate card | Tap Cancel, or swipe right | Leave them on, and back to now playing |

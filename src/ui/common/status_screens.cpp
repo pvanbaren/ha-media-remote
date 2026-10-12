@@ -358,6 +358,17 @@ void statusScreenConnectFailed() {
   resetSpinner();
 }
 
+void statusScreenWifiLost() {
+  // Not "Saved network failed": it worked until a moment ago, and what went
+  // is the signal -- the router off, or the remote out of its range. The
+  // remote keeps trying by itself, so the card says so; a tap still chooses
+  // another network.
+  statusScreenMessage("No Wi-Fi", "Signal lost, retrying", "Tap to choose",
+                      config::kColorBlack, config::kTextOnBlack,
+                      kCardSwipeToStatus | kCardGearToSettings);
+  resetSpinner();
+}
+
 void statusScreenWifiReset() {
   statusScreenMessage("Reset", "Settings cleared", "Rebooting",
                       config::kColorYellow, config::kTextOnYellow);

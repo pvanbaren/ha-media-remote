@@ -9,6 +9,7 @@ enum class Action : uint8_t {
   kPrevious,
   kPlayPause,
   kNext,
+  kRelink,  // the elapsed chip while it says Token rejected
 };
 
 /** Compose and present the whole screen: cover art backdrop, scrim, track

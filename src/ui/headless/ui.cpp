@@ -123,6 +123,7 @@ void showPortal() { say("setup portal"); }
 void showConnecting(const char* ssid) { say("connecting to %s", ssid); }
 void tickConnecting() {}
 void showConnectFailed() { say("no Wi-Fi"); }
+void showWifiLost() { say("no Wi-Fi: signal lost"); }
 void showSettingsCleared() { say("settings cleared"); }
 
 void refreshElapsed(const services::ha::PlayerState&) {}

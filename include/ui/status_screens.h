@@ -18,6 +18,8 @@
 void statusScreenPortal();
 /** Saved network would not come up. */
 void statusScreenConnectFailed();
+/** The network was there and went: dropped while running, and not back. */
+void statusScreenWifiLost();
 /** Credentials cleared, about to reboot. */
 void statusScreenWifiReset();
 

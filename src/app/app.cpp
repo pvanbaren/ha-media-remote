@@ -306,7 +306,7 @@ void showNowPlaying() {
   // with this, going back from the status page or the settings, opened from
   // that card, brings the card back rather than a frozen now playing.
   if (g_wifi_lost && WiFi.status() != WL_CONNECTED) {
-    ui::showConnectFailed();
+    ui::showWifiLost();
     showMessageScreen();
     return;
   }
@@ -1152,7 +1152,7 @@ const char* serviceFor(Intent intent) {
     g_wifi_lost = true;
     LOG_WARN("WiFi reconnect failed - No Wi-Fi card up, nudging every %lu s",
              config::kWifiLostNudgeMs / 1000UL);
-    ui::showConnectFailed();
+    ui::showWifiLost();
     showMessageScreen();
   }
 }
@@ -1913,6 +1913,8 @@ struct ControlNow {
         showSettingsPage(g_setting_open_row);
       } else if (WiFi.status() == WL_CONNECTED) {
         openStatus();
+      } else if (g_wifi_lost) {
+        ui::showWifiLost();
       } else {
         ui::showConnectFailed();
         showMessageScreen();
@@ -1989,6 +1991,13 @@ void portalIdle() {
                services::ha::controlEntity());
       powerOnControl();
       g_poll_now = true;
+      break;
+
+    case Intent::kRelinkHa:
+      // The chip says what the card says, and does what its tap does.
+      if (services::ha::configured() && services::ha::tokenRejected()) {
+        relinkHa();
+      }
       break;
 
     case Intent::kIsolate:

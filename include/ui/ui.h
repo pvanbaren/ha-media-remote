@@ -84,6 +84,7 @@ enum class Intent : uint8_t {
   kPowerOnForVolume,  // a volume swipe or a turn of the knob on now playing
                       // with the volume device off: switch it on, so the
                       // volume can follow
+  kRelinkHa,          // the Token rejected chip on now playing: link again
 };
 
 struct Input {
@@ -231,6 +232,8 @@ void showPortal();
 void showConnecting(const char* ssid);
 void tickConnecting();
 void showConnectFailed();
+/** The No Wi-Fi card for a network that dropped while running. */
+void showWifiLost();
 void showSettingsCleared();
 
 /** Cheap partial repaints that skip a full compose. */

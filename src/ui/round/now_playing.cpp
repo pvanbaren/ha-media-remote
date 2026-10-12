@@ -319,6 +319,19 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
 
 // --- Elapsed / total chip ---------------------------------------------------
 
+/** Where the chip is while it says the token was rejected, for a tap there
+ *  to link again; not shown otherwise. Set each time the chip is drawn. */
+struct ChipBox {
+  bool shown = false;
+  int left = 0;
+  int top = 0;
+  int width = 0;
+  int height = 0;
+};
+ChipBox s_relink_chip;
+/** A finger's worth around it: the pill is small. */
+constexpr int kRelinkHitPad = theme::px(8);
+
 /** Formats "1:23 / 4:56", or leaves `out` empty when there is no duration. */
 void formatElapsed(const PlayerState& state, char* out, size_t out_len) {
   out[0] = '\0';
@@ -342,6 +355,7 @@ void formatElapsed(const PlayerState& state, char* out, size_t out_len) {
 
 void drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   char label[32];
+  s_relink_chip.shown = false;
   formatElapsed(state, label, sizeof(label));
   if (label[0] == '\0') {
     return;
@@ -354,6 +368,10 @@ void drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   const int text_h = gfx.fontHeight();
   const int w = text_w + 2 * theme::kElapsedPillPadX;
   const int h = text_h + 2 * theme::kElapsedPillPadY;
+  if (state.offline && services::ha::tokenRejected()) {
+    s_relink_chip = {true, theme::kCenterX - w / 2, theme::kElapsedY - h / 2,
+                     w, h};
+  }
 
   gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
                     h, theme::kElapsedPillRadius, theme::kSurface);
@@ -659,6 +677,13 @@ bool volumeSwipeRegion(int x, int y) {
 }
 
 Action hitTest(int x, int y) {
+  // The Token rejected chip first: it is a control only while it says that.
+  if (s_relink_chip.shown && x >= s_relink_chip.left - kRelinkHitPad &&
+      x <= s_relink_chip.left + s_relink_chip.width + kRelinkHitPad &&
+      y >= s_relink_chip.top - kRelinkHitPad &&
+      y <= s_relink_chip.top + s_relink_chip.height + kRelinkHitPad) {
+    return Action::kRelink;
+  }
   // Nearest target wins rather than first-match, so a tap that lands between
   // two buttons goes to the one it is actually closer to.
   constexpr int kHitRadiusSq =

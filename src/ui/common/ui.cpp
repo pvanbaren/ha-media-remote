@@ -933,6 +933,9 @@ Input poll(Screen screen, const PlayerState* state) {
     case Action::kNext:
       out.intent = Intent::kNext;
       break;
+    case Action::kRelink:
+      out.intent = Intent::kRelinkHa;
+      break;
     default:
       // A tap in the half a sideways swipe sets the volume in toggles the
       // volume device's power. A swipe there is the volume, and a tap is
@@ -1086,6 +1089,8 @@ void showConnecting(const char* ssid) { statusScreenConnectingBegin(ssid); }
 void tickConnecting() { statusScreenConnectingTick(); }
 
 void showConnectFailed() { statusScreenConnectFailed(); }
+
+void showWifiLost() { statusScreenWifiLost(); }
 
 void showSettingsCleared() { statusScreenWifiReset(); }
 
