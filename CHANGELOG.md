@@ -12,31 +12,39 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-13
+
+This release adds a sixth board, the Makerfabs MaTouch ESP32-S3 Rotary 2.1", whose knob sets the volume and scrolls the lists, and makes the remote's error screens something you can act on from the device: every card about a problem leads to the status page and the settings, a rejected token can be linked again with a tap, and now playing says when Home Assistant has gone quiet.
+
 ### Added
 
-- **Sources:** a swipe right on the lower half of now playing lists the volume device's inputs, the current one marked. Tap one to switch to it, switching the device on first if it is off, and go straight back to now playing. When the player's input on the device is set to a particular input, it changes to the new one too; when it follows the input named after the player, it is left alone.
-- **Back button on the search:** at the top left, beside the query, as on the other pages. It does what a swipe right does: from the results back to the keyboard, and from the keyboard back to the list or now playing. The results start a little lower to leave it room.
-- **Search from now playing:** a swipe left on the lower half of now playing opens the artist search directly, without going through the list. A swipe right on its keyboard goes back to now playing. A sideways swipe on the top half still sets the volume.
-- **Makerfabs MaTouch ESP32-S3 Rotary 2.1":** a 2.1" round 480 px ST7701 panel with CST826 touch, built as `matouch21-s3`, and on the install page. Its knob turns the volume on now playing -- switching the volume device on first, as play does, when it is off -- and scrolls the lists, a row a click; a press plays or pauses on now playing, goes back one step elsewhere, and taps a card. The USB-C port is the S3's own USB, so uploads and the serial console need no driver.
-- **Back on Wi-Fi after a router outage:** a remote that started while its router was down -- after a power cut, say -- opened the setup portal and stayed there. It now tries the saved network again every minute while nobody is using the portal, and carries on by itself once the router is back.
-- **Link again from a rejected token:** when Home Assistant refuses the remote's token -- deleted under your profile, say -- the card says **Token rejected** and **Tap to link again**, and a tap puts the sign-in QR code back up, keeping the URL. Until then the remote stops asking Home Assistant for anything, trying the token again only every ten minutes, so it does not fill Home Assistant's log with failed sign-ins or get its address banned.
-- **Status and settings from a card:** on the cards that say something is wrong -- Home Assistant not reachable, Token rejected, No Wi-Fi, Link to HA -- a swipe down opens the status page, to see what, and a gear at the top right opens the settings, to change the network or the transmit power, or restart. The sign-in QR code has the swipe down, and the player list shown before a player is chosen has the gear. Going back lands on the card again.
-- **Offline mark:** when Home Assistant has not been heard from for 10 s, the elapsed time on now playing turns amber and says **Offline**, or **Token rejected**, instead of running on from a state that may be stale. The status page says the same on an **HA** line, with the error. Both go when Home Assistant answers again. A tap on **Token rejected** links again, as the card's tap does.
+- **Makerfabs MaTouch ESP32-S3 Rotary 2.1":** a 2.1" round 480 px ST7701 panel with CST826 touch, built as `matouch21-s3`, and on the install page. Its knob turns the volume on now playing and scrolls the lists, a row a click; a press plays or pauses on now playing, goes back one step elsewhere, and taps a card.
+- **Sources:** a swipe right on the lower half of now playing lists the volume device's inputs; tap one to switch to it, switching the device on first if it is off.
+- **Search from now playing:** a swipe left on the lower half opens the artist search directly. The search has a back button at the top left.
+- **Status and settings from a card:** on Home Assistant not reachable, Token rejected, No Wi-Fi and Link to HA, a swipe down opens the status page and a gear at the top right opens the settings. The sign-in QR code has the swipe down, and the player list the gear. A swipe up on the status page goes back to where it was opened from.
+- **Link again from a rejected token:** the card, or the amber chip on now playing, says **Token rejected**; a tap puts the sign-in QR code back up, keeping the URL. Meanwhile the remote asks Home Assistant for nothing, trying the token again only every ten minutes, so it does not fill the log with failed sign-ins or get its address banned.
+- **Offline mark:** when Home Assistant has not been heard from for 10 s, now playing's elapsed time turns amber and says **Offline**, and the status page gives the error on an **HA** line.
+- **Back on Wi-Fi after a router outage:** a remote that started while its router was down retries the saved network every minute from the setup portal, and carries on by itself once the router is back.
+- **Documentation:** the README keeps the interface, setting up and the portal; building, the code, internals, troubleshooting and a table of every error card are in [docs/](https://github.com/pvanbaren/ha-media-remote/tree/main/docs).
 
 ### Changed
 
-- **A device playing outside Music Assistant is controlled directly:** where the player is a Music Assistant entity that is idle while the native entity of the same name plays or pauses something of its own, such as a TV in Disney Plus, now playing shows the native entity's title, art and state, and play, pause, next and previous go to it.
-- **Linked in the portal, on to the player list:** saving the URL and token in the portal while the Link to HA card or the QR code was up left the card there until it was tapped. The remote now moves on to the player list by itself, as a link made on the device does.
-- **Losing Wi-Fi while running:** when the network dropped and could not be rejoined, the Connecting card stayed frozen over the screen, taps still went to what was underneath, and attempt followed blocking attempt. The No Wi-Fi card now replaces it, saying the signal was lost and is being retried (a tap chooses a network), the remote keeps trying in the background without blocking, and it goes back to now playing when the link returns.
-- **Status page:** the gear is at the top right, across the title row from the back button, and the received signal and transmit power have a line each again. A swipe up goes back to the screen it was opened from -- a card, say, or the settings -- where the other gestures still go to now playing.
-- **Sharper covers on the 2.8C:** it asks for 512 px covers instead of 256 px, so the backdrop is no longer scaled up. A new track's cover takes about 0.16 s longer to appear.
-- **Volume with the volume device off:** a sideways swipe across the top of now playing switches the device on first, as play does -- its input and the player volume at switch-on with it -- and the next swipe sets the level. Before, the swipe went to a device that was off, so nothing could be heard. A device that cannot be switched on from Home Assistant takes the level as before.
-- **List rows at the edge of a round screen:** a row scrolling past the top or bottom keeps half the panel's width, its corners cut by the bezel, instead of pinching down to a sliver as it goes. On every list: the music list, the search results, the settings and sources, the networks and the players.
-- **Settings before linking:** with the remote not yet linked to Home Assistant, the settings page leaves out Media player and Volume & power, which are chosen from Home Assistant's lists.
+- **A device playing outside Music Assistant is controlled directly:** where the Music Assistant player is idle while its native entity plays something of its own -- a TV in Disney Plus -- now playing shows the native entity's title, art and state, and the buttons go to it.
+- **Volume with the volume device off:** a volume swipe, or a turn of the MaTouch's knob, switches the device on first, as play does, where it can be switched on; the next one sets the level.
+- **Losing Wi-Fi while running:** the No Wi-Fi card, "Signal lost, retrying", replaces a frozen Connecting card, the remote keeps retrying in the background, and goes back to now playing when the link returns.
+- **Status page:** the gear is at the top right, and the received and transmitted power have a line each.
+- **Sharper covers on the 2.8C:** 512 px instead of 256 px, about 0.16 s more per track change.
+- **List rows at the edge of a round screen** keep half the panel's width instead of pinching to a sliver.
+- **Settings before linking** leave out Media player and Volume & power.
+- **The player list lights a tapped row** while the choice is stored.
 
 ### Fixed
 
-- After choosing a media player or a Volume & power device on the device, the settings page and the status page showed the old one until they were opened again.
+- After choosing a media player or Volume & power device on the device, the settings and status pages showed the old one until reopened.
+- Linking in the portal while the Link to HA card or QR code was up left the card on screen until it was tapped.
+- After Wi-Fi dropped, the first attempt to rejoin could fail because the core's own reconnect was still running.
+- Home Assistant logged a template error on every update when a list in the remote's templates was empty.
+- The DFR1221 had no serial console on its USB port.
 
 ## [1.2.0] - 2026-10-06
 
@@ -107,7 +115,8 @@ The first release: a touch remote for one Home Assistant `media_player`, running
 - **Web portal setup:** Wi-Fi, Home Assistant URL and token, player, volume device, rotation, transmit power and more.
 - **Network updates:** two app slots, and settings are kept across updates.
 
-[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pvanbaren/ha-media-remote/releases/tag/v1.0.0
