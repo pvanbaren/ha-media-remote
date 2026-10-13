@@ -1,0 +1,13 @@
+{
+  "name": "Home Assistant Media Remote (Makerfabs MaTouch ESP32-S3 Rotary 2.1\")",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/firmware-matouch21-s3-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
