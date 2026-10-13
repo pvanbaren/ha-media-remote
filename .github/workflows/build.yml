@@ -1,7 +1,7 @@
 # Build every board on every push and pull request, and keep the images.
 #
 # A change made while testing one board can break another that nobody
-# flashed that day; this is the check that all four still compile. Each
+# flashed that day; this is the check that every board still compiles. Each
 # run's firmware is downloadable from its page under Actions:
 # firmware.bin for a network update, firmware-merged.bin for a blank board.
 #
@@ -32,8 +32,8 @@ jobs:
       # One board failing says nothing about the others; see them all.
       fail-fast: false
       matrix:
-        env: [headless, waveshare-s3, round360-s3, lcd28c-s3, matouch21-s3,
-              qualia-720, guition4848-s3]
+        env: [headless, waveshare-s3, round360-s3, amoled466-s3, lcd28c-s3,
+              matouch21-s3, qualia-720, guition4848-s3]
 
     steps:
       - uses: actions/checkout@v5

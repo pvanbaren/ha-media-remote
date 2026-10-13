@@ -15,8 +15,8 @@ src/
     square/      theme.cpp, now_playing.cpp   <- the Qualia
     headless/    draws nothing, narrates to serial
   hardware/
-    waveshare/  round360/  qualia/  lcd28c/  matouch21/  guition4848/
-    headless/    <- one per board
+    waveshare/  round360/  amoled466/  qualia/  lcd28c/  matouch21/
+    guition4848/  headless/    <- one per board
     rgb/         the RGB panels' output stage, for qualia/, lcd28c/,
                  matouch21/ and guition4848/
 include/
@@ -42,8 +42,8 @@ same intent from both.
 circle, the full width on a square) and `now_playing.cpp` holds the one
 screen with a shape in it. The list, the search, the status cards, the
 canvas, the artwork and the text layout are shared, and widen to fit by asking
-`chordHalfWidth()`. The DFR1221 reuses `ui/round/` unchanged at 1.5×, and the
-2.8C and the MaTouch at 2×.
+`chordHalfWidth()`. The DFR1221 reuses `ui/round/` unchanged at 1.5×, the
+AMOLED at about 1.94×, and the 2.8C and the MaTouch at 2×.
 
 **Every dimension scales.** `include/ui/theme.h` is written against a 240 px
 round panel and multiplied by the board's `kUiScale` (width / 240). Two more

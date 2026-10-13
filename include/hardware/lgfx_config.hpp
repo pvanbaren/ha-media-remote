@@ -26,6 +26,92 @@ class LGFX : public lgfx::LGFX_Sprite {
   LGFX() { setColorDepth(16); }
 };
 
+#elif defined(BOARD_PANEL_AMOLED)
+
+/**
+ * LovyanGFX device: CO5300 AMOLED on quad SPI.
+ *
+ * The bus is the ST77916's, but the panel has no backlight -- setBrightness()
+ * is a command to the controller -- and no touch controller hung off it: the
+ * CST9217 is read by hand in hardware/amoled466/touch_raw.cpp. Panel_CO5300's
+ * own geometry is another watch's 410x502, so all of it is set here.
+ */
+
+/**
+ * Panel_CO5300, started as Waveshare's examples start this board's panel
+ * (Arduino_GFX's CO5300 sequence) rather than as LovyanGFX starts LilyGO's
+ * watch. LovyanGFX's list sends display-on straight after sleep-out, with no
+ * wait between them; Arduino_GFX gives the controller 120 ms to wake. Here
+ * sleep-out comes first and has its 120 ms, and the reset has the 200 ms
+ * Arduino_GFX gives it (Panel_Device::init waits 64). Whether LovyanGFX's own
+ * list would also do was not tried: the dark panel at bring-up turned out to
+ * be the row-at-a-time present (see hardware/amoled466/display.cpp).
+ */
+struct Panel_CO5300_Waveshare : public lgfx::Panel_CO5300 {
+  const uint8_t* getInitCommands(uint8_t listno) const override {
+    static constexpr uint8_t list0[] = {
+        0x00, CMD_INIT_DELAY, 140,  // NOP, finishing the reset's 200 ms
+        0x11, CMD_INIT_DELAY, 120,  // sleep out
+        0xFE, 1, 0x00,              // command page 0
+        0xC4, 1, 0x80,              // SPI mode control
+        0x3A, 1, 0x55,              // 16 bits a pixel
+        0x53, 1, 0x20,              // brightness control on
+        0x63, 1, 0xFF,              // brightness in high-brightness mode
+        0x29, CMD_INIT_DELAY, 10,   // display on
+        0x51, 1, 0xD0,              // brightness; displayInit() sets its own
+        0x58, 1, 0x00,              // contrast enhancement off
+        0xFF, 0xFF,                 // end
+    };
+    return listno == 0 ? list0 : nullptr;
+  }
+};
+
+class LGFX : public lgfx::LGFX_Device {
+  lgfx::Bus_SPI _bus;
+  Panel_CO5300_Waveshare _panel;
+
+ public:
+  LGFX() {
+    {
+      auto cfg = _bus.config();
+      cfg.spi_host = SPI2_HOST;
+      cfg.spi_mode = 0;
+      cfg.freq_write = board::kDisplaySpiWriteHz;
+      cfg.freq_read = 16000000;
+      cfg.spi_3wire = true;
+      cfg.use_lock = true;
+      cfg.dma_channel = SPI_DMA_CH_AUTO;
+      cfg.pin_sclk = static_cast<int>(board::kDisplayPinSclk);
+      cfg.pin_io0 = static_cast<int>(board::kDisplayPinIo0);
+      cfg.pin_io1 = static_cast<int>(board::kDisplayPinIo1);
+      cfg.pin_io2 = static_cast<int>(board::kDisplayPinIo2);
+      cfg.pin_io3 = static_cast<int>(board::kDisplayPinIo3);
+      _bus.config(cfg);
+      _panel.setBus(&_bus);
+    }
+    {
+      auto cfg = _panel.config();
+      cfg.pin_cs = static_cast<int>(board::kDisplayPinCs);
+      cfg.pin_rst = static_cast<int>(board::kDisplayPinRst);
+      cfg.pin_busy = -1;
+      cfg.panel_width = board::kDisplayWidth;
+      cfg.panel_height = board::kDisplayHeight;
+      cfg.memory_width = board::kDisplayMemoryWidth;
+      cfg.memory_height = board::kDisplayMemoryHeight;
+      cfg.offset_x = board::kDisplayOffsetX;
+      cfg.offset_y = board::kDisplayOffsetY;
+      cfg.offset_rotation = 0;
+      // Nothing reads the panel back: the frame is kept in PSRAM.
+      cfg.readable = false;
+      cfg.invert = board::kDisplayInvert;
+      cfg.dlen_16bit = false;
+      cfg.bus_shared = false;
+      _panel.config(cfg);
+    }
+    setPanel(&_panel);
+  }
+};
+
 #elif defined(BOARD_PANEL_QSPI)
 
 /**

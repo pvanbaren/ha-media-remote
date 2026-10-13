@@ -20,6 +20,7 @@ Libraries are fetched by PlatformIO: LovyanGFX and WiFiManager.
 ```bash
 pio run -e waveshare-s3      # 1.28" round (the default env)
 pio run -e round360-s3       # 1.85" round 360x360
+pio run -e amoled466-s3      # 1.75" round 466x466 AMOLED
 pio run -e qualia-720        # 4" square 720x720
 pio run -e lcd28c-s3         # 2.8" round 480x480
 pio run -e matouch21-s3      # 2.1" round 480x480
@@ -95,6 +96,7 @@ device keeps its settings across a USB flash.
 
 - **Waveshare**: a CH343 USB-serial bridge; the port auto-detects.
 - **DFR1221**: the S3's own USB port.
+- **AMOLED 1.75**: the S3's own USB port, which also carries the console.
 - **2.8C**: the S3's own USB port too, whatever Waveshare's wiki says about a
   CH343.
 - **MaTouch 2.1"**: the S3's own USB port, which also carries the console.
@@ -138,8 +140,8 @@ python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
     --out-dir data --heights 23,26,30,36
 ```
 
-The generator solves a whole-pixel size for each height, and four land a
-pixel high: 15, 23, 36 and 38 measure 16, 24, 37 and 39. That is inside the
+The generator solves a whole-pixel size for each height, and five land a
+pixel high: 15, 23, 33, 36 and 38 measure 16, 24, 34, 37 and 39. That is inside the
 pixel `display_font.cpp` allows before it rescales, so they are still drawn
 natively.
 
@@ -150,6 +152,7 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 |---|---|
 | Waveshare | 15, 17, 20, 24 |
 | DFR1221 | 23, 26, 30, 36 |
+| AMOLED 1.75 | 29, 33, 39, 47 |
 | Qualia | 34, 38, 45, 54, and 23, 26, 30 for the lists |
 | 2.8C | 23, 26, 30, 36 -- the DFR1221's, at a text scale of 0.75 |
 | MaTouch 2.1" | 23, 26, 30, 36 -- the 2.8C's |

@@ -329,9 +329,10 @@ of 2 whatever it wants, pngle tolerates a short read and TJpgD does not.
 ## Compositing
 
 Every screen composes into one off-screen frame in PSRAM, the panel's size at
-16 bits -- 115 KB on the Waveshare, 259 KB on the DFR1221, 450 KB on the
-2.8C and the MaTouch, 1 MB on the Qualia -- and presents it, or the rectangle that changed, to
-the panel. Everything draws in screen coordinates. The elapsed chip sits on an
+16 bits -- 115 KB on the Waveshare, 259 KB on the DFR1221, 434 KB on the
+AMOLED, 450 KB on the 2.8C and the MaTouch, 1 MB on the Qualia -- and presents
+it, or the rectangle that changed, to the panel. Everything draws in screen
+coordinates. The elapsed chip sits on an
 opaque pill, so its once-a-second update is drawn and presented alone,
 without recomposing the cover; for the same reason a state update only
 recomposes when something visible changed, and position alone does not.
@@ -343,16 +344,54 @@ controls over it; a radio title changing over the same cover restores the
 first and draws the text. Only a new cover is decoded. On the 2.8C that took
 a tap's repaint from 0.5-1 s to about 95 ms.
 
-**Rotation** is below the seam. The round SPI panels turn in their own
+**Rotation** is below the seam. The round LCDs on SPI turn in their own
 controller, with LovyanGFX turning the touch to match, at no cost. The RGB
-panels, the Qualia's, the 2.8C's and the MaTouch's, scan out a framebuffer in a fixed order,
-so there the frame is drawn upright
-and turned as it is copied into the scan-out buffer (`rgbPresent()`), and every
-touch is turned back. Upside down costs nothing extra; at ±90° the copy writes
+panels, the Qualia's, the 2.8C's and the MaTouch's, scan out a framebuffer in a
+fixed order, and the AMOLED cannot be turned in its controller (see
+[The AMOLED](#the-amoled)), so on those the frame is drawn upright and turned
+as it is copied out (`rgbPresent()`, `displayPresentFrame()`), and every touch
+is turned back. Upside down costs nothing extra; at ±90° the copy writes
 down columns, a full present is slower, and a list scroll repaints instead of
 moving rows. The frame is not drawn into a turned LovyanGFX sprite, which is
 how it used to be done: anti-aliased text drawn that way came out with every
 other row black.
+
+## The AMOLED
+
+The Waveshare ESP32-S3-Touch-AMOLED-1.75's CO5300 is on quad SPI like the
+DFR1221's ST77916, and three things set it apart:
+
+- **No backlight.** Brightness is a command to the controller, and an OLED
+  lights only what it shows, so black is already dark. It runs at 200 of 255
+  (`kDisplayBrightness`): the now-playing screen holds the same buttons in the
+  same place for as long as music plays, and an OLED ages with what it shows.
+- **Even windows only.** The controller takes a window only at an even column
+  and an even width, and at an even row and an even height: LovyanGFX drops a
+  window wrong in columns without a word, and the controller one wrong in
+  rows, so a frame pushed a row at a time left the panel dark. Nothing draws
+  on the glass directly (`kPanelWritesDirect` is false, and the elapsed chip
+  and a pressed button go through the frame), and `displayPresentFrame()`
+  widens every rectangle to even columns and rows and pushes it two rows at a
+  time.
+- **Turned in the copy.** The panel's 466 columns start 6 into the
+  controller's memory, and LovyanGFX's AMOLED rotation keeps that offset
+  where it is at every turn, which would shift the picture. So the controller
+  is never turned: `displayPresentFrame()` turns the frame as it pushes it,
+  and touches are turned back.
+
+LovyanGFX's `Panel_CO5300` starts the controller as LilyGO's watch wants it,
+with display-on straight after sleep-out; `lgfx_config.hpp` starts it as
+Waveshare's examples do instead, with the 120 ms the controller needs to wake.
+
+The CST9217 touch controller is read by hand (`touch_raw.cpp`): LovyanGFX's
+`Touch_CST226` speaks the same protocol but accepts only the CST226's chip id.
+The AXP2101 power manager, QMI8658 IMU and audio are left alone.
+
+This is the 1.75 (Rev 1.1, with an SD card slot). The 1.75C has the same
+pins but for its resets -- the display's on GPIO 1 and the touch's on GPIO 2,
+which on the 1.75 are SD card lines, against 39 and 40 here -- so it needs
+`kDisplayPinRst` and `kTouchPinRst` set back in `board/amoled466_s3.h`. It
+has not been tried on a 1.75C.
 
 ## The Qualia
 
@@ -472,8 +511,8 @@ fragment anything later.
 
 **Flash** (`partitions/media_remote.csv`, 16 MB on every board): the settings
 partition (NVS, 20 KB at 0x9000), OTA data, two 4 MB app slots, spiffs,
-unused, and 64 KB at the end for a core dump. The DFR1221's env declares its 16 MB explicitly; the generic
-board definition it builds on says 8.
+unused, and 64 KB at the end for a core dump. Every panel board's env declares
+its 16 MB explicitly; the generic board definition they build on says 8.
 
 **Settings** are in NVS, each group in its own namespace so a reset can clear
 one and keep another: `hamedia` (Home Assistant), `ma` (Music Assistant),
