@@ -245,14 +245,11 @@ constexpr int kThumbPx = 38;
  *
  *  Deliberately not the panel size. Matching it would mean 1024 px art, and
  *  the cover is drawn as a full-screen backdrop, so the decode is the
- *  expensive part of every compose pass -- four times the pixels of a 512 and
- *  sixteen times a 256, on a panel whose frame already costs a megabyte.
- *  256 upscales 2.8x onto the glass, which is soft against a photograph but
- *  sits behind a scrim with text over it, and buys back both the decode time
- *  and the transfer.
- *
- *  Raise this to 512 if the softness shows; the buffer below has room. */
-constexpr int kCoverArtRequestPx = 256;
+ *  expensive part of every compose pass -- four times the pixels of a 512,
+ *  on a panel whose frame already costs a megabyte. 512 upscales 1.4x onto
+ *  the glass. It was 256, which upscaled 2.8x and looked soft; 512 is four
+ *  times its decode, the price of a sharper backdrop. */
+constexpr int kCoverArtRequestPx = 512;
 
 /**
  * Shortest gap between full repaints of a scrolling list.
@@ -287,7 +284,7 @@ constexpr unsigned long kListRedrawMinMs = 100;
 constexpr int kComposeSlabRows = 48;
 
 /** Cover art is cached compressed. Sized well above what kCoverArtRequestPx
- *  asks for -- a 256 px JPEG is tens of KB -- because the headroom is free
+ *  asks for -- a 512 px JPEG is 50 to 150 KB -- because the headroom is free
  *  against 8 MB of PSRAM, and it means raising the request size is a one-line
  *  change rather than two. Art larger than this streams and decodes from the
  *  socket instead of caching, which costs a re-fetch on every repaint. */
