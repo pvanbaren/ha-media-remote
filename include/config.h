@@ -569,6 +569,14 @@ constexpr uint16_t kVoiceReplyTimeoutMs = 15000;
 constexpr unsigned long kVoiceFetchMemoryWaitMs = 1000;
 /** How loud the speaker is, 0..100. */
 constexpr int kVoiceVolume = 70;
+/** While a voice request runs, music playing in the room is turned down to
+ *  this share of its volume, about 12 dB, so the command is heard over it --
+ *  and back up once the request and its reply are over. Not paused: a pause
+ *  left the music off after every request. */
+constexpr float kVoiceDuckShare = 0.25f;
+/** The volume is put back only if it is still within this of where it was
+ *  turned down to: a request that set the volume itself keeps its level. */
+constexpr float kVoiceDuckTolerance = 0.02f;
 /** The wake word fires when the model's confidence, averaged over its last
  *  kWakeWordWindow runs (30 ms each), reaches the model's cutoff, which its
  *  manifest gives (wake_word.cpp's kModels): 5 for all four. */

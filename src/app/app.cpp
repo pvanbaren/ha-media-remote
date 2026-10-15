@@ -88,6 +88,16 @@ std::atomic<bool> g_poll_now{false};
  *  switched off. Handed to the poll task rather than called from the loop:
  *  turn_off is a network round trip. */
 std::atomic<bool> g_turn_off_control{false};
+/** A voice request has started and the music should be turned down. Handed
+ *  to the poll task for the same reason: on the loop the call held touch
+ *  unread for as long as Home Assistant took to answer, and a hold let go
+ *  meanwhile went on listening. */
+std::atomic<bool> g_duck_for_voice{false};
+/** The volume the music was turned down from and to, while it is down for a
+ *  voice request. Poll task only. */
+bool g_ducked = false;
+float g_duck_from = 0.0f;
+float g_duck_to = 0.0f;
 
 unsigned long g_last_elapsed_ms = 0;
 /** When the browse list or search screen was last opened, for
@@ -1654,11 +1664,63 @@ bool startingSettled();
   g_poll_now = true;
 }
 
-/** The wake word, heard: a voice request from where it ended, and the music
- *  paused if it is playing, so the command is heard over it. The request
- *  first -- the command is already being said -- and the pause after, which
- *  waits on Home Assistant. Not resumed after: the command may be the
- *  music's. */
+/** A voice request has started: music playing in the room is turned down,
+ *  so the command is heard over it -- by the poll task, so nothing here
+ *  waits on Home Assistant -- and turned back up after (restoreAfterVoice).
+ *  Turned down rather than paused, which left the music off after every
+ *  request. */
+void duckForVoice() {
+  PlayerState now;
+  if (snapshotState(now) && now.playback == PlaybackState::kPlaying) {
+    g_duck_for_voice = true;
+    g_poll_now = true;
+  }
+}
+
+/** The poll task's half of duckForVoice(): the volume device to a quarter of
+ *  its level. Not again while it is already down -- a request straight after
+ *  another -- or the level to go back to would be the lowered one. */
+void duckMusicForVoice() {
+  PlayerState now;
+  if (g_ducked || !snapshotState(now) ||
+      now.playback != PlaybackState::kPlaying ||
+      !services::ha::volumeAvailable(now)) {
+    return;
+  }
+  g_duck_from = now.volume;
+  g_duck_to = now.volume * config::kVoiceDuckShare;
+  g_ducked = true;
+  LOG_INFO("VOICE: music down from %.2f to %.2f", g_duck_from, g_duck_to);
+  commandVolume(services::ha::controlEntity(), g_duck_to);
+  // commandVolume() moves the level on record but repaints nothing -- a drag
+  // draws its own arc -- and when Home Assistant reports this level it will
+  // match the record, so no update would ever show it. Ask for the repaint.
+  g_state_dirty = true;
+}
+
+/** The music back up once the request and its reply are over -- unless the
+ *  volume has moved since it was turned down, which is the request having
+ *  set it, or someone turning it by hand. Poll task. */
+void restoreAfterVoice() {
+  if (!g_ducked || services::voice::busy()) {
+    return;
+  }
+  g_ducked = false;
+  PlayerState now;
+  if (!snapshotState(now)) {
+    return;
+  }
+  if (fabsf(now.volume - g_duck_to) > config::kVoiceDuckTolerance) {
+    LOG_INFO("VOICE: volume moved to %.2f meanwhile, left there", now.volume);
+    return;
+  }
+  LOG_INFO("VOICE: music back up to %.2f", g_duck_from);
+  commandVolume(services::ha::controlEntity(), g_duck_from);
+  // As above: without this the arc stayed at the lowered level.
+  g_state_dirty = true;
+}
+
+/** The wake word, heard: a voice request from where it ended. */
 [[gnu::noinline]] void handleWakeWord() {
   uint32_t position = 0;
   if (!services::wake_word::takeDetection(position)) {
@@ -1668,10 +1730,7 @@ bool startingSettled();
     LOG_INFO("VOICE: wake word heard, but no request can start now");
     return;
   }
-  PlayerState now;
-  if (snapshotState(now) && now.playback == PlaybackState::kPlaying) {
-    sendCommand(Intent::kPlayPause);
-  }
+  duckForVoice();
 }
 
 /** Linking to Home Assistant, from the loop: look for it once Wi-Fi is up
@@ -2987,6 +3046,10 @@ void haPollTask(void*) {
         g_turn_off_control = false;
         powerOffControl();
       }
+      if (g_duck_for_voice.exchange(false)) {
+        duckMusicForVoice();
+      }
+      restoreAfterVoice();
 
       // Load the browse list ahead of anyone asking for it, so a swipe up
       // lands on a list rather than on a loading card. Cheap to call: it only
