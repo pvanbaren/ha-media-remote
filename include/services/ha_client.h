@@ -267,6 +267,30 @@ bool streamIsOpen();
 bool streamService(PlayerState& out, uint32_t wait_ms);
 void streamClose();
 
+// --- A conversation of its own on the stream, for services::voice ----------
+// Home Assistant's Assist pipeline runs over the same WebSocket as the state,
+// since a second TLS session beside the stream's leaves too little internal
+// RAM for the reply's download. The socket stays the owner's alone: the hook
+// runs on the owner, on every pass while the stream is open, and the two
+// sends below are for the hook and the listener only.
+
+/** Called on the stream's owner on every pass while the stream is open. */
+using StreamHook = void (*)();
+/** Called on the owner with each message whose id is the one
+ *  streamRequest() last returned; with nullptr when the stream closes. */
+using StreamListener = void (*)(const char* message);
+void setStreamHook(StreamHook hook);
+void setStreamListener(StreamListener listener);
+
+/** From the hook or the listener: `body` -- the members after the id -- as
+ *  a request, its messages from now on for the listener. Its id, or 0 if
+ *  the send failed, which closes the stream. */
+int streamRequest(const char* body);
+
+/** From the hook or the listener: one binary message. False if the send
+ *  failed, which closes the stream. */
+bool streamSendBinary(const uint8_t* data, size_t len);
+
 /** Fetch one slice of the Music Assistant library, via
  *  `music_assistant.get_library?return_response`.
  *

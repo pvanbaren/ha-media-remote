@@ -219,7 +219,7 @@ bool WebSocket::sendFrame(uint8_t opcode, const uint8_t* data, size_t len) {
   }
 
   // Masked in pieces rather than into a copy of the whole payload; each
-  // piece is a TLS record, so not too small.
+  // piece is a TLS record, so not too small: audio goes this way.
   uint8_t chunk[512];
   for (size_t done = 0; done < len;) {
     const size_t n = (len - done) < sizeof(chunk) ? (len - done) : sizeof(chunk);
@@ -236,6 +236,14 @@ bool WebSocket::sendFrame(uint8_t opcode, const uint8_t* data, size_t len) {
 
 bool WebSocket::sendText(const char* data, size_t len) {
   if (!sendFrame(kOpText, reinterpret_cast<const uint8_t*>(data), len)) {
+    fail("send failed");
+    return false;
+  }
+  return true;
+}
+
+bool WebSocket::sendBinary(const uint8_t* data, size_t len) {
+  if (!sendFrame(kOpBinary, data, len)) {
     fail("send failed");
     return false;
   }

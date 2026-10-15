@@ -550,6 +550,27 @@ constexpr size_t kCoverArtMaxBytes = 2u * 1024u * 1024u;
  *  rewriting is then dropped for the session. */
 constexpr bool kCoverArtRequestPanelSize = true;
 
+// =====================================================================
+// Voice -- Home Assistant's Assist, on a board with a microphone
+// =====================================================================
+/** Longest a request listens for. Home Assistant normally ends it sooner,
+ *  when it hears the speech stop; this is for a room too noisy for that. */
+constexpr unsigned long kVoiceMaxListenMs = 8000;
+/** Samples per binary message of audio: 64 ms. In testing this kept up with
+ *  the microphone with at most one message waiting. */
+constexpr size_t kVoiceFrameSamples = 1024;
+/** Longest the reply's download waits for its headers. Home Assistant holds
+ *  them until the speech has been made, which takes Piper a fraction of a
+ *  second and Google Cloud 1.5 s for a sentence it has not said before. */
+constexpr uint16_t kVoiceReplyTimeoutMs = 15000;
+/** The reply's download is a second TLS session beside the stream's, and
+ *  mbedTLS takes its buffers from internal RAM only: below this largest free
+ *  block it is not tried, and the reply is shown but not spoken. 31 KB was
+ *  free when it worked in testing. */
+constexpr size_t kVoiceFetchMinBlockBytes = 24 * 1024;
+/** How loud the speaker is, 0..100. */
+constexpr int kVoiceVolume = 70;
+
 // --- UI colours (RGB565) ---
 constexpr uint16_t kColorBlack = 0x0000;
 constexpr uint16_t kColorWhite = 0xFFFF;

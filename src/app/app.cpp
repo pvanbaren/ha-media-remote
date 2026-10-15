@@ -43,6 +43,7 @@
 #include "services/recommend.h"
 #include "services/ha_client.h"
 #include "services/search.h"
+#include "services/voice.h"
 #include "services/wifi_setup.h"
 #include "ui/ui.h"
 
@@ -2975,7 +2976,11 @@ void haPollTask(void*) {
       // lock that the drawing side also takes, so doing it anyway would be
       // correct -- but it would mean scrolling stuttering against a load, and
       // there is no reason to refresh a list someone is reading.
-      if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch) {
+      //
+      // Skipped during a voice request too: a load holds this task, and with
+      // it the microphone's audio and the reply, for seconds.
+      if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
+          !services::voice::busy()) {
         services::browse::preload();
       }
 
@@ -3021,7 +3026,8 @@ void haPollTask(void*) {
         // What plays on this player is what plays in this room: the history
         // the swipe-up list's first two sections are built from. A new
         // artist costs a search, here on the network task.
-        if (fresh.playback == PlaybackState::kPlaying) {
+        if (fresh.playback == PlaybackState::kPlaying &&
+            !services::voice::busy()) {
           services::history::notePlaying(fresh.artist, fresh.track);
         }
 
@@ -3050,7 +3056,9 @@ void haPollTask(void*) {
 
       // After a restart the history has names but no pictures; one is found
       // again every few seconds until the list is whole.
-      services::history::refreshPictures();
+      if (!services::voice::busy()) {
+        services::history::refreshPictures();
+      }
     }
 
     if (streaming) {
@@ -3165,6 +3173,10 @@ void setup() {
     ui::showPortal();
   }
   services::ha::init();
+  // The microphone and speaker, on a board that has them, and the hook into
+  // the stream that voice requests run over. Before Wi-Fi, while PSRAM is
+  // unfragmented; nothing on a board without them.
+  services::voice::init();
   // Before Wi-Fi, so its pages are there when the portal's server starts.
   services::ha_link::init();
   services::update::init();
