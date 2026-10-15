@@ -44,6 +44,7 @@
 #include "services/ha_client.h"
 #include "services/search.h"
 #include "services/voice.h"
+#include "services/wake_word.h"
 #include "services/wifi_setup.h"
 #include "ui/ui.h"
 
@@ -1653,6 +1654,26 @@ bool startingSettled();
   g_poll_now = true;
 }
 
+/** The wake word, heard: a voice request from where it ended, and the music
+ *  paused if it is playing, so the command is heard over it. The request
+ *  first -- the command is already being said -- and the pause after, which
+ *  waits on Home Assistant. Not resumed after: the command may be the
+ *  music's. */
+[[gnu::noinline]] void handleWakeWord() {
+  uint32_t position = 0;
+  if (!services::wake_word::takeDetection(position)) {
+    return;
+  }
+  if (!services::voice::startAt(position)) {
+    LOG_INFO("VOICE: wake word heard, but no request can start now");
+    return;
+  }
+  PlayerState now;
+  if (snapshotState(now) && now.playback == PlaybackState::kPlaying) {
+    sendCommand(Intent::kPlayPause);
+  }
+}
+
 /** Linking to Home Assistant, from the loop: look for it once Wi-Fi is up
  *  and nothing is linked, put the QR code up when it is found, and finish
  *  the sign-in once a browser comes back with a code. */
@@ -3177,6 +3198,11 @@ void setup() {
   // the stream that voice requests run over. Before Wi-Fi, while PSRAM is
   // unfragmented; nothing on a board without them.
   services::voice::init();
+  // Listening for the wake word from now on, on a board with a microphone
+  // and the model; nothing elsewhere. Before Wi-Fi, for the same reason.
+  if (services::wake_word::init()) {
+    services::wake_word::setListening(true);
+  }
   // Before Wi-Fi, so its pages are there when the portal's server starts.
   services::ha_link::init();
   services::update::init();
@@ -3245,6 +3271,7 @@ void loop() {
 
   handleMessageRecheck();
   handleHaLink();
+  handleWakeWord();
   handleFirmwareRequest();
   handleFontsRequest();
 

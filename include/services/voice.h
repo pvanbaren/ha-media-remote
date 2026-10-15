@@ -54,6 +54,11 @@ bool available();
  *  under way or none is available. Cuts off a reply still playing. */
 bool start();
 
+/** Start a request after a wake word: listening from `position` in the
+ *  microphone's stream (services::wake_word::takeDetection()), so what was
+ *  said straight after the wake word is heard, and a beep meanwhile. */
+bool startAt(uint32_t position);
+
 /** The speaker is done talking: stop listening and let Home Assistant work
  *  on what it has. Home Assistant also stops it by itself, at silence. */
 void finish();

@@ -13,11 +13,11 @@
  *
  * Everything is 16 kHz, 16-bit, mono, which is what Assist takes.
  *
- * The microphone, once captureStart() has been called, fills a ring of about
- * two seconds that captureRead() drains: a voice request sends what it reads
- * as it goes, and a wake-word detector could read the same way. Nothing reads
- * it for you; a ring left undrained overwrites nothing, it drops what does not
- * fit, and captureDropped() says how much.
+ * The microphone fills a ring of about two seconds while any reader wants
+ * it, and each reader drains it from its own place: the wake-word detector,
+ * all the time, and a voice request, from where the wake word ended or from
+ * the moment it starts. A reader that falls two seconds behind loses the
+ * oldest of what it had not read, and captureDropped() says how much.
  *
  * The speaker plays an MP3 that is still arriving -- mp3Begin(), then
  * mp3Write() from whatever is downloading it, then mp3End() -- decoding each
@@ -38,23 +38,35 @@ bool ready();
 
 // --- Microphone -----------------------------------------------------------
 
-/** Start keeping what the microphone hears. Anything already in the ring is
- *  discarded, so what is read next is from now on. */
-bool captureStart();
+/** Who is reading the microphone. Each reads from one task. */
+enum class Reader : uint8_t { kRequest, kWakeWord };
 
-/** Stop keeping it. What is in the ring can still be read. */
-void captureStop();
+/** Start `reader` reading from now on. */
+bool captureStart(Reader reader);
 
-bool capturing();
+/** Start `reader` reading from `position`, a place another reader's
+ *  capturePosition() gave: a request picks up where the wake word ended. As
+ *  far back as the ring still holds. */
+bool captureStartAt(Reader reader, uint32_t position);
 
-/** Up to `max` samples, oldest first. Never blocks; 0 when there are none. */
-size_t captureRead(int16_t* out, size_t max);
+/** Stop `reader`. What it has not read yet, up to now, can still be read;
+ *  nothing after, though another reader keeps the ring filling. */
+void captureStop(Reader reader);
 
-/** Samples lost since captureStart() because the ring was full. */
-uint32_t captureDropped();
+bool capturing(Reader reader);
 
-/** The loudest sample in the last 16 ms or so, 0..32767, while capturing;
- *  0 otherwise. For a level meter. */
+/** Up to `max` samples for `reader`, oldest first. Never blocks; 0 when
+ *  there are none. */
+size_t captureRead(Reader reader, int16_t* out, size_t max);
+
+/** Where in the microphone's stream `reader` will read next. */
+uint32_t capturePosition(Reader reader);
+
+/** Samples `reader` lost since it started, by falling too far behind. */
+uint32_t captureDropped(Reader reader);
+
+/** The loudest sample in the last 16 ms or so, 0..32767, while any reader
+ *  is capturing; 0 otherwise. For a level meter. */
 uint16_t inputPeak();
 
 // --- Speaker --------------------------------------------------------------

@@ -563,13 +563,26 @@ constexpr size_t kVoiceFrameSamples = 1024;
  *  them until the speech has been made, which takes Piper a fraction of a
  *  second and Google Cloud 1.5 s for a sentence it has not said before. */
 constexpr uint16_t kVoiceReplyTimeoutMs = 15000;
-/** The reply's download is a second TLS session beside the stream's, and
- *  mbedTLS takes its buffers from internal RAM only: below this largest free
- *  block it is not tried, and the reply is shown but not spoken. 31 KB was
- *  free when it worked in testing. */
-constexpr size_t kVoiceFetchMinBlockBytes = 24 * 1024;
+/** How long the reply's download waits for internal RAM for its TLS
+ *  session (see voice.cpp's tlsFits()) before it gives up, and the reply is
+ *  shown but not spoken. */
+constexpr unsigned long kVoiceFetchMemoryWaitMs = 1000;
 /** How loud the speaker is, 0..100. */
 constexpr int kVoiceVolume = 70;
+/** The wake word fires when the model's confidence, averaged over its last
+ *  kWakeWordWindow runs (30 ms each), reaches the model's cutoff, which its
+ *  manifest gives (wake_word.cpp's kModels): 5 for all four. */
+constexpr int kWakeWordWindow = 5;
+/** After it fires, or starts listening afresh, this long before it may fire:
+ *  the model's memory of the last few seconds settles first. */
+constexpr unsigned long kWakeWordSettleMs = 1000;
+/** A request after the wake word starts this far back from where it was
+ *  heard. It is heard a little after it ends -- the five runs averaged are
+ *  150 ms of sound -- and a command said in the same breath lost its first
+ *  word ("off the master bedroom lights") without it. At 200 ms the end of
+ *  the wake word came through now and then, heard as "Let's"; at 150 ms a
+ *  first word was still lost now and then. */
+constexpr unsigned long kWakeWordPreRollMs = 175;
 
 // --- UI colours (RGB565) ---
 constexpr uint16_t kColorBlack = 0x0000;

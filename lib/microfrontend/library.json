@@ -1,0 +1,9 @@
+{
+  "name": "microfrontend",
+  "version": "0.0.0",
+  "description": "TensorFlow Lite Micro's audio front end, for microWakeWord. See README.md.",
+  "license": "Apache-2.0",
+  "build": {
+    "extraScript": "psram_malloc.py"
+  }
+}

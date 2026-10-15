@@ -52,6 +52,8 @@ namespace {
 using ha::detail::eachMember;
 using ha::detail::readJson;
 
+constexpr hw::audio::Reader kMic = hw::audio::Reader::kRequest;
+
 constexpr char kRunBody[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"stt\","
     "\"end_stage\":\"tts\",\"input\":{\"sample_rate\":16000}";
@@ -61,7 +63,12 @@ constexpr unsigned long kStartTimeoutMs = 5000;
 constexpr uint16_t kBeepHz = 880;
 constexpr uint16_t kBeepMs = 120;
 
-enum class Job : uint8_t { kListen, kFetch };
+struct Job {
+  enum Kind : uint8_t { kListen, kFetch } kind;
+  /** kListen from a wake word: the microphone from `position` on. */
+  bool from_position;
+  uint32_t position;
+};
 
 std::atomic<Phase> s_phase{Phase::kIdle};
 /** start() and cancel(), for the owner's next pass. */
@@ -96,6 +103,8 @@ unsigned long s_speech_end_ms = 0;
 int16_t* s_pcm = nullptr;
 size_t s_pcm_fill = 0;
 uint8_t* s_frame = nullptr;
+/** Said once a request, when the audio has fallen a second behind. */
+bool s_lag_logged = false;
 
 template <size_t N>
 void setText(char (Status::*field)[N], const char* text) {
@@ -105,7 +114,7 @@ void setText(char (Status::*field)[N], const char* text) {
 }
 
 void fail(const char* why) {
-  hw::audio::captureStop();
+  hw::audio::captureStop(kMic);
   s_fetch_abort = true;
   setText(&Status::error, why);
   s_phase = Phase::kFailed;
@@ -118,13 +127,23 @@ void pumpAudio() {
   if (s_handler < 0 || s_audio_done || !s_capture_began) {
     return;
   }
+  size_t this_pass = 0;
   for (;;) {
     // Whether it was still capturing, asked before reading: stopped then
     // and nothing read now means everything has been read.
-    const bool capturing = hw::audio::capturing();
+    const bool capturing = hw::audio::capturing(kMic);
     const size_t n = hw::audio::captureRead(
-        s_pcm + s_pcm_fill, config::kVoiceFrameSamples - s_pcm_fill);
+        kMic, s_pcm + s_pcm_fill, config::kVoiceFrameSamples - s_pcm_fill);
     s_pcm_fill += n;
+    // A second's audio waiting at once: this task was kept from it, by
+    // something on the stream's owner. Two seconds and it is lost.
+    this_pass += n;
+    if (this_pass >= hw::audio::kSampleRate && !s_lag_logged) {
+      s_lag_logged = true;
+      LOG_WARN("VOICE: the audio fell %lu ms behind",
+               static_cast<unsigned long>(this_pass * 1000 /
+                                          hw::audio::kSampleRate));
+    }
     const bool drained = !capturing && n == 0;
     if (s_pcm_fill == config::kVoiceFrameSamples ||
         (drained && s_pcm_fill > 0)) {
@@ -139,9 +158,9 @@ void pumpAudio() {
       ha::streamSendBinary(s_frame, 1);  // the handler alone: the end
       s_audio_done = true;
       s_speech_end_ms = millis();
-      if (hw::audio::captureDropped() > 0) {
+      if (hw::audio::captureDropped(kMic) > 0) {
         LOG_WARN("VOICE: %lu samples of speech lost",
-                 static_cast<unsigned long>(hw::audio::captureDropped()));
+                 static_cast<unsigned long>(hw::audio::captureDropped(kMic)));
       }
       Phase listening = Phase::kListening;
       s_phase.compare_exchange_strong(listening, Phase::kThinking);
@@ -157,7 +176,7 @@ void queueFetch() {
   s_fetch_queued = true;
   s_fetch_abort = false;
   s_fetching = true;
-  const Job job = Job::kFetch;
+  const Job job = {Job::kFetch, false, 0};
   xQueueSend(s_jobs, &job, 0);
 }
 
@@ -172,6 +191,8 @@ void hook() {
     s_run_ended = false;
     s_fetch_queued = false;
     s_pcm_fill = 0;
+    s_lag_logged = false;
+    s_speech_end_ms = 0;
     s_reply_url[0] = '\0';
     s_run_sent_ms = millis();
     s_run_id = ha::streamRequest(kRunBody);
@@ -191,16 +212,20 @@ void hook() {
     fail("Home Assistant did not start listening");
     return;
   }
-  if (s_phase == Phase::kListening && hw::audio::capturing() &&
+  if (s_phase == Phase::kListening && hw::audio::capturing(kMic) &&
       now - s_run_sent_ms >= config::kVoiceMaxListenMs) {
-    hw::audio::captureStop();
+    hw::audio::captureStop(kMic);
   }
   if (s_run_ended && !s_fetching && !hw::audio::playing()) {
     s_run_id = 0;
     if (s_phase != Phase::kFailed) {
       s_phase = Phase::kIdle;
-      LOG_INFO("VOICE: done, %lu ms after the speech ended",
-               static_cast<unsigned long>(now - s_speech_end_ms));
+      if (s_speech_end_ms != 0) {
+        LOG_INFO("VOICE: done, %lu ms after the speech ended",
+                 static_cast<unsigned long>(now - s_speech_end_ms));
+      } else {
+        LOG_INFO("VOICE: done");
+      }
     }
   }
 }
@@ -297,14 +322,14 @@ void listener(const char* message) {
       fail("Home Assistant gave no audio channel");
     }
   } else if (strcmp(etype, "stt-vad-end") == 0) {
-    hw::audio::captureStop();  // it has stopped listening
+    hw::audio::captureStop(kMic);  // it has stopped listening
   } else if (strcmp(etype, "stt-end") == 0) {
     char heard[sizeof(Status::heard)];
     static const char* const kText[] = {"stt_output", "text", nullptr};
     readPath(data, kText, heard, sizeof(heard));
     setText(&Status::heard, heard);
     LOG_INFO("VOICE: heard \"%s\"", heard);
-    hw::audio::captureStop();
+    hw::audio::captureStop(kMic);
     queueFetch();
   } else if (strcmp(etype, "intent-end") == 0) {
     char reply[sizeof(Status::reply)];
@@ -398,6 +423,65 @@ size_t bodyToPlayer(NetworkClient& c, size_t limit) {
   return passed;
 }
 
+/** Internal RAM's free blocks, as heap_caps_walk() finds them: the total
+ *  and the two largest. */
+struct FreeBlocks {
+  size_t total = 0;
+  size_t first = 0;
+  size_t second = 0;
+};
+
+// Nothing here may allocate or log: the heap is locked while it runs.
+bool countFree(walker_heap_into_t, walker_block_info_t block, void* user) {
+  if (!block.used) {
+    auto* f = static_cast<FreeBlocks*>(user);
+    f->total += block.size;
+    if (block.size > f->first) {
+      f->second = f->first;
+      f->first = block.size;
+    } else if (block.size > f->second) {
+      f->second = block.size;
+    }
+  }
+  return true;
+}
+
+/** Whether a TLS session would fit in internal RAM now. mbedTLS here keeps
+ *  a 16 KB record buffer each way, about 17 KB with its overhead, and the
+ *  handshake wants another 16 KB or so in pieces -- its big numbers and the
+ *  server's certificates. The largest free block alone does not say: a
+ *  34 KB block with nothing else as big failed, and so did a check that
+ *  allowed only 6 KB for the handshake. Read off the heap's free blocks
+ *  rather than found by allocating it all and giving it back, which took
+ *  nearly all of internal RAM from everything else for the moment it
+ *  lasted, ten times a second. */
+bool tlsFits() {
+  constexpr size_t kRecord = 16384 + 512;
+  constexpr size_t kHandshake = 16 * 1024;
+  FreeBlocks f;
+  heap_caps_walk(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT, countFree, &f);
+  // Both record buffers placed: in the two largest blocks, or both in one.
+  const bool records = f.second >= kRecord || f.first >= 2 * kRecord;
+  return records && f.total >= 2 * kRecord + kHandshake;
+}
+
+/** Wait, up to config::kVoiceFetchMemoryWaitMs, for tlsFits(). */
+bool waitForTlsRoom() {
+  for (unsigned long waited = 0; !tlsFits(); waited += 100) {
+    if (waited >= config::kVoiceFetchMemoryWaitMs) {
+      LOG_WARN("VOICE: too little memory to download the reply (internal "
+               "free %u, largest %u)",
+               static_cast<unsigned>(heap_caps_get_free_size(
+                   MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+               static_cast<unsigned>(heap_caps_get_largest_free_block(
+                   MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+      return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  return true;
+}
+
 /** The reply's audio, downloaded and played as it comes.
  *
  *  By hand rather than with HTTPClient, so that it can be given up: Home
@@ -430,19 +514,11 @@ void fetchReply() {
     path = path.substring(slash);
   }
 
-  auto largest = [] {
-    return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
-                                            MALLOC_CAP_8BIT);
-  };
-  if (largest() < config::kVoiceFetchMinBlockBytes) {
-    ha::detail::dropRestConnection();
-  }
-  if (largest() < config::kVoiceFetchMinBlockBytes) {
-    LOG_WARN("VOICE: too little memory to download the reply (largest "
-             "block %u)",
-             static_cast<unsigned>(largest()));
-    return;
-  }
+  // The REST connection goes whether or not it is idle: its session is a
+  // second one's worth of internal RAM, and the reply cannot wait for it.
+  // The artwork worker holds off while a request runs (artwork.cpp); what
+  // else is using the RAM may be about to give it back.
+  ha::detail::dropRestConnection();
 
   services::YieldingClient plain;
   services::YieldingClientSecure secure;
@@ -452,8 +528,23 @@ void fetchReply() {
     secure.setHandshakeTimeout(config::kHaStreamHandshakeMs / 1000);
     c = &secure;
   }
-  if (!c->connect(host, port)) {
-    LOG_WARN("VOICE: reply download could not connect");
+  // A connection that could not be made is tried twice more: what failed
+  // it is a handshake running out of internal RAM that something else gave
+  // back moments later. Nothing has reached Home Assistant by then, so the
+  // reply is still there to ask for.
+  bool connected = false;
+  for (int attempt = 0; attempt < 3 && !connected; ++attempt) {
+    if (s_fetch_abort || !waitForTlsRoom()) {
+      return;
+    }
+    connected = c->connect(host, port);
+    if (!connected) {
+      LOG_WARN("VOICE: reply download could not connect, %s",
+               attempt < 2 ? "trying again" : "giving up");
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
+  }
+  if (!connected) {
     return;
   }
 
@@ -531,13 +622,33 @@ void voiceTask(void*) {
     if (xQueueReceive(s_jobs, &job, portMAX_DELAY) != pdTRUE) {
       continue;
     }
-    if (job == Job::kListen) {
+    // In both, the REST connection is closed at once, idle or not: its TLS
+    // session is the internal RAM the reply's download will want in a few
+    // seconds, and nothing in a request needs it. Here, not on the caller,
+    // which may be the loop: closing it waits out a call in progress. Closed
+    // again before the download, in case something reopened it.
+    if (job.kind == Job::kListen && job.from_position) {
+      // After a wake word the command is already being said: the
+      // microphone from where the wake word ended, then the beep, which
+      // goes up with it.
       hw::audio::stop();
+      Phase starting = Phase::kStarting;
+      if (s_phase.compare_exchange_strong(starting, Phase::kListening)) {
+        hw::audio::captureStartAt(kMic, job.position);
+        s_capture_began = true;
+        LOG_INFO("VOICE: listening, from the wake word");
+        // After the microphone, which is already being said to.
+        ha::detail::dropRestConnection();
+        hw::audio::beep(kBeepHz, kBeepMs);
+      }
+    } else if (job.kind == Job::kListen) {
+      hw::audio::stop();
+      ha::detail::dropRestConnection();
       hw::audio::beep(kBeepHz, kBeepMs);
       // Cancelled during the beep, or already failed: no listening.
       Phase starting = Phase::kStarting;
       if (s_phase.compare_exchange_strong(starting, Phase::kListening)) {
-        hw::audio::captureStart();
+        hw::audio::captureStart(kMic);
         s_capture_began = true;
         LOG_INFO("VOICE: listening");
       }
@@ -584,7 +695,9 @@ bool available() {
   return s_jobs != nullptr && hw::audio::ready() && ha::streamIsOpen();
 }
 
-bool start() {
+namespace {
+
+bool begin(const Job& job) {
   if (!available()) {
     return false;
   }
@@ -610,17 +723,26 @@ bool start() {
   s_capture_began = false;
   s_phase = Phase::kStarting;
   s_want_run = true;
-  const Job job = Job::kListen;
   xQueueSend(s_jobs, &job, 0);
   return true;
 }
 
+}  // namespace
+
+bool start() {
+  return begin({Job::kListen, false, 0});
+}
+
+bool startAt(uint32_t position) {
+  return begin({Job::kListen, true, position});
+}
+
 void finish() {
-  hw::audio::captureStop();
+  hw::audio::captureStop(kMic);
 }
 
 void cancel() {
-  hw::audio::captureStop();
+  hw::audio::captureStop(kMic);
   s_fetch_abort = true;
   hw::audio::stop();
   s_want_cancel = true;

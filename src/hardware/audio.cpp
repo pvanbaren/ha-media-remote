@@ -34,8 +34,9 @@
  * what TLS runs short of:
  *
  *  - The capture task reads the microphones for as long as the port runs,
- *    which keeps the receive DMA drained, and while capturing keeps the left
- *    channel (MIC1), 12 dB up, in a ring for captureRead().
+ *    which keeps the receive DMA drained, and while any reader is capturing
+ *    keeps the left channel (MIC1), 12 dB up, in a ring. It never waits for
+ *    a reader: one that falls a whole ring behind skips ahead.
  *  - The player task decodes a reply from a stream buffer that mp3Write()
  *    fills, a frame at a time, and resamples it to 16 kHz for the speaker.
  *    minimp3 keeps 16 KB of scratch on the stack, which is why this one is
@@ -77,13 +78,28 @@ bool s_tried = false;
 std::atomic<bool> s_ready{false};
 SemaphoreHandle_t s_tx_lock = nullptr;
 
-// --- Microphone: the capture task writes s_head, captureRead() s_tail.
+// --- Microphone: the capture task writes s_head, each reader its own tail.
 int16_t* s_ring = nullptr;
 std::atomic<uint32_t> s_head{0};
-std::atomic<uint32_t> s_tail{0};
-std::atomic<bool> s_capturing{false};
-std::atomic<uint32_t> s_dropped{0};
+struct ReaderState {
+  std::atomic<uint32_t> tail{0};
+  std::atomic<bool> on{false};
+  /** Where it was stopped: a stopped reader reads up to here and no
+   *  further, though the ring goes on filling for another. */
+  std::atomic<uint32_t> end{0};
+  std::atomic<uint32_t> dropped{0};
+};
+ReaderState s_readers[2];
 std::atomic<uint16_t> s_peak{0};
+
+ReaderState& readerState(Reader reader) {
+  return s_readers[static_cast<size_t>(reader)];
+}
+
+bool anyCapturing() {
+  return s_readers[0].on.load(std::memory_order_relaxed) ||
+         s_readers[1].on.load(std::memory_order_relaxed);
+}
 
 // --- Speaker
 StreamBufferHandle_t s_mp3 = nullptr;
@@ -129,30 +145,21 @@ void captureTask(void*) {
       vTaskDelay(1);
       continue;
     }
-    if (!s_capturing.load(std::memory_order_relaxed)) {
+    if (!anyCapturing()) {
       s_peak.store(0, std::memory_order_relaxed);
       continue;
     }
     uint32_t head = s_head.load(std::memory_order_relaxed);
-    const uint32_t tail = s_tail.load(std::memory_order_acquire);
-    uint32_t dropped = 0;
     int peak = 0;
     for (size_t i = 0; i < got; ++i) {
       int v = stereo[2 * i] * (1 << kMicGainShift);
       v = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
       peak = abs(v) > peak ? abs(v) : peak;
-      if (head - tail >= kRingSamples) {
-        ++dropped;
-        continue;
-      }
       s_ring[head & (kRingSamples - 1)] = static_cast<int16_t>(v);
       ++head;
     }
     s_head.store(head, std::memory_order_release);
     s_peak.store(static_cast<uint16_t>(peak), std::memory_order_relaxed);
-    if (dropped > 0) {
-      s_dropped.fetch_add(dropped, std::memory_order_relaxed);
-    }
   }
 }
 
@@ -420,41 +427,69 @@ bool ready() {
   return s_ready;
 }
 
-bool captureStart() {
+bool captureStart(Reader reader) {
+  return captureStartAt(reader, s_head.load(std::memory_order_acquire));
+}
+
+bool captureStartAt(Reader reader, uint32_t position) {
   if (!s_ready) {
     return false;
   }
-  s_dropped = 0;
-  s_tail.store(s_head.load(std::memory_order_acquire),
-               std::memory_order_release);
-  s_capturing = true;
+  ReaderState& r = readerState(reader);
+  r.dropped = 0;
+  r.tail.store(position, std::memory_order_release);
+  r.on = true;
   return true;
 }
 
-void captureStop() {
-  s_capturing = false;
+void captureStop(Reader reader) {
+  ReaderState& r = readerState(reader);
+  if (r.on) {
+    r.end.store(s_head.load(std::memory_order_acquire),
+                std::memory_order_release);
+    r.on = false;
+  }
 }
 
-bool capturing() {
-  return s_capturing;
+bool capturing(Reader reader) {
+  return readerState(reader).on;
 }
 
-size_t captureRead(int16_t* out, size_t max) {
+size_t captureRead(Reader reader, int16_t* out, size_t max) {
   if (!s_ready) {
     return 0;
   }
-  const uint32_t tail = s_tail.load(std::memory_order_relaxed);
-  const uint32_t head = s_head.load(std::memory_order_acquire);
+  ReaderState& r = readerState(reader);
+  uint32_t tail = r.tail.load(std::memory_order_relaxed);
+  // A stopped reader reads to where it stopped; a live one to the latest.
+  const bool on = r.on.load(std::memory_order_acquire);
+  const uint32_t head = on ? s_head.load(std::memory_order_acquire)
+                           : r.end.load(std::memory_order_acquire);
+  if (!on && head - tail > kRingSamples) {
+    return 0;  // past its stop, which a stopped reader cannot be
+  }
+  // Nearly a whole ring behind: the oldest of it is being written over.
+  // Skip to a block's room short of that, so nothing is read as it is
+  // written.
+  if (head - tail > kRingSamples - kReadFrames) {
+    const uint32_t skip = head - tail - (kRingSamples - kReadFrames);
+    r.dropped.fetch_add(skip, std::memory_order_relaxed);
+    tail += skip;
+  }
   const size_t n = (head - tail) < max ? (head - tail) : max;
   for (size_t i = 0; i < n; ++i) {
     out[i] = s_ring[(tail + i) & (kRingSamples - 1)];
   }
-  s_tail.store(tail + n, std::memory_order_release);
+  r.tail.store(tail + n, std::memory_order_release);
   return n;
 }
 
-uint32_t captureDropped() {
-  return s_dropped;
+uint32_t capturePosition(Reader reader) {
+  return readerState(reader).tail.load(std::memory_order_acquire);
+}
+
+uint32_t captureDropped(Reader reader) {
+  return readerState(reader).dropped;
 }
 
 uint16_t inputPeak() {
@@ -547,11 +582,13 @@ namespace hw::audio {
 
 bool begin() { return false; }
 bool ready() { return false; }
-bool captureStart() { return false; }
-void captureStop() {}
-bool capturing() { return false; }
-size_t captureRead(int16_t*, size_t) { return 0; }
-uint32_t captureDropped() { return 0; }
+bool captureStart(Reader) { return false; }
+bool captureStartAt(Reader, uint32_t) { return false; }
+void captureStop(Reader) {}
+bool capturing(Reader) { return false; }
+size_t captureRead(Reader, int16_t*, size_t) { return 0; }
+uint32_t capturePosition(Reader) { return 0; }
+uint32_t captureDropped(Reader) { return 0; }
 uint16_t inputPeak() { return 0; }
 void setVolume(int) {}
 void beep(uint16_t, uint16_t) {}
