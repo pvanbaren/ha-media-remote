@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <freertos/FreeRTOS.h>
+#include <freertos/idf_additions.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
@@ -263,13 +264,21 @@ void init() {
   }
 
   // 12 KB, as for the poll task: a TLS handshake plus the decoder's frame.
+  // In PSRAM where there is any: it fetches, decodes and draws into sprites
+  // and never touches flash, and in internal RAM its stack was 12 KB of what
+  // a TLS session needs -- with 8.8 KB of it never used, as measured.
+  // Internal RAM on a board without PSRAM.
   //
   // Priority 0, below the loop. What keeps a slow host from spinning this
   // task and starving IDLE0 into the task watchdog is not the priority but
   // the client fetchThumb() uses, which sleeps instead of spinning -- see
   // services::Yielding, and setup() in app.cpp for why priority alone was
   // not enough.
-  if (xTaskCreatePinnedToCore(workerTask, "thumbs", 12288, nullptr,
+  if (xTaskCreatePinnedToCoreWithCaps(workerTask, "thumbs", 12288, nullptr,
+                                      tskIDLE_PRIORITY, &s_worker, 0,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) !=
+          pdPASS &&
+      xTaskCreatePinnedToCore(workerTask, "thumbs", 12288, nullptr,
                               tskIDLE_PRIORITY, &s_worker, 0) != pdPASS) {
     s_worker = nullptr;
     LOG_ERROR("Artwork: no worker task, names only");
