@@ -59,6 +59,11 @@ bool start();
  *  said straight after the wake word is heard, and a beep meanwhile. */
 bool startAt(uint32_t position);
 
+/** Speak `text` in the pipeline's voice: Home Assistant's text to speech
+ *  alone, played as it arrives, as a reply is. False when a request is
+ *  under way or none is available. */
+bool say(const char* text);
+
 /** The speaker is done talking: stop listening and let Home Assistant work
  *  on what it has. Home Assistant also stops it by itself, at silence. */
 void finish();

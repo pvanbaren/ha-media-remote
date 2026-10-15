@@ -57,6 +57,10 @@ constexpr hw::audio::Reader kMic = hw::audio::Reader::kRequest;
 constexpr char kRunBody[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"stt\","
     "\"end_stage\":\"tts\",\"input\":{\"sample_rate\":16000}";
+/** say()'s: text to speech alone, the text appended as JSON and closed. */
+constexpr char kSayBodyStart[] =
+    "\"type\":\"assist_pipeline/run\",\"start_stage\":\"tts\","
+    "\"end_stage\":\"tts\",\"input\":{\"text\":";
 /** How long Home Assistant has to start the run before it counts as lost. */
 constexpr unsigned long kStartTimeoutMs = 5000;
 /** The beep that says it is listening. */
@@ -73,6 +77,11 @@ struct Job {
 std::atomic<Phase> s_phase{Phase::kIdle};
 /** start() and cancel(), for the owner's next pass. */
 std::atomic<bool> s_want_run{false};
+/** The request start() or say() wants sent: written before s_want_run is
+ *  set, read by the owner after it sees it. */
+String s_run_body;
+/** That it is say()'s: no microphone, and the reply fetched at once. */
+bool s_say_only = false;
 std::atomic<bool> s_want_cancel{false};
 /** Set by this module's task once the microphone is being kept. */
 std::atomic<bool> s_capture_began{false};
@@ -96,6 +105,8 @@ int s_handler = -1;
 bool s_audio_done = false;
 bool s_run_ended = false;
 bool s_fetch_queued = false;
+/** Home Assistant has answered with run-start. */
+bool s_run_started = false;
 unsigned long s_run_sent_ms = 0;
 unsigned long s_speech_end_ms = 0;
 /** One message of audio being gathered, and the message itself: in PSRAM,
@@ -183,6 +194,12 @@ void queueFetch() {
 /** On the owner, every pass while the stream is open. */
 void hook() {
   if (s_want_cancel.exchange(false)) {
+    // The end of the speech, if any audio was owed: Home Assistant stops
+    // listening now rather than waiting out its own timeout.
+    if (s_run_id != 0 && s_handler >= 0 && !s_audio_done && !s_say_only) {
+      ha::streamSendBinary(s_frame, 1);
+      s_audio_done = true;
+    }
     s_run_id = 0;  // anything more from it is ignored
   }
   if (s_want_run.exchange(false)) {
@@ -194,8 +211,9 @@ void hook() {
     s_lag_logged = false;
     s_speech_end_ms = 0;
     s_reply_url[0] = '\0';
+    s_run_started = false;
     s_run_sent_ms = millis();
-    s_run_id = ha::streamRequest(kRunBody);
+    s_run_id = ha::streamRequest(s_run_body.c_str());
     if (s_run_id == 0) {
       fail("could not reach Home Assistant");
     }
@@ -207,9 +225,9 @@ void hook() {
   pumpAudio();
 
   const unsigned long now = millis();
-  if (s_handler < 0 && now - s_run_sent_ms >= kStartTimeoutMs) {
+  if (!s_run_started && now - s_run_sent_ms >= kStartTimeoutMs) {
     s_run_id = 0;
-    fail("Home Assistant did not start listening");
+    fail("Home Assistant did not start the request");
     return;
   }
   if (s_phase == Phase::kListening && hw::audio::capturing(kMic) &&
@@ -316,6 +334,13 @@ void listener(const char* message) {
     });
     static const char* const kUrl[] = {"tts_output", "url", nullptr};
     readPath(data, kUrl, s_reply_url, sizeof(s_reply_url));
+    s_run_started = true;
+    if (s_say_only) {
+      // Nothing to hear, so the speech is asked for now; Home Assistant
+      // answers the moment it is made.
+      queueFetch();
+      return;
+    }
     s_frame[0] = static_cast<uint8_t>(s_handler);
     if (s_handler < 0) {
       s_run_id = 0;
@@ -697,7 +722,9 @@ bool available() {
 
 namespace {
 
-bool begin(const Job& job) {
+/** Start a run: `body` is what to send, and `job` what this module's task
+ *  does about it, if anything. */
+bool begin(const String& body, bool say_only, const Job* job) {
   if (!available()) {
     return false;
   }
@@ -721,23 +748,44 @@ bool begin(const Job& job) {
   s_status = Status();
   taskEXIT_CRITICAL(&s_lock);
   s_capture_began = false;
-  s_phase = Phase::kStarting;
+  s_run_body = body;
+  s_say_only = say_only;
+  s_phase = say_only ? Phase::kThinking : Phase::kStarting;
   s_want_run = true;
-  xQueueSend(s_jobs, &job, 0);
+  if (job != nullptr) {
+    xQueueSend(s_jobs, job, 0);
+  }
   return true;
 }
 
 }  // namespace
 
 bool start() {
-  return begin({Job::kListen, false, 0});
+  const Job job = {Job::kListen, false, 0};
+  return begin(kRunBody, false, &job);
 }
 
 bool startAt(uint32_t position) {
-  return begin({Job::kListen, true, position});
+  const Job job = {Job::kListen, true, position};
+  return begin(kRunBody, false, &job);
+}
+
+bool say(const char* text) {
+  String body(kSayBodyStart);
+  ha::detail::appendJson(body, text);
+  body += "}";
+  LOG_INFO("VOICE: saying \"%s\"", text);
+  return begin(body, true, nullptr);
 }
 
 void finish() {
+  // Let go before it had begun to listen: a press that was not held long
+  // enough, which asked for nothing.
+  if (s_phase == Phase::kStarting) {
+    LOG_INFO("VOICE: let go before listening -- cancelled");
+    cancel();
+    return;
+  }
   hw::audio::captureStop(kMic);
 }
 

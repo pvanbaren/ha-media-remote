@@ -19,8 +19,8 @@ bool init(int volume_percent);
 /** 0..100, the speaker codec's digital volume. */
 void setVolume(int percent);
 
-/** The speaker amplifier on or off. Off whenever nothing is playing, so the
- *  speaker does not hiss. */
+/** The speaker amplifier on or off. Off once nothing has played for a
+ *  couple of seconds, so the speaker does not hiss. */
 void speaker(bool on);
 
 }  // namespace hw::audio::codec

@@ -77,6 +77,23 @@ void setVolume(int percent);
 /** A tone, played before this returns. Waits for a reply that is playing. */
 void beep(uint16_t hz, uint16_t ms);
 
+/** The short sounds that stand in for a screen, where there is none. */
+enum class Cue : uint8_t {
+  kPlay,   // two notes rising
+  kPause,  // two notes falling
+  kNext,      // three notes stepping up: the next track
+  kPrevious,  // three notes stepping down: the one before
+  kTick,   // one quiet click: the volume moved a step
+  kLimit,  // two quick clicks: the volume is at an end
+  kWarm,   // no sound: the amplifier on, so a sound soon after is not
+           // held up by its warm-up -- for a finger that has just landed
+};
+
+/** Play a cue and return at once: it is queued for the player's task.
+ *  Dropped while a reply is playing, or when cues come faster than they can
+ *  be played. */
+void cue(Cue cue);
+
 /** Start a reply. False while another is playing: stop() it first. */
 bool mp3Begin();
 

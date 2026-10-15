@@ -11,6 +11,7 @@
 #include <ESP_I2S.h>
 #include <esp_heap_caps.h>
 #include <freertos/idf_additions.h>
+#include <freertos/queue.h>
 #include <freertos/stream_buffer.h>
 
 #include <atomic>
@@ -72,6 +73,11 @@ constexpr float kBeepAmplitude = 0.05f;
  *  stays muted for a while after its enable rises, and a short beep played
  *  at once was not heard at all. */
 constexpr size_t kWarmUpFrames = kSampleRate * 150 / 1000;
+/** The amplifier stays on this long after the last sound, so a run of cues
+ *  -- volume ticks under a moving finger -- pays the warm-up once. */
+constexpr unsigned long kAmpHoldMs = 2000;
+/** How loud the cues are, of full scale: under the beep. */
+constexpr float kCueAmplitude = 0.04f;
 
 I2SClass s_i2s;
 bool s_tried = false;
@@ -109,6 +115,11 @@ mp3dec_t* s_dec = nullptr;
 std::atomic<bool> s_playing{false};
 std::atomic<bool> s_ending{false};
 std::atomic<bool> s_stopping{false};
+QueueHandle_t s_cues = nullptr;
+/** The amplifier, and when a sound last went out through it. Under
+ *  s_tx_lock. */
+bool s_amp_on = false;
+unsigned long s_amp_used_ms = 0;
 
 void* psram(size_t bytes) {
   return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -123,17 +134,89 @@ void writeSilence(size_t frames) {
   }
 }
 
-/** The amplifier on, and given time to unmute. Under s_tx_lock. */
+/** The amplifier on, and given time to unmute, unless it is on already.
+ *  Under s_tx_lock. */
 void speakerOn() {
-  codec::speaker(true);
-  writeSilence(kWarmUpFrames);
+  if (!s_amp_on) {
+    codec::speaker(true);
+    writeSilence(kWarmUpFrames);
+    s_amp_on = true;
+  }
 }
 
-/** The amplifier off once what was written has left the DMA. Under
- *  s_tx_lock. */
-void speakerOff() {
-  writeSilence(kDmaFrames);
-  codec::speaker(false);
+/** A sound has gone out: the amplifier stays on for kAmpHoldMs from now.
+ *  Under s_tx_lock. */
+void speakerUsed() {
+  s_amp_used_ms = millis();
+}
+
+/** The amplifier off, once what was written has left the DMA, if nothing
+ *  has used it for kAmpHoldMs. Under s_tx_lock. */
+void speakerOffIfIdle() {
+  if (s_amp_on && millis() - s_amp_used_ms >= kAmpHoldMs) {
+    writeSilence(kDmaFrames);
+    codec::speaker(false);
+    s_amp_on = false;
+  }
+}
+
+/** A tone of `ms` at `hz`, eased in and out over 5 ms so it does not click.
+ *  Under s_tx_lock, with the amplifier on. */
+void tone(uint16_t hz, uint16_t ms, float amplitude) {
+  constexpr int kChunk = 240;
+  int16_t buf[2 * kChunk];
+  const int frames = kSampleRate * ms / 1000;
+  const int ramp = kSampleRate * 5 / 1000 < frames / 2
+                       ? kSampleRate * 5 / 1000
+                       : frames / 2;
+  const float step = 2.0f * static_cast<float>(M_PI) * hz / kSampleRate;
+  for (int done = 0; done < frames; done += kChunk) {
+    const int n = frames - done < kChunk ? frames - done : kChunk;
+    for (int i = 0; i < n; ++i) {
+      const int k = done + i;
+      const int edge = k < frames - k ? k : frames - k;
+      const float env =
+          ramp > 0 && edge < ramp ? static_cast<float>(edge) / ramp : 1.0f;
+      const int16_t s =
+          static_cast<int16_t>(sinf(step * k) * env * amplitude * 32767);
+      buf[2 * i] = s;
+      buf[2 * i + 1] = s;
+    }
+    s_i2s.write(reinterpret_cast<uint8_t*>(buf), n * 4);
+  }
+}
+
+void playCue(Cue c) {
+  switch (c) {
+    case Cue::kPlay:
+      tone(660, 60, kCueAmplitude);
+      tone(880, 80, kCueAmplitude);
+      break;
+    case Cue::kPause:
+      tone(880, 60, kCueAmplitude);
+      tone(660, 80, kCueAmplitude);
+      break;
+    case Cue::kNext:
+      tone(660, 40, kCueAmplitude);
+      tone(880, 40, kCueAmplitude);
+      tone(1100, 50, kCueAmplitude);
+      break;
+    case Cue::kPrevious:
+      tone(1100, 40, kCueAmplitude);
+      tone(880, 40, kCueAmplitude);
+      tone(660, 50, kCueAmplitude);
+      break;
+    case Cue::kTick:
+      tone(1500, 12, kCueAmplitude);
+      break;
+    case Cue::kLimit:
+      tone(1500, 12, kCueAmplitude);
+      writeSilence(kSampleRate * 40 / 1000);
+      tone(1500, 12, kCueAmplitude);
+      break;
+    case Cue::kWarm:
+      break;  // speakerOn() has done it
+  }
 }
 
 void captureTask(void*) {
@@ -356,15 +439,36 @@ void playOne() {
   }
 }
 
+/** A reply when mp3Begin() says so, the cues as they come, and the
+ *  amplifier off once it has been idle for kAmpHoldMs. */
 void playerTask(void*) {
   for (;;) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
-    speakerOn();
-    playOne();
-    speakerOff();
-    xSemaphoreGive(s_tx_lock);
-    s_playing = false;
+    const uint32_t reply = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50));
+    if (reply > 0 && s_playing) {
+      xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+      speakerOn();
+      playOne();
+      speakerUsed();
+      xSemaphoreGive(s_tx_lock);
+      s_playing = false;
+    }
+    Cue c;
+    while (xQueueReceive(s_cues, &c, 0) == pdTRUE) {
+      if (s_playing) {
+        continue;  // a reply is on its way: no cue across it
+      }
+      xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+      speakerOn();
+      playCue(c);
+      speakerUsed();
+      xSemaphoreGive(s_tx_lock);
+    }
+    // Not waited for: beep() holds the lock for half a second, and this
+    // can be done on the next pass.
+    if (xSemaphoreTake(s_tx_lock, 0) == pdTRUE) {
+      speakerOffIfIdle();
+      xSemaphoreGive(s_tx_lock);
+    }
   }
 }
 
@@ -385,8 +489,9 @@ bool begin() {
   s_mp3 = xStreamBufferCreateWithCaps(kMp3BufferBytes, 1,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   s_tx_lock = xSemaphoreCreateMutex();
+  s_cues = xQueueCreate(8, sizeof(Cue));
   if (s_ring == nullptr || s_window == nullptr || s_dec == nullptr ||
-      s_mp3 == nullptr || s_tx_lock == nullptr) {
+      s_mp3 == nullptr || s_tx_lock == nullptr || s_cues == nullptr) {
     LOG_WARN("AUDIO: no memory for the buffers");
     return false;
   }
@@ -508,26 +613,18 @@ void beep(uint16_t hz, uint16_t ms) {
   }
   xSemaphoreTake(s_tx_lock, portMAX_DELAY);
   speakerOn();
-  constexpr int kChunk = 240;
-  int16_t buf[2 * kChunk];
-  const int frames = kSampleRate * ms / 1000;
-  const int ramp = kSampleRate * 5 / 1000;  // 5 ms in and out: no click
-  const float step = 2.0f * static_cast<float>(M_PI) * hz / kSampleRate;
-  for (int done = 0; done < frames; done += kChunk) {
-    const int n = frames - done < kChunk ? frames - done : kChunk;
-    for (int i = 0; i < n; ++i) {
-      const int k = done + i;
-      const int edge = k < frames - k ? k : frames - k;
-      const float env = edge < ramp ? static_cast<float>(edge) / ramp : 1.0f;
-      const int16_t s =
-          static_cast<int16_t>(sinf(step * k) * env * kBeepAmplitude * 32767);
-      buf[2 * i] = s;
-      buf[2 * i + 1] = s;
-    }
-    s_i2s.write(reinterpret_cast<uint8_t*>(buf), n * 4);
-  }
-  speakerOff();
+  tone(hz, ms, kBeepAmplitude);
+  // Out of the DMA before this returns: a request starts listening next,
+  // and should not hear the end of its own beep.
+  writeSilence(kDmaFrames);
+  speakerUsed();
   xSemaphoreGive(s_tx_lock);
+}
+
+void cue(Cue c) {
+  if (s_ready && !s_playing) {
+    xQueueSend(s_cues, &c, 0);
+  }
 }
 
 bool mp3Begin() {
@@ -592,6 +689,7 @@ uint32_t captureDropped(Reader) { return 0; }
 uint16_t inputPeak() { return 0; }
 void setVolume(int) {}
 void beep(uint16_t, uint16_t) {}
+void cue(Cue) {}
 bool mp3Begin() { return false; }
 size_t mp3Write(const uint8_t*, size_t, uint32_t) { return 0; }
 void mp3End() {}
