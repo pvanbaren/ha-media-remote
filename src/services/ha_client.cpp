@@ -1425,6 +1425,24 @@ void init() {
 
 bool configured() { return s_base_url[0] != '\0' && s_token[0] != '\0'; }
 
+bool volumeAvailable(const PlayerState& state) {
+  if (state.volume < 0.0f) {
+    return false;
+  }
+  if (state.playback == PlaybackState::kUnavailable ||
+      state.playback == PlaybackState::kOff) {
+    return false;
+  }
+  return state.control_features == 0 ||
+         (state.control_features & kFeatureVolumeSet) != 0;
+}
+
+bool powerOnForVolume(const PlayerState& state) {
+  return state.control_off &&
+         (state.control_features == 0 ||
+          (state.control_features & kFeatureTurnOn) != 0);
+}
+
 const char* baseUrl() { return s_base_url; }
 bool usesTls() { return strncmp(s_base_url, "https://", 8) == 0; }
 const char* token() { return s_token; }

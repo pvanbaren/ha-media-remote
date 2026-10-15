@@ -572,7 +572,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   // Whether or not the bar is shown now: volume can become available without
   // anything else changing, and the first drag must still find the backdrop.
   saveBandBackdrop(gfx);
-  if (volumeAvailable(state)) {
+  if (services::ha::volumeAvailable(state)) {
     drawVolumeBar(gfx, state, state.volume);
   }
 
@@ -639,21 +639,6 @@ void refreshVolume(const PlayerState& state, float level) {
   // Only the band the bar and its knob occupy: about 100 of 720 rows, so a
   // drag costs a tenth of what presenting the frame would.
   ui::canvasPresentRegion(0, kBarBandTop, theme::kSize, kBarBandHeight);
-}
-
-bool volumeAvailable(const PlayerState& state) {
-  if (state.volume < 0.0f) {
-    return false;
-  }
-  if (state.playback == PlaybackState::kUnavailable ||
-      state.playback == PlaybackState::kOff) {
-    return false;
-  }
-  // Tested against the *control* entity: it is the one the slider drives, and
-  // where the two differ it is entirely normal for the receiver to set
-  // VOLUME_SET while the player streaming into it does not.
-  return state.control_features == 0 ||
-         (state.control_features & services::ha::kFeatureVolumeSet) != 0;
 }
 
 float volumeLevelPerPx() {

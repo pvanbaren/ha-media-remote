@@ -159,15 +159,7 @@ constexpr unsigned long kFlickMaxMs = 250;
 /** About a fifth of the panel, at the 240 px design size. */
 constexpr int kFlickMinPx = static_cast<int>(48 * board::kUiScale + 0.5f);
 
-/** Whether a volume swipe or a turn of the knob should switch the volume
- *  device on rather than set its level: it is off, and it can be switched on
- *  -- a device reporting no features at all counting as one that can, as
- *  everywhere else. One that cannot gets the level as it is, as before. */
-bool powerOnForVolume(const PlayerState& state) {
-  return state.control_off &&
-         (state.control_features == 0 ||
-          (state.control_features & services::ha::kFeatureTurnOn) != 0);
-}
+using services::ha::powerOnForVolume;
 
 /** Drive the volume arc from a horizontal swipe across the top of the panel.
  *
@@ -256,7 +248,7 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
       out.intent = Intent::kPowerOnForVolume;
       return true;
     }
-    if (state == nullptr || !now_playing::volumeAvailable(*state)) {
+    if (state == nullptr || !services::ha::volumeAvailable(*state)) {
       return false;
     }
 
@@ -570,7 +562,7 @@ bool driveKnob(Screen screen, const PlayerState* state, Input& out) {
         return false;
       }
       s_knob_power_ms = 0;
-      if (state == nullptr || !now_playing::volumeAvailable(*state)) {
+      if (state == nullptr || !services::ha::volumeAvailable(*state)) {
         return false;
       }
       if (!s_knob_adjusting) {

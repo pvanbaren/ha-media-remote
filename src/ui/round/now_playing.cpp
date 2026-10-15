@@ -584,7 +584,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   // wherever the two might meet.
   drawProgressArc(gfx, state);
   drawElapsedChip(gfx, state);
-  if (volumeAvailable(state)) {
+  if (services::ha::volumeAvailable(state)) {
     saveArcBackdrop(gfx);
     drawVolumeArc(gfx, state, state.volume);
     s_arc_drawn_level = state.volume;
@@ -707,21 +707,6 @@ void refreshVolume(const PlayerState& state, float level) {
   gfx.clearClipRect();
   ui::canvasPresentRegion(x0, y0, w, h);
   s_arc_drawn_level = level;
-}
-
-bool volumeAvailable(const PlayerState& state) {
-  if (state.volume < 0.0f) {
-    return false;
-  }
-  if (state.playback == PlaybackState::kUnavailable ||
-      state.playback == PlaybackState::kOff) {
-    return false;
-  }
-  // Tested against the *control* entity: it is the one the slider drives, and
-  // where the two differ it is entirely normal for the receiver to set
-  // VOLUME_SET while the player streaming into it does not.
-  return state.control_features == 0 ||
-         (state.control_features & services::ha::kFeatureVolumeSet) != 0;
 }
 
 float volumeLevelPerPx() {

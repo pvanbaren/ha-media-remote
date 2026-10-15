@@ -34,9 +34,6 @@ void refreshElapsed(const services::ha::PlayerState& state);
  *  cost. */
 void refreshVolume(const services::ha::PlayerState& state, float level);
 
-/** True when the player exposes a volume the slider can drive. */
-bool volumeAvailable(const services::ha::PlayerState& state);
-
 /** Whether a press starting at (x, y) may become a volume swipe, or a tap
  *  there toggle the volume device's power.
  *

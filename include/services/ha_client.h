@@ -135,6 +135,18 @@ constexpr uint32_t kFeatureTurnOff = 1u << 8;
 constexpr uint32_t kFeatureSelectSource = 1u << 11;
 constexpr uint32_t kFeaturePlay = 1u << 14;
 
+/** True when the player exposes a volume a slider or a knob can drive.
+ *  Tested against the *control* entity: it is the one they drive, and where
+ *  the two differ it is entirely normal for the receiver to set VOLUME_SET
+ *  while the player streaming into it does not. */
+bool volumeAvailable(const PlayerState& state);
+
+/** Whether a volume gesture should switch the volume device on rather than
+ *  set its level: it is off, and it can be switched on -- a device reporting
+ *  no features at all counting as one that can, as everywhere else. One that
+ *  cannot gets the level as it is. */
+bool powerOnForVolume(const PlayerState& state);
+
 /** Load base URL / token / last selection from NVS. Call once in setup(). */
 void init();
 
