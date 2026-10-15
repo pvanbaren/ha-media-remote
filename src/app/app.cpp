@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include <esp_heap_caps.h>
+#include <esp_log.h>
 
 #include <new>
 #include <freertos/FreeRTOS.h>
@@ -2345,6 +2346,13 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   LOG_INFO("HA Media Remote");
+
+  // mDNS says nothing. Out of internal RAM it logs every packet it cannot
+  // take, from the network stack's task, and that task's first log line
+  // makes a lock -- which, with no RAM for it either, aborts: a TLS
+  // handshake took the last of it while an mDNS packet came in, and the
+  // remote restarted. A packet it drops is only asked again.
+  esp_log_level_set("mdns", ESP_LOG_NONE);
 
   g_state_mutex = xSemaphoreCreateMutex();
 
