@@ -218,8 +218,9 @@ bool WebSocket::sendFrame(uint8_t opcode, const uint8_t* data, size_t len) {
     return false;
   }
 
-  // Masked in small pieces rather than into a copy of the whole payload.
-  uint8_t chunk[128];
+  // Masked in pieces rather than into a copy of the whole payload; each
+  // piece is a TLS record, so not too small.
+  uint8_t chunk[512];
   for (size_t done = 0; done < len;) {
     const size_t n = (len - done) < sizeof(chunk) ? (len - done) : sizeof(chunk);
     for (size_t i = 0; i < n; ++i) {
