@@ -71,6 +71,11 @@ unsigned long s_fetched_ms = 0;
  *  or a new set of recommendations, reloads it rather than waiting out the
  *  TTL. Cheap: the room sections are drawn from memory. */
 uint32_t s_room_generation = 0;
+/** When the last load failed or could not be made (0 when it did not), and
+ *  roomGeneration() then: preload() lets it be for config::kBrowseRetryMs
+ *  unless that changes. */
+unsigned long s_failed_ms = 0;
+uint32_t s_failed_generation = 0;
 
 }  // namespace
 
@@ -113,13 +118,18 @@ bool roomSectionsOn() { return ma::configured(); }
 /** The load itself. The caller holds the lock. */
 bool loadLocked() {
   const bool room_sections = roomSectionsOn();
+  const uint32_t generation = roomGeneration();
   if (ha::maConfigEntry()[0] == '\0' && !room_sections) {
     // Not an error, just not set up: get_library is addressed by config entry,
     // and there is no useful request to make without one. The room's own
-    // sections come from memory and need none.
+    // sections come from memory and need none. Said once, not every time.
+    if (s_problem != Problem::kNoConfigEntry) {
+      LOG_INFO(
+          "Browse: no Music Assistant config entry id - set it in the portal");
+    }
     s_problem = Problem::kNoConfigEntry;
-    LOG_INFO(
-        "Browse: no Music Assistant config entry id - set it in the portal");
+    s_failed_ms = millis() | 1;  // never 0, which means it did not fail
+    s_failed_generation = generation;
     return false;
   }
 
@@ -128,7 +138,6 @@ bool loadLocked() {
   const char* titles[config::kBrowseSectionCount] = {};
   int total = 0;
   bool any = false;
-  const uint32_t generation = roomGeneration();
 
   for (int i = 0; i < config::kBrowseSectionCount; ++i) {
     const config::BrowseSection& section = config::kBrowseSections[i];
@@ -180,8 +189,11 @@ bool loadLocked() {
 
   if (!any) {
     s_problem = Problem::kRequestFailed;
+    s_failed_ms = millis() | 1;
+    s_failed_generation = generation;
     return false;
   }
+  s_failed_ms = 0;
   s_problem = total > 0 ? Problem::kNone : Problem::kLibraryEmpty;
 
   memcpy(s_items, s_fetching, sizeof(s_items));
@@ -208,6 +220,14 @@ bool ensureLoaded() {
 void preload() {
   if (!stale()) {
     return;
+  }
+  {
+    // A load that just failed is not tried again on every poll.
+    Guard guard;
+    if (s_failed_ms != 0 && millis() - s_failed_ms < config::kBrowseRetryMs &&
+        s_failed_generation == roomGeneration()) {
+      return;
+    }
   }
   // Raised before the lock, and only when there is really work to do: a UI
   // caller checks this to decide whether to put a loading card up before

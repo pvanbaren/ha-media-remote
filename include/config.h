@@ -210,6 +210,13 @@ constexpr bool kSearchPlaysRadio = true;
  *  that "recent artists" means it, and that a random "Recommended" draw is
  *  actually a different draw next time. */
 constexpr unsigned long kBrowseTtlMs = 300000;
+/** After a load that failed, or could not be made for want of a Music
+ *  Assistant config entry, how long the background preload waits before
+ *  trying again. It is asked on every pass of the poll task, a few times a
+ *  second, and without this tried -- and logged, or sent the request -- on
+ *  every one. Opening the list still tries at once, and so does saving a
+ *  Music Assistant token. */
+constexpr unsigned long kBrowseRetryMs = 60000;
 
 /** Most media_player entities a picker will hold. Entities past this are
  *  dropped from the list and become unselectable, so it has to clear the real
