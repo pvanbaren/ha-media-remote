@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Fixed
+
+- An accented letter sent as a plain letter followed by a separate accent, as Music Assistant sends some titles, lost its accent, which the screen has no character for on its own. The two are now put together into the accented letter.
+
 ## [1.3.0] - 2026-10-13
 
 This release adds a sixth board, the Makerfabs MaTouch ESP32-S3 Rotary 2.1", whose knob sets the volume and scrolls the lists, and makes the remote's error screens something you can act on from the device: every card about a problem leads to the status page and the settings, a rejected token can be linked again with a tap, and now playing says when Home Assistant has gone quiet.

@@ -309,6 +309,272 @@ void setError(const char* fmt, ...) {
   LOG_WARN("HA: %s", s_last_error);
 }
 
+/** A letter and a combining accent after it, as the one precomposed
+ *  character the embedded fonts have: Unicode's canonical compositions of an
+ *  ASCII letter with a mark in U+0300-U+036F, kept where the result is in
+ *  the fonts' character set (scripts/build_ui_font.py). `mark` is the mark's
+ *  code point less 0x300. Sorted by letter, then mark. */
+struct Composition {
+  char base;
+  uint8_t mark;
+  uint16_t composed;
+};
+constexpr Composition kCompositions[] = {
+    {'A', 0x00, 0x00C0},
+    {'A', 0x01, 0x00C1},
+    {'A', 0x02, 0x00C2},
+    {'A', 0x03, 0x00C3},
+    {'A', 0x04, 0x0100},
+    {'A', 0x06, 0x0102},
+    {'A', 0x08, 0x00C4},
+    {'A', 0x0A, 0x00C5},
+    {'A', 0x28, 0x0104},
+    {'A', 0x40, 0x00C0},
+    {'A', 0x41, 0x00C1},
+    {'C', 0x01, 0x0106},
+    {'C', 0x02, 0x0108},
+    {'C', 0x07, 0x010A},
+    {'C', 0x0C, 0x010C},
+    {'C', 0x27, 0x00C7},
+    {'C', 0x41, 0x0106},
+    {'D', 0x0C, 0x010E},
+    {'E', 0x00, 0x00C8},
+    {'E', 0x01, 0x00C9},
+    {'E', 0x02, 0x00CA},
+    {'E', 0x04, 0x0112},
+    {'E', 0x06, 0x0114},
+    {'E', 0x07, 0x0116},
+    {'E', 0x08, 0x00CB},
+    {'E', 0x0C, 0x011A},
+    {'E', 0x28, 0x0118},
+    {'E', 0x40, 0x00C8},
+    {'E', 0x41, 0x00C9},
+    {'G', 0x02, 0x011C},
+    {'G', 0x06, 0x011E},
+    {'G', 0x07, 0x0120},
+    {'G', 0x27, 0x0122},
+    {'H', 0x02, 0x0124},
+    {'I', 0x00, 0x00CC},
+    {'I', 0x01, 0x00CD},
+    {'I', 0x02, 0x00CE},
+    {'I', 0x03, 0x0128},
+    {'I', 0x04, 0x012A},
+    {'I', 0x06, 0x012C},
+    {'I', 0x07, 0x0130},
+    {'I', 0x08, 0x00CF},
+    {'I', 0x28, 0x012E},
+    {'I', 0x40, 0x00CC},
+    {'I', 0x41, 0x00CD},
+    {'J', 0x02, 0x0134},
+    {'K', 0x27, 0x0136},
+    {'L', 0x01, 0x0139},
+    {'L', 0x0C, 0x013D},
+    {'L', 0x27, 0x013B},
+    {'L', 0x41, 0x0139},
+    {'N', 0x01, 0x0143},
+    {'N', 0x03, 0x00D1},
+    {'N', 0x0C, 0x0147},
+    {'N', 0x27, 0x0145},
+    {'N', 0x41, 0x0143},
+    {'O', 0x00, 0x00D2},
+    {'O', 0x01, 0x00D3},
+    {'O', 0x02, 0x00D4},
+    {'O', 0x03, 0x00D5},
+    {'O', 0x04, 0x014C},
+    {'O', 0x06, 0x014E},
+    {'O', 0x08, 0x00D6},
+    {'O', 0x0B, 0x0150},
+    {'O', 0x40, 0x00D2},
+    {'O', 0x41, 0x00D3},
+    {'R', 0x01, 0x0154},
+    {'R', 0x0C, 0x0158},
+    {'R', 0x27, 0x0156},
+    {'R', 0x41, 0x0154},
+    {'S', 0x01, 0x015A},
+    {'S', 0x02, 0x015C},
+    {'S', 0x0C, 0x0160},
+    {'S', 0x26, 0x0218},
+    {'S', 0x27, 0x015E},
+    {'S', 0x41, 0x015A},
+    {'T', 0x0C, 0x0164},
+    {'T', 0x26, 0x021A},
+    {'T', 0x27, 0x0162},
+    {'U', 0x00, 0x00D9},
+    {'U', 0x01, 0x00DA},
+    {'U', 0x02, 0x00DB},
+    {'U', 0x03, 0x0168},
+    {'U', 0x04, 0x016A},
+    {'U', 0x06, 0x016C},
+    {'U', 0x08, 0x00DC},
+    {'U', 0x0A, 0x016E},
+    {'U', 0x0B, 0x0170},
+    {'U', 0x28, 0x0172},
+    {'U', 0x40, 0x00D9},
+    {'U', 0x41, 0x00DA},
+    {'W', 0x02, 0x0174},
+    {'Y', 0x01, 0x00DD},
+    {'Y', 0x02, 0x0176},
+    {'Y', 0x08, 0x0178},
+    {'Y', 0x41, 0x00DD},
+    {'Z', 0x01, 0x0179},
+    {'Z', 0x07, 0x017B},
+    {'Z', 0x0C, 0x017D},
+    {'Z', 0x41, 0x0179},
+    {'a', 0x00, 0x00E0},
+    {'a', 0x01, 0x00E1},
+    {'a', 0x02, 0x00E2},
+    {'a', 0x03, 0x00E3},
+    {'a', 0x04, 0x0101},
+    {'a', 0x06, 0x0103},
+    {'a', 0x08, 0x00E4},
+    {'a', 0x0A, 0x00E5},
+    {'a', 0x28, 0x0105},
+    {'a', 0x40, 0x00E0},
+    {'a', 0x41, 0x00E1},
+    {'c', 0x01, 0x0107},
+    {'c', 0x02, 0x0109},
+    {'c', 0x07, 0x010B},
+    {'c', 0x0C, 0x010D},
+    {'c', 0x27, 0x00E7},
+    {'c', 0x41, 0x0107},
+    {'d', 0x0C, 0x010F},
+    {'e', 0x00, 0x00E8},
+    {'e', 0x01, 0x00E9},
+    {'e', 0x02, 0x00EA},
+    {'e', 0x04, 0x0113},
+    {'e', 0x06, 0x0115},
+    {'e', 0x07, 0x0117},
+    {'e', 0x08, 0x00EB},
+    {'e', 0x0C, 0x011B},
+    {'e', 0x28, 0x0119},
+    {'e', 0x40, 0x00E8},
+    {'e', 0x41, 0x00E9},
+    {'g', 0x02, 0x011D},
+    {'g', 0x06, 0x011F},
+    {'g', 0x07, 0x0121},
+    {'g', 0x27, 0x0123},
+    {'h', 0x02, 0x0125},
+    {'i', 0x00, 0x00EC},
+    {'i', 0x01, 0x00ED},
+    {'i', 0x02, 0x00EE},
+    {'i', 0x03, 0x0129},
+    {'i', 0x04, 0x012B},
+    {'i', 0x06, 0x012D},
+    {'i', 0x08, 0x00EF},
+    {'i', 0x28, 0x012F},
+    {'i', 0x40, 0x00EC},
+    {'i', 0x41, 0x00ED},
+    {'j', 0x02, 0x0135},
+    {'k', 0x27, 0x0137},
+    {'l', 0x01, 0x013A},
+    {'l', 0x0C, 0x013E},
+    {'l', 0x27, 0x013C},
+    {'l', 0x41, 0x013A},
+    {'n', 0x01, 0x0144},
+    {'n', 0x03, 0x00F1},
+    {'n', 0x0C, 0x0148},
+    {'n', 0x27, 0x0146},
+    {'n', 0x41, 0x0144},
+    {'o', 0x00, 0x00F2},
+    {'o', 0x01, 0x00F3},
+    {'o', 0x02, 0x00F4},
+    {'o', 0x03, 0x00F5},
+    {'o', 0x04, 0x014D},
+    {'o', 0x06, 0x014F},
+    {'o', 0x08, 0x00F6},
+    {'o', 0x0B, 0x0151},
+    {'o', 0x40, 0x00F2},
+    {'o', 0x41, 0x00F3},
+    {'r', 0x01, 0x0155},
+    {'r', 0x0C, 0x0159},
+    {'r', 0x27, 0x0157},
+    {'r', 0x41, 0x0155},
+    {'s', 0x01, 0x015B},
+    {'s', 0x02, 0x015D},
+    {'s', 0x0C, 0x0161},
+    {'s', 0x26, 0x0219},
+    {'s', 0x27, 0x015F},
+    {'s', 0x41, 0x015B},
+    {'t', 0x0C, 0x0165},
+    {'t', 0x26, 0x021B},
+    {'t', 0x27, 0x0163},
+    {'u', 0x00, 0x00F9},
+    {'u', 0x01, 0x00FA},
+    {'u', 0x02, 0x00FB},
+    {'u', 0x03, 0x0169},
+    {'u', 0x04, 0x016B},
+    {'u', 0x06, 0x016D},
+    {'u', 0x08, 0x00FC},
+    {'u', 0x0A, 0x016F},
+    {'u', 0x0B, 0x0171},
+    {'u', 0x28, 0x0173},
+    {'u', 0x40, 0x00F9},
+    {'u', 0x41, 0x00FA},
+    {'w', 0x02, 0x0175},
+    {'y', 0x01, 0x00FD},
+    {'y', 0x02, 0x0177},
+    {'y', 0x08, 0x00FF},
+    {'y', 0x41, 0x00FD},
+    {'z', 0x01, 0x017A},
+    {'z', 0x07, 0x017C},
+    {'z', 0x0C, 0x017E},
+    {'z', 0x41, 0x017A},
+};
+
+/** The combining mark (U+0300-U+036F) whose UTF-8 starts at `p`, less 0x300,
+ *  or -1 when it is not one. */
+int combiningMarkAt(const char* p) {
+  const uint8_t a = static_cast<uint8_t>(p[0]);
+  const uint8_t b = a != 0 ? static_cast<uint8_t>(p[1]) : 0;
+  if (a == 0xCC && b >= 0x80 && b <= 0xBF) {
+    return b - 0x80;
+  }
+  if (a == 0xCD && b >= 0x80 && b <= 0xAF) {
+    return 0x40 + (b - 0x80);
+  }
+  return -1;
+}
+
+/** Put each combining accent onto the letter before it, in place: e and
+ *  U+0301 become U+00E9, e-acute. Some services send their metadata
+ *  decomposed -- the e-acute of a "Prelude" from Music Assistant arrived as a
+ *  plain e and a separate accent -- and the fonts have the precomposed
+ *  letters but no combining marks, so the accent drew as a missing glyph. A
+ *  mark with no precomposed form here is dropped, since it could not be
+ *  drawn either. Never lengthens the text. */
+void composeAccents(char* s) {
+  char* out = s;
+  const char* p = s;
+  while (*p != '\0') {
+    const uint8_t c = static_cast<uint8_t>(*p);
+    const int mark = c < 0x80 && isalpha(c) ? combiningMarkAt(p + 1) : -1;
+    if (mark >= 0) {
+      uint16_t composed = 0;
+      for (const Composition& k : kCompositions) {
+        if (k.base == static_cast<char>(c) && k.mark == mark) {
+          composed = k.composed;
+          break;
+        }
+      }
+      if (composed != 0) {
+        // Every one is below U+0800: two bytes, in place of the three read.
+        *out++ = static_cast<char>(0xC0 | (composed >> 6));
+        *out++ = static_cast<char>(0x80 | (composed & 0x3F));
+      } else {
+        *out++ = *p;
+      }
+      p += 3;
+      continue;
+    }
+    if (combiningMarkAt(p) >= 0) {
+      p += 2;  // a mark on something it does not compose with
+      continue;
+    }
+    *out++ = *p++;
+  }
+  *out = '\0';
+}
+
 /** Read the JSON string literal starting at `p` (which must be its opening
  *  quote) into `out`, and return the character after the closing quote.
  *
@@ -317,7 +583,8 @@ void setError(const char* fmt, ...) {
  *  of objects, and a JSON library would cost flash and a working buffer to do
  *  it. Escapes are handled because a station name may well contain a quote or
  *  an apostrophe; \uXXXX is decoded to UTF-8 so that an accented name arrives
- *  as the font expects rather than as a literal backslash-u.
+ *  as the font expects rather than as a literal backslash-u, and an accent
+ *  sent as a separate combining mark is put on its letter (composeAccents).
  *
  *  nullptr when the string is unterminated, which is the only malformed case
  *  that matters -- a truncated response is the realistic failure, not invalid
@@ -340,6 +607,7 @@ const char* readJsonString(const char* p, char* out, size_t out_len) {
     if (*p == '"') {
       if (out_len > 0) {
         out[filled] = '\0';
+        composeAccents(out);
       }
       return p + 1;
     }
