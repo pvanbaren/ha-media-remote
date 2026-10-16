@@ -83,6 +83,11 @@ String s_run_body;
 /** That it is say()'s: no microphone, and the reply fetched at once. */
 bool s_say_only = false;
 std::atomic<bool> s_want_cancel{false};
+/** A request cancelled before Home Assistant had answered it: there was no
+ *  audio channel yet to end it on, so it is kept until run-start brings
+ *  one, ended there, and only then dropped. No new request starts while it
+ *  waits, which is a moment. */
+std::atomic<bool> s_end_on_start{false};
 /** Set by this module's task once the microphone is being kept. */
 std::atomic<bool> s_capture_began{false};
 std::atomic<bool> s_fetching{false};
@@ -195,12 +200,27 @@ void queueFetch() {
 void hook() {
   if (s_want_cancel.exchange(false)) {
     // The end of the speech, if any audio was owed: Home Assistant stops
-    // listening now rather than waiting out its own timeout.
-    if (s_run_id != 0 && s_handler >= 0 && !s_audio_done && !s_say_only) {
-      ha::streamSendBinary(s_frame, 1);
-      s_audio_done = true;
+    // listening now rather than waiting out its own timeout. Owed before
+    // there is a channel to send it on, it waits for run-start.
+    if (s_run_id != 0 && !s_audio_done && !s_say_only) {
+      if (s_handler >= 0) {
+        ha::streamSendBinary(s_frame, 1);
+        s_audio_done = true;
+      } else {
+        s_end_on_start = true;
+      }
     }
-    s_run_id = 0;  // anything more from it is ignored
+    if (!s_end_on_start) {
+      s_run_id = 0;  // anything more from it is ignored
+    }
+  }
+  if (s_end_on_start) {
+    // Waiting to end a cancelled request; no answer at all, and it is let go.
+    if (millis() - s_run_sent_ms >= kStartTimeoutMs) {
+      s_end_on_start = false;
+      s_run_id = 0;
+    }
+    return;
   }
   if (s_want_run.exchange(false)) {
     s_handler = -1;
@@ -270,6 +290,13 @@ void readPath(const char* obj, const char* const* path, char* out,
 /** On the owner: the run's messages, and nullptr when the stream closes. */
 void listener(const char* message) {
   if (message == nullptr) {
+    if (s_end_on_start) {
+      // A cancelled request: nothing to fail, and the connection that ends
+      // it ends the run too.
+      s_end_on_start = false;
+      s_run_id = 0;
+      return;
+    }
     const Phase p = s_phase;
     if (s_run_id != 0 || p == Phase::kStarting) {
       s_run_id = 0;
@@ -295,6 +322,10 @@ void listener(const char* message) {
       static const char* const kMessage[] = {"error", "message", nullptr};
       readPath(message, kMessage, why, sizeof(why));
       s_run_id = 0;
+      if (s_end_on_start) {
+        s_end_on_start = false;  // refused, and already given up: no matter
+        return;
+      }
       fail(why[0] != '\0' ? why : "Home Assistant refused the request");
     }
     return;
@@ -332,6 +363,17 @@ void listener(const char* message) {
         s_handler = atoi(value);
       }
     });
+    if (s_end_on_start) {
+      // Cancelled while this was on its way: the end of the audio straight
+      // away, and the request dropped.
+      if (s_handler >= 0) {
+        s_frame[0] = static_cast<uint8_t>(s_handler);
+        ha::streamSendBinary(s_frame, 1);
+      }
+      s_end_on_start = false;
+      s_run_id = 0;
+      return;
+    }
     static const char* const kUrl[] = {"tts_output", "url", nullptr};
     readPath(data, kUrl, s_reply_url, sizeof(s_reply_url));
     s_run_started = true;
@@ -725,7 +767,7 @@ namespace {
 /** Start a run: `body` is what to send, and `job` what this module's task
  *  does about it, if anything. */
 bool begin(const String& body, bool say_only, const Job* job) {
-  if (!available()) {
+  if (!available() || s_end_on_start) {
     return false;
   }
   const Phase p = s_phase;
