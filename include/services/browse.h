@@ -96,8 +96,9 @@ int rowCount();
 /** False when `index` is out of range. */
 bool rowAt(int index, Row& out);
 
-/** Play item `index` on the selected player. Blocks on the service call. */
-bool play(int index);
+/** Copy item `index` into `out`, to be played: the copy, so a reload of the
+ *  list meanwhile cannot change what is played. False when out of range. */
+bool itemAt(int index, ha::LibraryItem& out);
 
 /** Copy item `index`'s artwork URL into `out`, empty when it has none. False
  *  when `index` is not an item. Taken under the lock and returned by value,

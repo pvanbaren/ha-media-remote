@@ -284,26 +284,12 @@ bool rowAt(int index, Row& out) {
   return false;
 }
 
-bool play(int index) {
-  // The item is copied out under the lock, so the service call -- which
-  // blocks for a round trip -- is made without holding it.
-  ha::LibraryItem item;
-  {
-    Guard guard;
-    if (index < 0 || index >= s_count) {
-      return false;
-    }
-    item = s_items[index];
-  }
-
-  const char* entity = ha::selectedEntity();
-  if (entity[0] == '\0') {
+bool itemAt(int index, ha::LibraryItem& out) {
+  Guard guard;
+  if (index < 0 || index >= s_count) {
     return false;
   }
-  if (!ha::playMedia(entity, item.uri, item.media_type)) {
-    return false;
-  }
-  history::notePicked(item);
+  out = s_items[index];
   return true;
 }
 

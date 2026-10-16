@@ -30,16 +30,13 @@ void repaintRows();
  *  Assistant several seconds to answer, and a screen that freezes for that
  *  long with nothing on it reads as a device that missed the tap. On
  *  kSelected, `row` is the row that was hit -- draw showStarting(row) first,
- *  then call playRow(row). */
+ *  then have the item played (itemForRow()), which the app hands to its
+ *  command worker. */
 Result handleTap(int x, int y, int& row);
 
 /** Show just the chosen item, centred, with a line saying it is starting.
  *  The acknowledgement that handleTap() deliberately leaves to the caller. */
 void showStarting(int row);
-
-/** Play the item on `row`. Blocks on the service call -- up to
- *  config::kHaServiceTimeoutMs for an artist. */
-bool playRow(int row);
 
 /** The services::browse item a row stands for, or -1 for a section heading.
  *  Rows are a layout idea -- headings take one -- so the display resolves

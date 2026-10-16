@@ -38,11 +38,8 @@ void run();
 
 Status status();
 int count();
-/** nullptr when `index` is out of range. */
+/** nullptr when `index` is out of range. Played as radio when
+ *  config::kSearchPlaysRadio. */
 const ha::LibraryItem* at(int index);
-
-/** Play result `index` on the selected player, as radio when
- *  config::kSearchPlaysRadio. Blocks on the service call. */
-bool play(int index);
 
 }  // namespace services::search

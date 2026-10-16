@@ -556,14 +556,6 @@ int itemForRow(int row_index) {
   return row.item;
 }
 
-bool playRow(int row_index) {
-  services::browse::Row row;
-  if (!services::browse::rowAt(row_index, row) || row.header) {
-    return false;
-  }
-  return services::browse::play(row.item);
-}
-
 Result handleTap(int x, int y, int& row_out) {
   row_out = -1;
   // Above the list is the title strip; tapping it backs out.

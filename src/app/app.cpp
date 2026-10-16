@@ -23,6 +23,8 @@
 
 #include <new>
 #include <freertos/FreeRTOS.h>
+#include <freertos/idf_additions.h>
+#include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
@@ -112,6 +114,13 @@ std::atomic<bool> g_ha_offline{false};
  *  volume ratcheted instead of rising. */
 float g_volume_commanded = -1.0f;
 unsigned long g_volume_commanded_ms = 0;
+/** The latest volume asked for and not yet sent, and to which entity: the
+ *  command worker sends it (see "Calls to Home Assistant, off the loop").
+ *  One slot, not a queue: a drag only ever wants its newest level. */
+portMUX_TYPE g_volume_slot_lock = portMUX_INITIALIZER_UNLOCKED;
+bool g_volume_slot_pending = false;
+float g_volume_slot_level = 0.0f;
+char g_volume_slot_entity[config::kEntityIdMaxLen] = {};
 /** How long a commanded level is believed over a poll that disagrees. */
 constexpr unsigned long kVolumeConfirmTimeoutMs = 4000;
 /** Close enough to count as Home Assistant having caught up. Receivers
@@ -131,7 +140,8 @@ unsigned long g_idle_since = 0;
 bool g_control_off_sent = false;
 
 /** Set the control entity's volume and remember that we did, so a poll
- *  carrying the pre-change level cannot undo it. Blocks on the round trip. */
+ *  carrying the pre-change level cannot undo it. The call itself is the
+ *  command worker's, a moment later; this returns at once. */
 [[gnu::noinline]] void commandVolume(const char* entity, float level) {
   if (g_state_mutex != nullptr &&
       xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
@@ -148,7 +158,11 @@ bool g_control_off_sent = false;
     }
     xSemaphoreGive(g_state_mutex);
   }
-  services::ha::setVolume(entity, level);
+  taskENTER_CRITICAL(&g_volume_slot_lock);
+  snprintf(g_volume_slot_entity, sizeof(g_volume_slot_entity), "%s", entity);
+  g_volume_slot_level = level;
+  g_volume_slot_pending = true;
+  taskEXIT_CRITICAL(&g_volume_slot_lock);
 }
 
 /** Copy the shared snapshot out from under the poll task. */
@@ -468,8 +482,8 @@ void pinPlayerVolume() {
  *  reporting no features at all is treated as supporting everything, as
  *  everywhere else here: that is an integration that never set the attribute.
  *
- *  Blocks on the round trip, so callers on the touch path have to want the
- *  wait. Returns true if a call was actually made. */
+ *  Blocks on the round trip: the command worker's, and the poll task's, never
+ *  the loop's. Returns true if a call was actually made. */
 [[gnu::noinline]] bool powerOnControl() {
   if (!services::ha::configured()) {
     return false;
@@ -524,6 +538,236 @@ bool powerOffControl() {
   }
 
   return services::ha::callService("turn_off", control);
+}
+
+/** The most rooms Isolate deals with at once: more than any zone amplifier
+ *  here has outputs. */
+constexpr int kMaxPeers = 16;
+
+/** Split `list` in place at each `sep`, into at most `capacity` pieces.
+ *  Returns how many; none for an empty list. */
+int splitList(char* list, char sep, const char** out, int capacity) {
+  int count = 0;
+  char* p = list;
+  while (*p != '\0' && count < capacity) {
+    out[count++] = p;
+    char* end = strchr(p, sep);
+    if (end == nullptr) {
+      break;
+    }
+    *end = '\0';
+    p = end + 1;
+  }
+  return count;
+}
+
+// --- Calls to Home Assistant, off the loop --------------------------------
+//
+// Every service call the touch path asks for is made here, by a task of its
+// own: play, pause and skip, the volume, power, an input, a pick from a list,
+// Isolate. Each waits on Home Assistant -- play on an idle Music Assistant
+// player took six seconds to answer -- and made on the loop, as they were, a
+// call left touch unread and the screen unpainted for as long as it took.
+// Now the loop queues the call and shows at once what was asked for; the
+// outcome comes back to it in handleCommandResults(), which takes the button
+// out of its pending look and puts back a play or pause that was refused.
+//
+// The calls reach Home Assistant as they always did: through the stream's
+// owner while the stream is open, over REST otherwise. They are made in the
+// order they were asked for -- power before the play it is for -- except the
+// volume, of which only the latest level matters: a drag has at most one
+// level waiting behind the finger.
+
+enum class CommandKind : uint8_t {
+  kTransport,  // play, pause, next, previous
+  kPowerOn,    // the volume device on, for a volume gesture
+  kToggle,     // the power chip
+  kSettleOn,   // a toggle that came on: the player's input and volume
+  kSource,     // an input picked from the volume device's list
+  kPlayItem,   // a pick from the browse list or the search
+  kIsolate,    // the other rooms on this input off
+};
+
+struct CommandJob {
+  CommandKind kind = CommandKind::kTransport;
+  Intent intent = Intent::kNone;
+  /** powerOnControl() first: play, and a pick, from this remote. */
+  bool power_first = false;
+  /** kSource: the device switched on before its input is chosen. */
+  bool turn_on_first = false;
+  /** kPlayItem: as radio. */
+  bool radio = false;
+  /** kTransport: play rather than pause, and the state before it. */
+  bool starting = false;
+  PlaybackState was = PlaybackState::kUnknown;
+  char service[24] = {};
+  char entity[config::kEntityIdMaxLen] = {};
+  char source[config::kSourceNameMaxLen] = {};
+  services::ha::LibraryItem item;
+  /** kIsolate: the rooms, comma-separated, as PlayerState::peer_ids. */
+  char ids[sizeof(PlayerState::peer_ids)] = {};
+};
+
+struct CommandResult {
+  CommandKind kind;
+  Intent intent;
+  bool ok;
+  bool starting;
+  PlaybackState was;
+  /** kIsolate: a bit for each room left on. */
+  uint32_t failed;
+};
+
+QueueHandle_t g_command_jobs = nullptr;
+QueueHandle_t g_command_results = nullptr;
+
+/** A job for the loop to fill, cleared: in PSRAM, as the jobs are -- one is
+ *  most of a KB, and the loop's stack has less to spare than that. Loop
+ *  only. */
+CommandJob& loopJob() {
+  static CommandJob* job = [] {
+    void* mem = heap_caps_malloc(sizeof(CommandJob),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem != nullptr ? new (mem) CommandJob() : new CommandJob();
+  }();
+  *job = CommandJob();
+  return *job;
+}
+
+/** Hand `job` to the worker. False, with the job dropped, when it cannot
+ *  take it: not started, or a queue of presses it has not caught up with. */
+bool queueCommand(const CommandJob& job) {
+  if (g_command_jobs == nullptr ||
+      xQueueSend(g_command_jobs, &job, 0) != pdTRUE) {
+    LOG_WARN("UI: command not sent, too many waiting");
+    return false;
+  }
+  return true;
+}
+
+/** Send the latest volume asked for, if one is waiting. Worker only. */
+void sendPendingVolume() {
+  char entity[config::kEntityIdMaxLen];
+  float level = 0.0f;
+  bool pending = false;
+  taskENTER_CRITICAL(&g_volume_slot_lock);
+  if (g_volume_slot_pending) {
+    pending = true;
+    level = g_volume_slot_level;
+    memcpy(entity, g_volume_slot_entity, sizeof(entity));
+    g_volume_slot_pending = false;
+  }
+  taskEXIT_CRITICAL(&g_volume_slot_lock);
+  if (pending) {
+    services::ha::setVolume(entity, level);
+  }
+}
+
+/** Turn off each room in `ids`; a bit set in the result for each that was
+ *  not. Worker only. */
+uint32_t turnOffRooms(char* ids) {
+  const char* each[kMaxPeers];
+  const int count = splitList(ids, ',', each, kMaxPeers);
+  uint32_t failed = 0;
+  for (int i = 0; i < count; ++i) {
+    LOG_INFO("UI: isolate: turning off %s", each[i]);
+    if (!services::ha::callService("turn_off", each[i])) {
+      LOG_WARN("UI: isolate: %s not turned off (%s)", each[i],
+               services::ha::lastError());
+      failed |= 1u << i;
+    }
+  }
+  return failed;
+}
+
+void runCommand(CommandJob& job, CommandResult& r) {
+  r = {job.kind, job.intent, true, job.starting, job.was, 0};
+  switch (job.kind) {
+    case CommandKind::kTransport:
+      if (job.power_first) {
+        powerOnControl();
+      }
+      r.ok = services::ha::callService(job.service, job.entity);
+      break;
+    case CommandKind::kPowerOn:
+      powerOnControl();
+      break;
+    case CommandKind::kToggle:
+      r.ok = services::ha::callService("toggle", job.entity);
+      break;
+    case CommandKind::kSettleOn: {
+      PlayerState now;
+      if (snapshotState(now)) {
+        selectPlayerSource(now);
+      }
+      pinPlayerVolume();
+      break;
+    }
+    case CommandKind::kSource:
+      if (job.turn_on_first) {
+        services::ha::callService("turn_on", job.entity);
+      }
+      r.ok = services::ha::selectSource(job.entity, job.source);
+      break;
+    case CommandKind::kPlayItem: {
+      if (job.power_first) {
+        powerOnControl();
+      }
+      char player[config::kEntityIdMaxLen];
+      services::ha::copySelectedEntity(player, sizeof(player));
+      r.ok = player[0] != '\0' &&
+             services::ha::playMedia(player, job.item.uri,
+                                     job.item.media_type, job.radio);
+      if (r.ok) {
+        services::history::notePicked(job.item);
+      }
+      break;
+    }
+    case CommandKind::kIsolate:
+      r.failed = turnOffRooms(job.ids);
+      r.ok = r.failed == 0;
+      break;
+  }
+  g_poll_now = true;
+}
+
+void commandTask(void*) {
+  CommandJob* job = static_cast<CommandJob*>(
+      heap_caps_malloc(sizeof(CommandJob), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (job == nullptr) {
+    job = new CommandJob();
+  }
+  for (;;) {
+    // Every 20 ms at most, so a volume asked for goes out within that.
+    const bool have =
+        xQueueReceive(g_command_jobs, job, pdMS_TO_TICKS(20)) == pdTRUE;
+    sendPendingVolume();
+    if (have) {
+      CommandResult r;
+      runCommand(*job, r);
+      xQueueSend(g_command_results, &r, pdMS_TO_TICKS(100));
+    }
+  }
+}
+
+/** Start the worker. Its stack in PSRAM where there is any: it only makes
+ *  calls, and internal RAM is what a TLS session needs. */
+void startCommands() {
+  g_command_jobs = xQueueCreateWithCaps(8, sizeof(CommandJob),
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (g_command_jobs == nullptr) {
+    g_command_jobs = xQueueCreate(4, sizeof(CommandJob));
+  }
+  g_command_results = xQueueCreate(8, sizeof(CommandResult));
+  TaskHandle_t task = nullptr;
+  if (xTaskCreatePinnedToCoreWithCaps(commandTask, "commands", 12288, nullptr,
+                                      2, &task, tskNO_AFFINITY,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) !=
+          pdPASS &&
+      xTaskCreatePinnedToCore(commandTask, "commands", 12288, nullptr, 2,
+                              &task, tskNO_AFFINITY) != pdPASS) {
+    LOG_ERROR("UI: no command task; commands will not be sent");
+  }
 }
 
 
@@ -835,13 +1079,13 @@ bool g_toggle_was_known = false;
   g_toggle_was_off = g_toggle_was_known && before.control_off;
 
   LOG_INFO("UI: tap toggles %s", control);
-  if (!services::ha::callService("toggle", control)) {
-    LOG_WARN("UI: toggle of %s refused", control);
-    g_toggle_sent_ms = 0;
-    return;
-  }
-  g_toggle_sent_ms = millis();
-  g_poll_now = true;  // where there is no stream, the poll says instead
+  // Sent by the command worker; handleCommandResults() notes when, which is
+  // what handleToggleSettled() waits on a state newer than.
+  CommandJob& job = loopJob();
+  job.kind = CommandKind::kToggle;
+  snprintf(job.entity, sizeof(job.entity), "%s", control);
+  g_toggle_sent_ms = 0;
+  queueCommand(job);
 }
 
 /** A power tap's toggle, once a state sampled after it shows it took: if the
@@ -875,33 +1119,20 @@ bool g_toggle_was_known = false;
   LOG_INFO("UI: %s is now %s", services::ha::controlEntity(),
            now.control_off ? "off" : "on");
   if (!now.control_off) {
-    selectPlayerSource(now);
-    pinPlayerVolume();
+    CommandJob& job = loopJob();
+    job.kind = CommandKind::kSettleOn;
+    queueCommand(job);
   }
 }
 
-/** The most rooms Isolate deals with at once: more than any zone amplifier
- *  here has outputs. */
-constexpr int kMaxPeers = 16;
 /** When Isolate's card last gave way to now playing, or 0. Loop only. */
 unsigned long g_isolate_left_ms = 0;
+/** The rooms Isolate is turning off, names and ids, kept for its outcome
+ *  (finishIsolate()). Loop only. */
+char g_isolate_names[sizeof(PlayerState::peer_names)] = {};
+char g_isolate_ids[sizeof(PlayerState::peer_ids)] = {};
 
-/** Split `list` in place at each `sep`, into at most `capacity` pieces.
- *  Returns how many; none for an empty list. */
-int splitList(char* list, char sep, const char** out, int capacity) {
-  int count = 0;
-  char* p = list;
-  while (*p != '\0' && count < capacity) {
-    out[count++] = p;
-    char* end = strchr(p, sep);
-    if (end == nullptr) {
-      break;
-    }
-    *end = '\0';
-    p = end + 1;
-  }
-  return count;
-}
+void finishIsolate(uint32_t failed);
 
 /** The "+N rooms" chip: ask before turning the other rooms off, naming them.
  *  Isolate and Cancel on the card; a swipe right cancels too. */
@@ -955,7 +1186,8 @@ int splitList(char* list, char sep, const char** out, int capacity) {
     return;
   }
 
-  // Each room is a round trip; the card says what is happening meanwhile.
+  // Each room is a round trip, made by the command worker; the card says
+  // what is happening meanwhile, and finishIsolate() what came of it.
   card.title = "Isolating";
   card.note = "Turning off";
   card.rooms = names;
@@ -963,22 +1195,40 @@ int splitList(char* list, char sep, const char** out, int capacity) {
   card.buttons = ui::IsolateCard::Buttons::kNone;
   ui::showIsolate(card);
 
-  const char* still_on[kMaxPeers];
-  int still_count = 0;
-  for (int i = 0; i < count; ++i) {
-    LOG_INFO("UI: isolate: turning off %s", ids[i]);
-    if (!services::ha::callService("turn_off", ids[i])) {
-      LOG_WARN("UI: isolate: %s not turned off (%s)", ids[i],
-               services::ha::lastError());
-      still_on[still_count++] = i < named ? names[i] : ids[i];
-    }
+  CommandJob& job = loopJob();
+  job.kind = CommandKind::kIsolate;
+  snprintf(job.ids, sizeof(job.ids), "%s", snapshot.peer_ids);
+  snprintf(g_isolate_names, sizeof(g_isolate_names), "%s",
+           snapshot.peer_names);
+  snprintf(g_isolate_ids, sizeof(g_isolate_ids), "%s", snapshot.peer_ids);
+  if (!queueCommand(job)) {
+    finishIsolate(~0u);
   }
-  g_poll_now = true;
+}
 
-  if (still_count == 0) {
+/** Isolate's outcome: back to now playing if every room went off, or the
+ *  card again naming those still on. Only while the card is still up. */
+void finishIsolate(uint32_t failed) {
+  if (g_screen != Screen::kIsolate) {
+    return;
+  }
+  if (failed == 0) {
     leaveIsolate();
     return;
   }
+  const char* names[kMaxPeers];
+  const char* ids[kMaxPeers];
+  const int named =
+      splitList(g_isolate_names, services::ha::kPeerNameSep, names, kMaxPeers);
+  const int count = splitList(g_isolate_ids, ',', ids, kMaxPeers);
+  const char* still_on[kMaxPeers];
+  int still_count = 0;
+  for (int i = 0; i < count; ++i) {
+    if ((failed & (1u << i)) != 0) {
+      still_on[still_count++] = i < named ? names[i] : ids[i];
+    }
+  }
+  ui::IsolateCard card;
   card.title = "Couldn't isolate";
   card.note = "Still on";
   card.rooms = still_on;
@@ -1069,24 +1319,27 @@ const char* serviceFor(Intent intent) {
   // the state of the entity it goes to, and a toggle would undo that on one
   // whose state the snapshot did not have -- a player playing unheard behind
   // another input was paused by the press meant to start it.
-  ui::showCommandPending(intent, true);
   const bool starting =
       !have_before || before.playback != PlaybackState::kPlaying;
   if (intent == Intent::kPlayPause) {
     service = starting ? "media_play" : "media_pause";
   }
-  if (intent == Intent::kPlayPause && starting && !elsewhere) {
-    powerOnControl();
-  }
-  const bool ok = services::ha::callService(service, entity);
-  ui::showCommandPending(intent, false);
-
-  if (!ok) {
+  CommandJob& job = loopJob();
+  job.kind = CommandKind::kTransport;
+  job.intent = intent;
+  job.starting = starting;
+  job.was = have_before ? before.playback : PlaybackState::kUnknown;
+  job.power_first = intent == Intent::kPlayPause && starting && !elsewhere;
+  snprintf(job.service, sizeof(job.service), "%s", service);
+  snprintf(job.entity, sizeof(job.entity), "%s", entity);
+  if (!queueCommand(job)) {
     return;
   }
-
-  // Show what was asked for at once, so the glyph answers immediately; the
-  // poll that follows replaces this with whatever HA actually did.
+  // The button lit until the worker has its answer (handleCommandResults()),
+  // and what was asked for shown at once, so the glyph answers immediately;
+  // the poll that follows replaces it with whatever HA actually did, and a
+  // refusal puts it back.
+  ui::showCommandPending(intent, true);
   if (intent == Intent::kPlayPause && g_state_mutex != nullptr &&
       xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     g_state.playback =
@@ -1094,8 +1347,48 @@ const char* serviceFor(Intent intent) {
     xSemaphoreGive(g_state_mutex);
     g_state_dirty = true;
   }
+}
 
-  g_poll_now = true;
+/** What the command worker has done since the last pass: a transport
+ *  button out of its pending look, and a refused play or pause put back --
+ *  unless a state has said otherwise since; a toggle's time noted for
+ *  handleToggleSettled(); Isolate's outcome. Loop only. */
+[[gnu::noinline]] void handleCommandResults() {
+  if (g_command_results == nullptr) {
+    return;
+  }
+  CommandResult r;
+  while (xQueueReceive(g_command_results, &r, 0) == pdTRUE) {
+    switch (r.kind) {
+      case CommandKind::kTransport:
+        ui::showCommandPending(r.intent, false);
+        if (!r.ok && r.intent == Intent::kPlayPause &&
+            g_state_mutex != nullptr &&
+            xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+          const PlaybackState shown =
+              r.starting ? PlaybackState::kPlaying : PlaybackState::kPaused;
+          if (g_state.playback == shown) {
+            g_state.playback = r.was;
+            g_state_dirty = true;
+          }
+          xSemaphoreGive(g_state_mutex);
+        }
+        break;
+      case CommandKind::kToggle:
+        if (r.ok) {
+          g_toggle_sent_ms = millis();
+        } else {
+          LOG_WARN("UI: toggle of %s refused", services::ha::controlEntity());
+          g_toggle_sent_ms = 0;
+        }
+        break;
+      case CommandKind::kIsolate:
+        finishIsolate(r.failed);
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 
@@ -1818,11 +2111,13 @@ struct ControlNow {
   snprintf(source, sizeof(source), "%s", g_sources[row]);
   ControlNow control;
   controlNow(control);
-  const char* entity = services::ha::controlEntity();
-  if (control.off && control.can_turn_on) {
-    services::ha::callService("turn_on", entity);
-  }
-  services::ha::selectSource(entity, source);
+  CommandJob& job = loopJob();
+  job.kind = CommandKind::kSource;
+  job.turn_on_first = control.off && control.can_turn_on;
+  snprintf(job.entity, sizeof(job.entity), "%s",
+           services::ha::controlEntity());
+  snprintf(job.source, sizeof(job.source), "%s", source);
+  queueCommand(job);
   if (services::ha::controlIsSeparate() &&
       services::ha::storedControlInput()[0] != '\0' &&
       strcmp(source, services::ha::storedControlInput()) != 0) {
@@ -1990,8 +2285,11 @@ void portalIdle() {
       // power-on does, input and switch-on volume with it.
       LOG_INFO("UI: volume asked of %s while off, switching it on",
                services::ha::controlEntity());
-      powerOnControl();
-      g_poll_now = true;
+      {
+        CommandJob& job = loopJob();
+        job.kind = CommandKind::kPowerOn;
+        queueCommand(job);
+      }
       break;
 
     case Intent::kRelinkHa:
@@ -2045,8 +2343,14 @@ void portalIdle() {
       // and it is switched to the player's input whatever it was on, since
       // picking something to play here is asking to hear it.
       ui::clearArtwork();
-      powerOnControl();
-      startPlaying(services::browse::play(in.index));
+      {
+        CommandJob& job = loopJob();
+        job.kind = CommandKind::kPlayItem;
+        job.power_first = true;
+        if (services::browse::itemAt(in.index, job.item)) {
+          startPlaying(queueCommand(job));
+        }
+      }
       break;
 
     case Intent::kRunSearch:
@@ -2056,8 +2360,18 @@ void portalIdle() {
 
     case Intent::kPlaySearchResult:
       ui::clearArtwork();
-      powerOnControl();
-      startPlaying(services::search::play(in.index));
+      {
+        CommandJob& job = loopJob();
+        job.kind = CommandKind::kPlayItem;
+        job.power_first = true;
+        job.radio = config::kSearchPlaysRadio;
+        const services::ha::LibraryItem* item =
+            services::search::at(in.index);
+        if (item != nullptr) {
+          job.item = *item;
+          startPlaying(queueCommand(job));
+        }
+      }
       break;
 
     case Intent::kChoosePlayer:
@@ -2416,6 +2730,9 @@ void setup() {
   // and priority inheritance then lifts this task to the loop's priority for
   // as long as it holds the lock. What does is the client it waits through,
   // which sleeps instead of spinning -- see services::Yielding.
+  // Before the poll task: anything the touch path asks of Home Assistant
+  // goes through the command worker.
+  startCommands();
   xTaskCreate(haPollTask, "ha_poll", 12288, nullptr, tskIDLE_PRIORITY,
               nullptr);
 }
@@ -2441,6 +2758,7 @@ void loop() {
   handleInput();
   collectWifiScan();
   handleListTimeout();
+  handleCommandResults();
   handleToggleSettled();
 
   handleMessageRecheck();

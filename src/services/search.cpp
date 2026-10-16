@@ -75,21 +75,4 @@ const ha::LibraryItem* at(int index) {
   return &s_results[index];
 }
 
-bool play(int index) {
-  const ha::LibraryItem* item = at(index);
-  if (item == nullptr) {
-    return false;
-  }
-  const char* entity = ha::selectedEntity();
-  if (entity[0] == '\0') {
-    return false;
-  }
-  if (!ha::playMedia(entity, item->uri, item->media_type,
-                     config::kSearchPlaysRadio)) {
-    return false;
-  }
-  history::notePicked(*item);
-  return true;
-}
-
 }  // namespace services::search
