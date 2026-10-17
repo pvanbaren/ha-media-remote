@@ -417,6 +417,10 @@ constexpr bool kTurnOffControlOnBlank = true;
  *  the last touch of any kind, or from opening the screen if that is later,
  *  so a list being read slowly is not pulled away mid-scroll. */
 constexpr unsigned long kListIdleReturnMs = 60000;
+/** How long the Starting... card waits for a pick to start playing before
+ *  giving way to now playing whatever it shows. Its back button leaves
+ *  sooner. */
+constexpr unsigned long kStartingWaitMs = 60000;
 
 /** A tap on a scrolling list is refused if it began while the list was
  *  moving, or this soon after it stopped. Flicking again to keep a list going

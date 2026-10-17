@@ -25,6 +25,7 @@ GitHub release from that version's section, with
 
 ### Fixed
 
+- The Starting... card could give way to now playing, still showing the old track, seconds before the pick began to play. It now stays until the pick is playing, or for up to a minute.
 - An accented letter sent as a plain letter followed by a separate accent, as Music Assistant sends some titles, lost its accent, which the screen has no character for on its own. The two are now put together into the accented letter.
 
 ## [1.3.0] - 2026-10-13

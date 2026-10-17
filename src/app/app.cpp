@@ -1470,6 +1470,8 @@ const char* serviceFor(Intent intent) {
   }
 }
 
+bool startingSettled();
+
 /** Re-evaluate a status card periodically: the settings it complains about can
  *  be fixed from the LAN portal while it is on screen. */
 [[gnu::noinline]] void handleMessageRecheck() {
@@ -1480,10 +1482,15 @@ const char* serviceFor(Intent intent) {
   }
   g_message_recheck_ms = millis();
 
-  // A pick on its way: ask again, so the player's answer is seen as soon as
-  // it gives one.
+  // A pick on its way: on to now playing once it plays, or once the card
+  // has waited long enough; until then ask again, so the player's answer is
+  // seen as soon as it gives one.
   if (g_screen == Screen::kStarting) {
-    g_poll_now = true;
+    if (startingSettled()) {
+      showNowPlaying();
+    } else {
+      g_poll_now = true;
+    }
     return;
   }
 
@@ -1580,18 +1587,44 @@ bool g_ha_discover_tried = false;
  *  same way in both cases: the display has already put a "Starting..." frame
  *  up, and no card is drawn here on purpose so the screen carries straight on
  *  from the tap to the track with nothing flashing in between. It stays up
- *  until a state comes in -- Music Assistant can be slow to start something,
- *  and now and then very slow -- or it is backed out of (Intent::kCancelStart);
- *  a swipe down from it goes to the status page as from now playing. A pick
- *  the worker could not take is not waited for. */
+ *  until the pick is playing (startingSettled()) -- Music Assistant can be
+ *  slow to start something, and now and then very slow -- or it is backed out
+ *  of (Intent::kCancelStart); a swipe down from it goes to the status page as
+ *  from now playing. A pick the worker could not take is not waited for. */
+char g_start_title[sizeof(PlayerState::title)] = {};
+bool g_start_was_playing = false;
+unsigned long g_start_ms = 0;
+
 [[gnu::noinline]] void startPlaying(bool started) {
   if (!started) {
     showNowPlaying();
     return;
   }
+  PlayerState now;
+  const bool have = snapshotState(now);
+  snprintf(g_start_title, sizeof(g_start_title), "%s", have ? now.title : "");
+  g_start_was_playing = have && now.playback == PlaybackState::kPlaying;
+  g_start_ms = millis();
   g_screen = Screen::kStarting;
   g_message_recheck_ms = millis();
   g_poll_now = true;
+}
+
+/** Whether the Starting... card has done its job: the player is playing,
+ *  and either something other than what it played when the pick was made or
+ *  after not playing then. Not merely any change of state -- the volume
+ *  device coming on for the pick is one, and taking the card down for that
+ *  showed the old track for the seconds before the new one began. Or
+ *  config::kStartingWaitMs has gone by, which is as long as it waits. */
+[[gnu::noinline]] bool startingSettled() {
+  if (millis() - g_start_ms >= config::kStartingWaitMs) {
+    return true;
+  }
+  PlayerState now;
+  if (!snapshotState(now) || now.playback != PlaybackState::kPlaying) {
+    return false;
+  }
+  return !g_start_was_playing || strcmp(now.title, g_start_title) != 0;
 }
 
 // --- Choosing a network on the device ------------------------------------------
@@ -2828,10 +2861,12 @@ void loop() {
     g_state_dirty = false;
     // Neither the list, the search nor the status page may be replaced by a
     // poll landing underneath someone who is reading or typing.
-    if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
-        g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
-        g_screen != Screen::kPlayers && g_screen != Screen::kSettings &&
-        g_screen != Screen::kIsolate && g_screen != Screen::kSources) {
+    if (g_screen == Screen::kStarting && !startingSettled()) {
+      LOG_DEBUG("UI: repaint held back, the pick has not started");
+    } else if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
+               g_screen != Screen::kStatus && g_screen != Screen::kWifi &&
+               g_screen != Screen::kPlayers && g_screen != Screen::kSettings &&
+               g_screen != Screen::kIsolate && g_screen != Screen::kSources) {
       showNowPlaying();
     } else {
       LOG_DEBUG("UI: repaint held back, a list is on screen");
