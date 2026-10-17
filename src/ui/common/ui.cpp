@@ -573,9 +573,12 @@ Input browseTouch(const hw::TouchReport& report) {
 
 Input searchTouch(const hw::TouchReport& report) {
   Input out;
-  // The back button does what a swipe right does, results or keyboard.
+  // The back button does what a swipe either way does, results or keyboard:
+  // nothing on this screen moves sideways, so a swipe left -- the one that
+  // opened it -- goes back too, as on the inputs.
   const bool back =
       report.event == hw::TouchEvent::kSwipeRight ||
+      report.event == hw::TouchEvent::kSwipeLeft ||
       (report.event == hw::TouchEvent::kTap &&
        back_button::hit(report.x, report.y));
   if (back) {
@@ -734,6 +737,13 @@ Input settingsTouch(const hw::TouchReport& report) {
 /** The sources are drawn by the settings list, and touched as it is; only
  *  what a tap and a back mean differ. */
 Input sourcesTouch(const hw::TouchReport& report) {
+  // A swipe either way goes back, as on the search: the inputs were opened by
+  // a swipe right, and nothing here moves sideways.
+  if (report.event == hw::TouchEvent::kSwipeLeft) {
+    Input out;
+    out.intent = Intent::kSourcesBack;
+    return out;
+  }
   Input out = settingsTouch(report);
   if (out.intent == Intent::kSettingsTap) {
     out.intent = Intent::kSourceTap;
