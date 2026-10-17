@@ -337,6 +337,42 @@ void formatElapsed(const PlayerState& state, char* out, size_t out_len) {
   snprintf(out, out_len, "%s / %s", elapsed, total);
 }
 
+// --- Track progress ---------------------------------------------------------
+
+/** How far through the track, 0..1, or -1 when there is nothing to show:
+ *  the times formatElapsed() would leave out, and offline. */
+float progressFraction(const PlayerState& state) {
+  if (state.offline || state.duration_s <= 0.0f) {
+    return -1.0f;
+  }
+  const float position = services::ha::interpolatedPosition(state);
+  if (position < 0.0f) {
+    return -1.0f;
+  }
+  const float f = position / state.duration_s;
+  return f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+}
+
+/** The progress bar: the volume bar's shape at the foot of the screen, with
+ *  the elapsed chip drawn over its middle after it, like a timeline and its
+ *  label. Opaque and always the same shape, so it can be painted over itself
+ *  once a second without the backdrop. False when there is none to draw. */
+constexpr int kProgressY = theme::kElapsedY - kBarHeight / 2;
+bool drawProgressBar(lgfx::LovyanGFX& gfx, const PlayerState& state) {
+  const float f = progressFraction(state);
+  if (f < 0.0f) {
+    return false;
+  }
+  gfx.fillRoundRect(kBarLeft, kProgressY, kBarWidth, kBarHeight, kBarRadius,
+                    theme::kArcTrack);
+  const int filled = static_cast<int>(f * static_cast<float>(kBarWidth) + 0.5f);
+  if (filled >= kBarHeight) {
+    gfx.fillRoundRect(kBarLeft, kProgressY, filled, kBarHeight, kBarRadius,
+                      theme::kProgressFill);
+  }
+  return true;
+}
+
 /** Draws the chip and returns the pill's width, or 0 when there is none. The
  *  width is what refreshElapsed() needs to present only the columns it
  *  touched, and only the caller doing a partial repaint reads it. */
@@ -523,6 +559,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
       ui::canvasSaveBackdrop(ui::Backdrop::kArtAndText, with_text);
     }
   }
+  drawProgressBar(gfx, state);
   drawElapsedChip(gfx, state);
   // Whether or not the bar is shown now: volume can become available without
   // anything else changing, and the first drag must still find the backdrop.
@@ -566,8 +603,16 @@ void refreshElapsed(const PlayerState& state) {
   // the pill is centred and changes width with the label -- "9:59" to "10:00"
   // and back again -- so presenting only the narrower of the two would leave
   // the wider one's ends on the glass.
+  // The progress bar first, under the chip: it is opaque and keeps its
+  // shape, so it too is painted over itself. Its thin band goes to the glass
+  // only once the chip is back over its middle, or the bar would show through
+  // the chip for the moment between.
+  const bool bar = drawProgressBar(ui::panel(), state);
   static int s_last_w = 0;
   const int w = drawElapsedChip(ui::panel(), state);
+  if (bar) {
+    ui::canvasPresentRegion(kBarLeft, kProgressY, kBarWidth, kBarHeight);
+  }
   const int previous = s_last_w;
   s_last_w = w;
   if (w <= 0 && previous <= 0) {

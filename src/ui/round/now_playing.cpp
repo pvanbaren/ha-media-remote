@@ -4,6 +4,7 @@
 
 #include <esp_heap_caps.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -353,6 +354,54 @@ void formatElapsed(const PlayerState& state, char* out, size_t out_len) {
   snprintf(out, out_len, "%s / %s", elapsed, total);
 }
 
+// --- Track progress ---------------------------------------------------------
+
+/** How far through the track, 0..1, or -1 when there is nothing to show:
+ *  the times formatElapsed() would leave out, and offline. */
+float progressFraction(const PlayerState& state) {
+  if (state.offline || state.duration_s <= 0.0f) {
+    return -1.0f;
+  }
+  const float position = services::ha::interpolatedPosition(state);
+  if (position < 0.0f) {
+    return -1.0f;
+  }
+  const float f = position / state.duration_s;
+  return f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+}
+
+/** The progress arc: the volume arc's ring, in the gap at its foot, filling
+ *  from the lower left. Opaque and always the same shape, so it can be
+ *  painted over itself once a second without the backdrop; the elapsed chip
+ *  goes over it after. */
+void drawProgressArc(lgfx::LovyanGFX& gfx, const PlayerState& state) {
+  const float f = progressFraction(state);
+  if (f < 0.0f) {
+    return;
+  }
+  gfx.fillArc(theme::kCenterX, theme::kCenterY, theme::kVolumeArcInnerRadius,
+              theme::kVolumeArcOuterRadius, theme::kProgressArcStartDeg,
+              theme::kProgressArcEndDeg, theme::kArcTrack);
+  const float filled_from =
+      theme::kProgressArcEndDeg -
+      (theme::kProgressArcEndDeg - theme::kProgressArcStartDeg) * f;
+  if (filled_from < theme::kProgressArcEndDeg - 0.5f) {
+    gfx.fillArc(theme::kCenterX, theme::kCenterY,
+                theme::kVolumeArcInnerRadius, theme::kVolumeArcOuterRadius,
+                filled_from, theme::kProgressArcEndDeg, theme::kProgressFill);
+  }
+}
+
+/** The top of the rows the progress arc reaches: its two ends, at the inner
+ *  radius, are its highest points. */
+int progressArcTopY() {
+  constexpr float kRad = 3.14159265f / 180.0f;
+  return theme::kCenterY +
+         static_cast<int>(sinf(theme::kProgressArcStartDeg * kRad) *
+                          theme::kVolumeArcInnerRadius) -
+         theme::px(2);
+}
+
 void drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   char label[32];
   s_relink_chip.shown = false;
@@ -523,6 +572,9 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
       ui::canvasSaveBackdrop(ui::Backdrop::kArtAndText, with_text);
     }
   }
+  // Before the volume arc's backdrop is kept, so that copy agrees with it
+  // wherever the two might meet.
+  drawProgressArc(gfx, state);
   drawElapsedChip(gfx, state);
   if (volumeAvailable(state)) {
     saveArcBackdrop(gfx);
@@ -555,15 +607,19 @@ void draw(const PlayerState& state) {
 void refreshElapsed(const PlayerState& state) {
   // Straight to the panel. The chip carries its own opaque pill, so repainting
   // it needs nothing from the cover art beneath -- which is the whole reason
-  // it is a chip and not bare text on the scrim.
+  // it is a chip and not bare text on the scrim. The progress arc is opaque
+  // too and keeps its shape, so it goes first, under the chip.
+  drawProgressArc(ui::panel(), state);
   drawElapsedChip(ui::panel(), state);
   if (!board::kPanelWritesDirect) {
     // ui::panel() is the composed frame on a framebuffer panel, so the chip
-    // is not on the glass until its band is pushed. All of the band's width:
-    // the pill is centred and changes width with its label, and a band a few
-    // dozen rows tall costs nothing worth narrowing.
-    ui::canvasPresentRegion(0, theme::kElapsedY - theme::px(14), theme::kSize,
-                            theme::px(28));
+    // and the arc are not on the glass until their band is pushed: from the
+    // arc's ends to the foot of the panel, all of its width -- the pill is
+    // centred and changes width with its label, and a band a few dozen rows
+    // tall costs nothing worth narrowing.
+    const int top = std::min(progressArcTopY(),
+                             theme::kElapsedY - theme::px(14));
+    ui::canvasPresentRegion(0, top, theme::kSize, theme::kSize - top);
     return;
   }
   // And into the canvas, where that is not the panel, so it keeps up there
@@ -571,6 +627,7 @@ void refreshElapsed(const PlayerState& state) {
   // of the arc a stretch reaches the chip -- which the canvas would otherwise
   // still show at the time it was composed, torn against the live one.
   if (ui::canvasReady()) {
+    drawProgressArc(ui::canvas(), state);
     drawElapsedChip(ui::canvas(), state);
   }
 }

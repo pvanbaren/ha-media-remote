@@ -97,6 +97,21 @@ constexpr int kElapsedPillPadX = px(7);
 constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);
 
+// --- Track progress, under the elapsed chip ---
+// How far through the track it is, display only: the bottom half of now
+// playing is the lower swipes', so a drag there is not a seek.
+// The accent colour, apart from the volume's white. Not drawn where the chip
+// shows no time -- a stream with no duration, or offline.
+constexpr uint16_t kProgressFill = kAccent;
+/** The round build's progress arc: the volume arc's ring, in the gap at its
+ *  foot, kept this far clear of the volume arc's ends at both sides. It
+ *  fills from the lower left, as the volume arc starts. */
+constexpr float kProgressArcClearDeg = 8.0f;
+constexpr float kProgressArcStartDeg =
+    kVolumeArcEndDeg + kProgressArcClearDeg;  // +44, lower right
+constexpr float kProgressArcEndDeg =
+    kVolumeArcStartDeg + 360.0f - kProgressArcClearDeg;  // +136, lower left
+
 // --- Now-playing text block: artist above, track title below ---
 // The artist is one line and the title may be two, so putting the artist first
 // keeps the block's top edge at a fixed height whatever the title does -- and
