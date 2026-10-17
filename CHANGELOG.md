@@ -17,6 +17,10 @@ GitHub release from that version's section, with
 - The Starting... card shown after picking something from the list or the search has the back button, which stops waiting for it, for when Music Assistant is slow to start it; a swipe right or the MaTouch's knob does the same. A swipe down from it opens the status page, and the settings from there, as from now playing. A pick not yet sent to Home Assistant is dropped; one already sent still starts.
 - The swipe-up list has the back button the other pages have, on its first heading at the heading's size, scrolling away with it.
 
+### Changed
+
+- On the square boards the swipe-up list starts near the top of the screen, without the empty band above it. Round boards keep it, to keep the first row out of the circle's narrow top.
+
 ### Fixed
 
 - An accented letter sent as a plain letter followed by a separate accent, as Music Assistant sends some titles, lost its accent, which the screen has no character for on its own. The two are now put together into the accented letter.

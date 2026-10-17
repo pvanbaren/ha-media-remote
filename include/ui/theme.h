@@ -138,8 +138,11 @@ constexpr int kGlyphSkipBarGap = px(2);
 // not a fixed row count -- decides how many fit.
 constexpr uint16_t kListBackdrop = 0x0841;  // just off black
 constexpr int kListTitleTextPx = listTextPx(17);
-/** Everything above this is the strip that dismisses the list on a tap. */
-constexpr int kListTopY = px(32);
+/** Everything above this is the strip that dismisses the list on a tap.
+ *  On a round panel it also keeps the first row out of the circle's narrow
+ *  top. A square panel has no such top, and the back button on the list's
+ *  first heading is the way out, so there it is only a margin. */
+constexpr int kListTopY = board::kDisplayIsRound ? px(32) : px(8);
 /** Section headings are a line of text, not a card, so they take far less
  *  room than a row -- which is what makes two sections fit on a 240 px
  *  circle at all. */
