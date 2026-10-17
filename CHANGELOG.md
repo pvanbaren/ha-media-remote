@@ -14,6 +14,7 @@ GitHub release from that version's section, with
 
 ### Added
 
+- **Guition (Sunton) ESP32-4848S040**, also sold as AITRIP's "ESP32-S3 4.0 inch 480 × 480": a 4" square 480×480 ST7701 with GT911 touch, built as `guition4848-s3`, laid out as the Qualia at two thirds of its pixels. GPIO 0 is a display line on this board, so there is no BOOT button: a finger held on the screen for 10 s, begun within 15 s of power-up, clears the settings instead. Its panel needs a small bounce buffer, which the other RGB boards do without.
 - The Starting... card shown after picking something from the list or the search has the back button, which stops waiting for it, for when Music Assistant is slow to start it; a swipe right or the MaTouch's knob does the same. A swipe down from it opens the status page, and the settings from there, as from now playing. A pick not yet sent to Home Assistant is dropped; one already sent still starts.
 - The swipe-up list has the back button the other pages have, on its first heading at the heading's size, scrolling away with it.
 

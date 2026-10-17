@@ -168,6 +168,12 @@ constexpr bool kRgbPclkActiveNeg = true;
 constexpr bool kRgbHsyncIdleLow = false;
 constexpr bool kRgbVsyncIdleLow = false;
 constexpr bool kRgbDeIdleHigh = false;
+/** No bounce buffer: GDMA scans the framebuffer straight out of PSRAM (see
+ *  hardware/rgb_panel.h). */
+constexpr int kRgbBounceBufferRows = 0;
+/** Scanned out continuously, as ESP-IDF 5 does by default; see
+ *  board/guition4848_s3.h for the exception. */
+constexpr bool kRgbFrameByFrame = false;
 
 // --- TCA9554 I2C expander --------------------------------------------------
 // The panel's reset line, the backlight and the two user buttons are all

@@ -210,6 +210,21 @@ void flushRows(int y0, int y1) {
   esp_lcd_panel_draw_bitmap(s_panel, 0, y0, kW, y1, s_fb);
 }
 
+/**
+ * Each frame a fresh start, on a board that asks for it
+ * (board::kRgbFrameByFrame): the panel in ESP-IDF's refresh-on-demand mode,
+ * and the next frame asked for at the end of each one -- which stops the LCD
+ * engine, resets it and its FIFO, points the DMA back at the top of the
+ * framebuffer and starts again. That is how ESP-IDF 4.4 drove every RGB
+ * panel. ESP-IDF 5 runs the engine without a break instead and, at each
+ * VSYNC, resets only the FIFO and the DMA under it.
+ */
+IRAM_ATTR bool nextFrame(esp_lcd_panel_handle_t panel,
+                         const esp_lcd_rgb_panel_event_data_t*, void*) {
+  esp_lcd_rgb_panel_refresh(panel);
+  return false;
+}
+
 }  // namespace
 
 bool rgbInit() {
@@ -247,7 +262,9 @@ bool rgbInit() {
   // can move it in place. See the note on s_fb.
   cfg.num_fbs = 1;
 
-  // No bounce buffer: GDMA reads the framebuffer straight out of PSRAM.
+  // No bounce buffer, as a rule: GDMA reads the framebuffer straight out of
+  // PSRAM. The 4848S040 is the exception, board::kRgbBounceBufferRows says
+  // why; on every other board it is 0.
   //
   // A bounce buffer sounds like insurance and is closer to the opposite. It
   // puts the CPU in the scan-out path -- an interrupt has to move a slab of
@@ -259,7 +276,8 @@ bool rgbInit() {
   // enough for the LCD FIFO to miss a deadline -- and a bounce buffer would
   // not escape those: it is filled from the same PSRAM, over the same bus,
   // and adds an interrupt deadline of its own.
-  cfg.bounce_buffer_size_px = 0;
+  cfg.bounce_buffer_size_px =
+      static_cast<size_t>(board::kRgbBounceBufferRows) * kW;
   cfg.dma_burst_size = 64;
 
   cfg.hsync_gpio_num = static_cast<int>(board::kRgbPinHsync);
@@ -271,6 +289,7 @@ bool rgbInit() {
     cfg.data_gpio_nums[i] = board::kRgbDataPins[i];
   }
   cfg.flags.fb_in_psram = 1;
+  cfg.flags.refresh_on_demand = board::kRgbFrameByFrame ? 1 : 0;
 
   const esp_err_t err = esp_lcd_new_rgb_panel(&cfg, &s_panel);
   if (err != ESP_OK) {
@@ -294,13 +313,21 @@ bool rgbInit() {
   memset(s_fb, 0, static_cast<size_t>(kW) * kH * sizeof(uint16_t));
   flushRows(0, kH);
 
-  // Belt and braces on top of the peripheral reset above: ask the driver to
-  // re-sync scan-out to VSYNC, which is Espressif's documented remedy for a
-  // permanently shifted image.
-  esp_lcd_rgb_panel_restart(s_panel);
+  if constexpr (board::kRgbFrameByFrame) {
+    esp_lcd_rgb_panel_event_callbacks_t callbacks = {};
+    callbacks.on_vsync = nextFrame;
+    esp_lcd_rgb_panel_register_event_callbacks(s_panel, &callbacks, nullptr);
+    esp_lcd_rgb_panel_refresh(s_panel);  // the first; nextFrame() the rest
+  } else {
+    // Belt and braces on top of the peripheral reset above: ask the driver
+    // to re-sync scan-out to VSYNC, which is Espressif's documented remedy
+    // for a permanently shifted image.
+    esp_lcd_rgb_panel_restart(s_panel);
+  }
 
-  LOG_INFO("RGB: panel up, %dx%d @ %u MHz, 1 framebuffer", kW,
-                kH, static_cast<unsigned>(board::kRgbPclkHz / 1000000));
+  LOG_INFO("RGB: panel up, %dx%d @ %u MHz, 1 framebuffer, %d bounce rows", kW,
+           kH, static_cast<unsigned>(board::kRgbPclkHz / 1000000),
+           board::kRgbBounceBufferRows);
   return true;
 }
 

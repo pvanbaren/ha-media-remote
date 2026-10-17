@@ -23,12 +23,26 @@ pio run -e round360-s3       # 1.85" round 360x360
 pio run -e qualia-720        # 4" square 720x720
 pio run -e lcd28c-s3         # 2.8" round 480x480
 pio run -e matouch21-s3      # 2.1" round 480x480
+pio run -e guition4848-s3    # 4" square 480x480
 pio run -e headless          # no panel
 ```
 
 Each board's build embeds only the fonts it uses and compiles only its own
 `src/hardware/<board>/` and `src/ui/<shape>/` (see
 [the code](code.md)).
+
+`guition4848-s3` is the one build that compiles ESP-IDF from source
+(`custom_sdkconfig` in `platformio.ini` says why), so its first build takes
+about five minutes more. It needs PlatformIO Core 6.1.19 -- 6.2.0 stops it
+with `No module named 'SCons.Tool.FortranCommon'`
+([pioarduino/platform-espressif32#529](https://github.com/pioarduino/platform-espressif32/issues/529))
+-- and it replaces the Arduino libraries in the PlatformIO home it builds
+in, so every other board re-downloads them, and it rebuilds them, each time
+the two alternate. To build it beside the others, give it a home of its own:
+
+```bash
+PLATFORMIO_CORE_DIR=~/.platformio-guition pio run -e guition4848-s3
+```
 
 GitHub Actions builds every board on every push and pull request
 (`.github/workflows/build.yml`). Each run's page under **Actions** has the
@@ -84,6 +98,7 @@ device keeps its settings across a USB flash.
 - **2.8C**: the S3's own USB port too, whatever Waveshare's wiki says about a
   CH343.
 - **MaTouch 2.1"**: the S3's own USB port, which also carries the console.
+- **4848S040**: a CH340 USB-serial bridge to UART0, which carries the console.
 - **Qualia**: the firmware's USB port reboots into the bootloader on a
   different COM port partway through. If PlatformIO reports the old port gone,
   run the upload again, or name the bootloader's port with `--upload-port`.
@@ -138,6 +153,7 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 | Qualia | 34, 38, 45, 54, and 23, 26, 30 for the lists |
 | 2.8C | 23, 26, 30, 36 -- the DFR1221's, at a text scale of 0.75 |
 | MaTouch 2.1" | 23, 26, 30, 36 -- the 2.8C's |
+| 4848S040 | 23, 26, 30, 36, and 15, 17, 20 for the lists -- the Qualia's sizes at two thirds |
 
 The character set is 305 glyphs: ASCII, the Latin-1 letters and
 punctuation, all of Latin Extended-A, Romanian's ș and ț, ẞ, and the dashes

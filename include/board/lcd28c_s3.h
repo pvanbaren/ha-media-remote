@@ -106,6 +106,12 @@ constexpr bool kRgbPclkActiveNeg = false;
 constexpr bool kRgbHsyncIdleLow = false;
 constexpr bool kRgbVsyncIdleLow = false;
 constexpr bool kRgbDeIdleHigh = false;
+/** No bounce buffer: GDMA scans the framebuffer straight out of PSRAM (see
+ *  hardware/rgb_panel.h). */
+constexpr int kRgbBounceBufferRows = 0;
+/** Scanned out continuously, as ESP-IDF 5 does by default; see
+ *  board/guition4848_s3.h for the exception. */
+constexpr bool kRgbFrameByFrame = false;
 
 // --- ST7701 register init: 3-wire SPI --------------------------------------
 // Nine bits a word -- a data/command bit, then the byte -- on SDA and SCL,

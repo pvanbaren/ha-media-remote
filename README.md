@@ -19,8 +19,9 @@ Five panels are supported:
 | Adafruit Qualia ESP32-S3 (5800) | 4" square (5794), 720×720 TL040HDS20 (RGB-666 parallel), FT6336 touch | 16 MB / 8 MB | `qualia-720` |
 | Waveshare ESP32-S3-Touch-LCD-2.8C | 2.8" round, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `lcd28c-s3` |
 | Makerfabs MaTouch ESP32-S3 Rotary 2.1" | 2.1" round, 480×480 ST7701 (RGB parallel), CST826 touch, rotary encoder | 16 MB / 8 MB | `matouch21-s3` |
+| Guition (Sunton) ESP32-4848S040, also sold as AITRIP's 4" 480×480 | 4" square, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `guition4848-s3` |
 
-A sixth target, `headless`, runs the whole remote with no display and
+A seventh target, `headless`, runs the whole remote with no display and
 narrates to the serial console.
 
 What you need:

@@ -15,10 +15,10 @@ src/
     square/      theme.cpp, now_playing.cpp   <- the Qualia
     headless/    draws nothing, narrates to serial
   hardware/
-    waveshare/  round360/  qualia/  lcd28c/  matouch21/  headless/
-                 <- one per board
-    rgb/         the RGB panels' output stage, for qualia/, lcd28c/ and
-                 matouch21/
+    waveshare/  round360/  qualia/  lcd28c/  matouch21/  guition4848/
+    headless/    <- one per board
+    rgb/         the RGB panels' output stage, for qualia/, lcd28c/,
+                 matouch21/ and guition4848/
 include/
   board/         one header per board: pins, sizes, scales, timings
   config.h       everything about the application that is a number
@@ -109,6 +109,7 @@ src/hardware/
   qualia/expander.cpp      the TCA9554: panel reset, backlight, buttons
   lcd28c/panel.cpp         the 2.8C's TCA9554, and its ST7701's register init
   matouch21/panel.cpp      the MaTouch's ST7701 register init, bit-banged
+  guition4848/panel.cpp    the 4848S040's ST7701 register init, bit-banged
 scripts/
   build_ui_font.py         the VLW font generator
   board_header_stamp.py    rebuilds everything when the board header changes
@@ -131,7 +132,7 @@ site/                        the install page and its board manifests
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
-| Touch sampler (Qualia, 2.8C, MaTouch) | Reads the touch controller into a queue of timestamped changes |
+| Touch sampler (Qualia, 2.8C, MaTouch, 4848S040) | Reads the touch controller into a queue of timestamped changes |
 
 They share three kinds of thing, each with its own discipline:
 

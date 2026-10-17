@@ -1,0 +1,13 @@
+{
+  "name": "Home Assistant Media Remote (Guition ESP32-4848S040)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/firmware-guition4848-s3-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

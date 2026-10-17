@@ -25,7 +25,13 @@
  *
  * No bounce buffer, because it is insurance against a problem this panel
  * does not have, and it creates one it does. It puts the CPU in the scan-out
- * path on a hard deadline, so a stall shows up as a glitch.
+ * path on a hard deadline, so a stall shows up as a glitch. Except on the
+ * Guition 4848S040, whose picture jumps without one:
+ * board::kRgbBounceBufferRows.
+ *
+ * Scanned out without a break, as ESP-IDF 5 runs an RGB panel -- except,
+ * again, on the 4848S040, whose panel loses its place that way after a few
+ * minutes and is driven a frame at a time instead: board::kRgbFrameByFrame.
  *
  * Bring the panel out of reset first -- and on a panel that wants one, send
  * its register init -- since it wants that done before pixels start arriving.
