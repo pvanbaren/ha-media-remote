@@ -21,6 +21,7 @@ GitHub release from that version's section, with
 ### Changed
 
 - On the square boards the swipe-up list starts near the top of the screen, without the empty band above it. Round boards keep it, to keep the first row out of the circle's narrow top.
+- With the screen turned a quarter, the RGB boards copy each repaint a tile at a time, moving a fraction of the memory they did; on the 4848S040 the old copy showed as vertical noise.
 
 ### Fixed
 

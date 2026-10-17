@@ -144,10 +144,24 @@ class Pacer {
   size_t _since = 0;
 };
 
+/** Edge of the square tiles a quarter-turned copy walks in: 32 px, a 64-byte
+ *  cache line of either frame. See copyRegion(). */
+constexpr int kTurnTile = 32;
+
 /** Copy rectangle `r` of the upright frame `src` into `dst`, turned `turn`
  *  quarter turns clockwise, and return the rectangle of `dst` it wrote. The
  *  map is LovyanGFX's sprite rotation: (x, y) lands at (W-1-y, x) a quarter
- *  turn round, (W-1-x, H-1-y) upside down, and (y, W-1-x) three quarters. */
+ *  turn round, (W-1-x, H-1-y) upside down, and (y, W-1-x) three quarters.
+ *
+ *  A quarter turn makes the source's rows the destination's columns. Walked
+ *  a source row at a time, every pixel written lands in a different cache
+ *  line of the framebuffer, so a copy moved sixteen to thirty-two times the
+ *  PSRAM it needed to. Behind a bounce buffer -- whose refill reads the same
+ *  PSRAM against a deadline -- that starved the scan-out into vertical noise
+ *  on the 4848S040 for as long as anything was being copied. So a quarter
+ *  turn goes a square tile at a time instead, and down each destination run
+ *  within it: each run written is a whole cache line, and the tile's source
+ *  rows stay in cache across it. */
 Rect copyRegion(uint16_t* dst, const uint16_t* src, const Rect& r,
                 uint8_t turn) {
   if (r.empty()) {
@@ -168,25 +182,33 @@ Rect copyRegion(uint16_t* dst, const uint16_t* src, const Rect& r,
       }
       return Rect{kW - r.x1, kH - r.y1, kW - r.x0, kH - r.y0};
     case 1:
-      for (int row = r.y0; row < r.y1; ++row) {
-        const uint16_t* from = src + static_cast<size_t>(row) * kW;
-        uint16_t* to = dst + (kW - 1 - row);
-        for (int x = r.x0; x < r.x1; ++x) {
-          to[static_cast<size_t>(x) * kW] = from[x];
-        }
-        pacer.account(row_bytes);
-      }
-      return Rect{kW - r.y1, r.x0, kW - r.y0, r.x1};
     case 3:
-      for (int row = r.y0; row < r.y1; ++row) {
-        const uint16_t* from = src + static_cast<size_t>(row) * kW;
-        uint16_t* to = dst + row;
-        for (int x = r.x0; x < r.x1; ++x) {
-          to[static_cast<size_t>(kW - 1 - x) * kW] = from[x];
+      for (int ty = r.y0; ty < r.y1; ty += kTurnTile) {
+        const int ty1 = std::min(ty + kTurnTile, r.y1);
+        for (int tx = r.x0; tx < r.x1; tx += kTurnTile) {
+          const int tx1 = std::min(tx + kTurnTile, r.x1);
+          for (int x = tx; x < tx1; ++x) {
+            // Source column x is one destination row: row x a quarter turn
+            // round, row W-1-x three quarters. Down the tile's rows, which
+            // run along it -- backwards a quarter turn round.
+            const uint16_t* from = src + x;
+            if ((turn & 3) == 1) {
+              uint16_t* to = dst + static_cast<size_t>(x) * kW + (kW - 1);
+              for (int row = ty; row < ty1; ++row) {
+                *(to - row) = from[static_cast<size_t>(row) * kW];
+              }
+            } else {
+              uint16_t* to = dst + static_cast<size_t>(kW - 1 - x) * kW;
+              for (int row = ty; row < ty1; ++row) {
+                to[row] = from[static_cast<size_t>(row) * kW];
+              }
+            }
+          }
         }
-        pacer.account(row_bytes);
+        pacer.account(row_bytes * static_cast<size_t>(ty1 - ty));
       }
-      return Rect{r.y0, kH - r.x1, r.y1, kH - r.x0};
+      return (turn & 3) == 1 ? Rect{kW - r.y1, r.x0, kW - r.y0, r.x1}
+                             : Rect{r.y0, kH - r.x1, r.y1, kH - r.x0};
     default:
       for (int row = r.y0; row < r.y1; ++row) {
         const size_t offset = static_cast<size_t>(row) * kW + r.x0;
