@@ -26,6 +26,7 @@ GitHub release from that version's section, with
 
 ### Fixed
 
+- The volume device's inputs now and then came up "Could not load inputs": the request's TLS connection could not get the internal RAM it needed at that moment. A request that fails that way now waits for room, up to a second, and tries again.
 - The Starting... card could give way to now playing, still showing the old track, seconds before the pick began to play. It now stays until the pick is playing, or for up to a minute.
 - An accented letter sent as a plain letter followed by a separate accent, as Music Assistant sends some titles, lost its accent, which the screen has no character for on its own. The two are now put together into the accented letter.
 

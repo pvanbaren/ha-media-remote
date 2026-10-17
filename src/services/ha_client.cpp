@@ -1048,6 +1048,11 @@ void logServerAddress(const char* why) {
  *  going. Set again on a drop, so a new lease's resolver is reported too. */
 bool s_address_pending = true;
 
+/** Internal RAM free, the kind mbedTLS needs. */
+size_t internalFree() {
+  return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
 /** POST `body` to `path`; the response text lands in `response`.
  *  `timeout_ms` is the read limit -- most calls want the default. */
 bool httpPost(const char* path, const String& body, String& response,
@@ -1115,6 +1120,31 @@ bool httpPost(const char* path, const String& body, String& response,
     // write. That is the ordinary cost of keep-alive rather than a fault, so
     // drop the socket and give the retry a fresh one before reporting
     // anything. Headers do not survive begin(), so they go on again.
+    http.end();
+    client->stop();
+    if (http.begin(*client, url)) {
+      http.addHeader("Authorization", String("Bearer ") + s_token);
+      http.addHeader("Content-Type", "application/json");
+      code = http.POST(body);
+    }
+  }
+
+  // A TLS connection that failed at once, with internal RAM short of what a
+  // handshake wants: mbedTLS could not allocate, which reports as a refused
+  // connection. Whatever else holds the memory usually lets it go soon, so
+  // wait for room and try once more, rather than failing the request: the
+  // volume device's inputs came up "Could not load inputs" now and then for
+  // this, with 37-40 KB free.
+  if (code <= 0 && usesTls() && millis() - started_ms < 1000 &&
+      internalFree() < config::kHaTlsRoomBytes) {
+    const unsigned long wait_from = millis();
+    while (internalFree() < config::kHaTlsRoomBytes &&
+           millis() - wait_from < config::kHaTlsRoomWaitMs) {
+      delay(50);
+    }
+    LOG_INFO("HA: TLS short of internal RAM, retrying after %lu ms "
+             "(free %u)",
+             millis() - wait_from, static_cast<unsigned>(internalFree()));
     http.end();
     client->stop();
     if (http.begin(*client, url)) {

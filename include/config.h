@@ -281,6 +281,15 @@ constexpr LogLevel kLogLevel = LogLevel::kInfo;
  *  start is memory that cannot fragment later. */
 constexpr bool kHaKeepAlive = true;
 
+/** Internal RAM a TLS handshake to Home Assistant wants free before it is
+ *  tried again: mbedTLS's two record buffers, ~17 KB each, and the
+ *  handshake's own working memory. A request whose TLS connection fails at
+ *  once with less than this free waits for it -- up to kHaTlsRoomWaitMs --
+ *  and tries once more, rather than failing outright. The shortfall comes
+ *  and goes with whatever else holds internal RAM at that moment. */
+constexpr size_t kHaTlsRoomBytes = 56 * 1024;
+constexpr unsigned long kHaTlsRoomWaitMs = 1000;
+
 /** Volume to set on the *media player* when the remote switches the
  *  amplifier on -- play pressed, or something picked from the list, while it
  *  was off -- and only when a separate entity carries volume and power. Never
