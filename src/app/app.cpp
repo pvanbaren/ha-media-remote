@@ -273,7 +273,8 @@ unsigned long g_cover_hold_since_ms = 0;
  *  what is now playing -- up to config::kCoverArtHoldMs, and only on the now
  *  playing screen, where the cover is drawn. */
 [[gnu::noinline]] bool holdForCover() {
-  if (g_screen != Screen::kNowPlaying && g_screen != Screen::kMessage) {
+  if (g_screen != Screen::kNowPlaying && g_screen != Screen::kMessage &&
+      g_screen != Screen::kStarting) {
     return false;
   }
   PlayerState snapshot;
@@ -597,6 +598,9 @@ struct CommandJob {
   bool turn_on_first = false;
   /** kPlayItem: as radio. */
   bool radio = false;
+  /** kPlayItem: g_play_generation when it was asked for. A cancel since has
+   *  moved that on, and the worker drops the job rather than send it. */
+  uint32_t generation = 0;
   /** kTransport: play rather than pause, and the state before it. */
   bool starting = false;
   PlaybackState was = PlaybackState::kUnknown;
@@ -620,6 +624,10 @@ struct CommandResult {
 
 QueueHandle_t g_command_jobs = nullptr;
 QueueHandle_t g_command_results = nullptr;
+/** Moved on by backing out of the Starting... card: a pick asked for before it,
+ *  and not yet sent, is dropped by the worker. One already on its way to
+ *  Home Assistant cannot be called back. */
+std::atomic<uint32_t> g_play_generation{0};
 
 /** A job for the loop to fill, cleared: in PSRAM, as the jobs are -- one is
  *  most of a KB, and the loop's stack has less to spare than that. Loop
@@ -710,8 +718,19 @@ void runCommand(CommandJob& job, CommandResult& r) {
       r.ok = services::ha::selectSource(job.entity, job.source);
       break;
     case CommandKind::kPlayItem: {
+      // Asked again after the power, which can take a while of its own.
+      if (job.generation != g_play_generation) {
+        LOG_INFO("UI: pick dropped, cancelled before it was sent");
+        r.ok = false;
+        break;
+      }
       if (job.power_first) {
         powerOnControl();
+      }
+      if (job.generation != g_play_generation) {
+        LOG_INFO("UI: pick dropped, cancelled before it was sent");
+        r.ok = false;
+        break;
       }
       char player[config::kEntityIdMaxLen];
       services::ha::copySelectedEntity(player, sizeof(player));
@@ -1454,11 +1473,19 @@ const char* serviceFor(Intent intent) {
 /** Re-evaluate a status card periodically: the settings it complains about can
  *  be fixed from the LAN portal while it is on screen. */
 [[gnu::noinline]] void handleMessageRecheck() {
-  if ((g_screen != Screen::kMessage && g_screen != Screen::kPlayers) ||
+  if ((g_screen != Screen::kMessage && g_screen != Screen::kPlayers &&
+       g_screen != Screen::kStarting) ||
       millis() - g_message_recheck_ms < 2000) {
     return;
   }
   g_message_recheck_ms = millis();
+
+  // A pick on its way: ask again, so the player's answer is seen as soon as
+  // it gives one.
+  if (g_screen == Screen::kStarting) {
+    g_poll_now = true;
+    return;
+  }
 
   // The player list is up and the portal has chosen one meanwhile: on to it,
   // as a tap on the list would have.
@@ -1552,11 +1579,19 @@ bool g_ha_discover_tried = false;
 /** Start whatever the finger picked out of a list, and acknowledge it the
  *  same way in both cases: the display has already put a "Starting..." frame
  *  up, and no card is drawn here on purpose so the screen carries straight on
- *  from the tap to the track with nothing flashing in between. */
+ *  from the tap to the track with nothing flashing in between. It stays up
+ *  until a state comes in -- Music Assistant can be slow to start something,
+ *  and now and then very slow -- or it is backed out of (Intent::kCancelStart);
+ *  a swipe down from it goes to the status page as from now playing. A pick
+ *  the worker could not take is not waited for. */
 [[gnu::noinline]] void startPlaying(bool started) {
-  showMessageScreen();
+  if (!started) {
+    showNowPlaying();
+    return;
+  }
+  g_screen = Screen::kStarting;
+  g_message_recheck_ms = millis();
   g_poll_now = true;
-  (void)started;
 }
 
 // --- Choosing a network on the device ------------------------------------------
@@ -2347,10 +2382,19 @@ void portalIdle() {
         CommandJob& job = loopJob();
         job.kind = CommandKind::kPlayItem;
         job.power_first = true;
+        job.generation = g_play_generation;
         if (services::browse::itemAt(in.index, job.item)) {
           startPlaying(queueCommand(job));
         }
       }
+      break;
+
+    case Intent::kCancelStart:
+      // Stop waiting. A pick still queued is dropped; one Home Assistant
+      // already has will start when it starts, and now playing shows it.
+      ++g_play_generation;
+      LOG_INFO("UI: stopped waiting for the pick");
+      showNowPlaying();
       break;
 
     case Intent::kRunSearch:
@@ -2364,6 +2408,7 @@ void portalIdle() {
         CommandJob& job = loopJob();
         job.kind = CommandKind::kPlayItem;
         job.power_first = true;
+        job.generation = g_play_generation;
         job.radio = config::kSearchPlaysRadio;
         const services::ha::LibraryItem* item =
             services::search::at(in.index);

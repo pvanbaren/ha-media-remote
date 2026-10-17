@@ -8,6 +8,7 @@
 #include "hardware/display_font.h"
 #include "services/browse.h"
 #include "services/ha_client.h"
+#include "ui/back_button.h"
 #include "ui/canvas.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -544,6 +545,7 @@ void showStarting(int row_index) {
   gfx.setTextColor(theme::kTextMuted);
   gfx.drawString("Starting...", theme::kCenterX,
                  card_top + theme::kListRowHeight + theme::px(16));
+  back_button::draw(gfx);
   ui::canvasPresent();
   s_panel.valid = false;  // the card, not the list, is on the glass now
 }

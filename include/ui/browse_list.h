@@ -34,8 +34,9 @@ void repaintRows();
  *  command worker. */
 Result handleTap(int x, int y, int& row);
 
-/** Show just the chosen item, centred, with a line saying it is starting.
- *  The acknowledgement that handleTap() deliberately leaves to the caller. */
+/** Show just the chosen item, centred, with a line saying it is starting
+ *  and the back button, to stop waiting for it. The acknowledgement that
+ *  handleTap() deliberately leaves to the caller. */
 void showStarting(int row);
 
 /** The services::browse item a row stands for, or -1 for a section heading.

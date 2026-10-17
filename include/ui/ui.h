@@ -43,6 +43,8 @@ enum class Screen : uint8_t {
   kSettings,    // the settings page, or one setting's choices, from the gear
   kIsolate,     // Isolate's question, from the "+N rooms" chip, and its outcome
   kSources,     // the volume device's inputs, a swipe right on now playing
+  kStarting,    // a pick from the list or the search on its way: the
+                // Starting... card, until the player shows it or back
 };
 
 /** What a gesture meant, as opposed to where it landed. */
@@ -62,6 +64,7 @@ enum class Intent : uint8_t {
   kPlayBrowseRow,     // `index` is a browse row
   kRunSearch,         // the typed query is in services::search
   kPlaySearchResult,  // `index` is a result
+  kCancelStart,       // back from the Starting... card: stop waiting for it
   kWokeFromTouch,     // a tap landed on a blanked panel and only woke it
   kOpenStatus,
   kTapCard,           // a tap on a status card, which the app may act on

@@ -854,6 +854,21 @@ Input poll(Screen screen, const PlayerState* state) {
   if (screen == Screen::kIsolate) {
     return isolateTouch(report);
   }
+  if (screen == Screen::kStarting) {
+    // A pick on its way, which Music Assistant can take a long while over:
+    // the back button -- or a swipe right, as everywhere -- stops waiting,
+    // and a swipe down goes to the status page, as from now playing, and the
+    // settings from there. Nothing else, so a stray tap cannot land on a
+    // list that is no longer drawn.
+    if ((report.event == hw::TouchEvent::kTap &&
+         back_button::hit(report.x, report.y)) ||
+        report.event == hw::TouchEvent::kSwipeRight) {
+      out.intent = Intent::kCancelStart;
+    } else if (report.event == hw::TouchEvent::kSwipeDown) {
+      out.intent = Intent::kOpenStatus;
+    }
+    return out;
+  }
   if (screen == Screen::kMessage) {
     // Most of what the cards complain about is fixed in the portal, and the
     // app notices on its own. A tap is passed up all the same: the Setup and

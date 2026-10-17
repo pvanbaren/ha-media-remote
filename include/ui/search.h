@@ -39,10 +39,10 @@ void draw();
  *  rows, so anything that changes what a row shows wants draw(). */
 void redrawResults();
 
-/** Show just the chosen result, centred, while it starts. The same
- *  acknowledgement the browse list gives, and for the same reason: play_media
- *  on an artist takes seconds, and a screen that stops for that long reads as
- *  a device that missed the tap. */
+/** Show just the chosen result, centred, while it starts, with the back
+ *  button to stop waiting. The same acknowledgement the browse list gives, and for the
+ *  same reason: play_media on an artist takes seconds, and a screen that
+ *  stops for that long reads as a device that missed the tap. */
 void showStarting(int index);
 
 /** Scroll the results by pixels; positive moves further down. Clamped, and

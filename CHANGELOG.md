@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Added
+
+- The Starting... card shown after picking something from the list or the search has the back button, which stops waiting for it, for when Music Assistant is slow to start it; a swipe right or the MaTouch's knob does the same. A swipe down from it opens the status page, and the settings from there, as from now playing. A pick not yet sent to Home Assistant is dropped; one already sent still starts.
+
 ### Fixed
 
 - An accented letter sent as a plain letter followed by a separate accent, as Music Assistant sends some titles, lost its accent, which the screen has no character for on its own. The two are now put together into the accented letter.

@@ -547,6 +547,7 @@ void showStarting(int index) {
                                            : "Starting...",
                  theme::kCenterX,
                  top + theme::kListRowHeight + theme::px(16));
+  back_button::draw(gfx);
 
   ui::canvasPresent();
 }
