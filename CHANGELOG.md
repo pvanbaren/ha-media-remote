@@ -15,6 +15,7 @@ GitHub release from that version's section, with
 ### Added
 
 - The Starting... card shown after picking something from the list or the search has the back button, which stops waiting for it, for when Music Assistant is slow to start it; a swipe right or the MaTouch's knob does the same. A swipe down from it opens the status page, and the settings from there, as from now playing. A pick not yet sent to Home Assistant is dropped; one already sent still starts.
+- The swipe-up list has the back button the other pages have, on its first heading at the heading's size, scrolling away with it.
 
 ### Fixed
 

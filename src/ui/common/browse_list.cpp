@@ -137,9 +137,39 @@ void standOff() {
   }
 }
 
-void drawHeader(lgfx::LovyanGFX& gfx, int top, const char* title) {
+/**
+ * The back button, on the list's first heading: at its left end, the
+ * heading's height, and part of it -- scrolled and clipped with the rows
+ * like the rest of the heading, so it is there at the top of the list and
+ * gone once the list has moved on.
+ */
+constexpr int kHeadingButtonRadius = theme::kListHeaderHeight * 9 / 20;
+/** Between the heading's end and the button. */
+constexpr int kHeadingButtonInset = theme::px(2);
+
+/** Where the button's centre is on a heading at `top`. */
+int headingButtonX(int top) {
+  return theme::kCenterX - rowHalfWidth(top, theme::kListHeaderHeight) +
+         kHeadingButtonInset + kHeadingButtonRadius;
+}
+
+void drawHeader(lgfx::LovyanGFX& gfx, int top, const char* title,
+                bool with_button) {
   const int half = rowHalfWidth(top, theme::kListHeaderHeight);
   if (half <= 0) {
+    return;
+  }
+  // The title stays centred, so it keeps as clear of the button on the
+  // right as it has to on the left.
+  int text_half = half;
+  if (with_button) {
+    back_button::drawAt(gfx, headingButtonX(top),
+                        top + theme::kListHeaderHeight / 2,
+                        kHeadingButtonRadius);
+    text_half -= kHeadingButtonInset + 2 * kHeadingButtonRadius +
+                 theme::px(4);
+  }
+  if (text_half <= 0) {
     return;
   }
   displayFontApplyHeight(gfx, theme::kListHeaderTextPx);
@@ -147,7 +177,7 @@ void drawHeader(lgfx::LovyanGFX& gfx, int top, const char* title) {
   gfx.setTextColor(theme::kAccent);
 
   char label[text::kMaxLineLen];
-  text::ellipsize(gfx, title, half * 2, label, sizeof(label));
+  text::ellipsize(gfx, title, text_half * 2, label, sizeof(label));
   gfx.drawString(label, theme::kCenterX,
                  top + theme::kListHeaderHeight / 2);
 }
@@ -289,7 +319,7 @@ void drawRows(lgfx::LovyanGFX& gfx, int y0, int y1) {
       services::browse::Row row;
       if (services::browse::rowAt(i, row)) {
         if (row.header) {
-          drawHeader(gfx, top, row.title);
+          drawHeader(gfx, top, row.title, i == 0);
         } else {
           // A row is a rounded fill, a thumbnail blit and a line of
           // anti-aliased text -- comfortably more than a slab's worth of
@@ -581,6 +611,12 @@ Result handleTap(int x, int y, int& row_out) {
 
     if (y >= top && y < top + height) {
       if (row.header) {
+        // The first heading's back button, generously: twice its size
+        // across, the heading's height down.
+        if (i == 0 &&
+            abs(x - headingButtonX(top)) <= 2 * kHeadingButtonRadius) {
+          return Result::kDismissed;
+        }
         return Result::kNone;  // a label, not a target
       }
       const int half = rowHalfWidth(top, height);

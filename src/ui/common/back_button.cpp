@@ -24,16 +24,18 @@ int centerX() {
 
 }  // namespace
 
-void draw(lgfx::LovyanGFX& gfx) {
-  const int cx = centerX();
-  gfx.fillSmoothCircle(cx, kY, kRadius, theme::kSurfaceRaised);
-  // A chevron pointing left, a little left of centre so it looks centred.
-  const int arm = kRadius / 2;
+void draw(lgfx::LovyanGFX& gfx) { drawAt(gfx, centerX(), kY, kRadius); }
+
+void drawAt(lgfx::LovyanGFX& gfx, int cx, int cy, int radius) {
+  gfx.fillSmoothCircle(cx, cy, radius, theme::kSurfaceRaised);
+  // A chevron pointing left, a little left of centre so it looks centred,
+  // its stroke in proportion to the button.
+  const int arm = radius / 2;
   const int tip = cx - arm / 2 - 1;
-  const float half_width = theme::px(2) * 0.75f;
-  gfx.drawWideLine(tip + arm, kY - arm, tip, kY, half_width,
+  const float half_width = theme::px(2) * 0.75f * radius / kRadius;
+  gfx.drawWideLine(tip + arm, cy - arm, tip, cy, half_width,
                    theme::kTextPrimary);
-  gfx.drawWideLine(tip, kY, tip + arm, kY + arm, half_width,
+  gfx.drawWideLine(tip, cy, tip + arm, cy + arm, half_width,
                    theme::kTextPrimary);
 }
 

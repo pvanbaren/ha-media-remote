@@ -14,6 +14,10 @@ namespace ui::back_button {
 
 void draw(lgfx::LovyanGFX& gfx);
 
+/** The same button, centred on (cx, cy) at `radius`, for a page that puts
+ *  it somewhere of its own: the browse list, on its first heading. */
+void drawAt(lgfx::LovyanGFX& gfx, int cx, int cy, int radius);
+
 /** Whether (x, y) is on the button, generously. */
 bool hit(int x, int y);
 
