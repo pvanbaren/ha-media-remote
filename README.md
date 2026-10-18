@@ -71,10 +71,12 @@ bottom:
 - the **title**, up to two lines, wrapped to the width available at its
   height -- on a round panel, the chord of the circle;
 - the **transport row**: previous, play-pause and next;
-- an **elapsed / total** chip, on a **progress** line in the accent colour:
-  an arc in the gap at the foot of the volume ring on the round panels, a
-  bar along the foot of the screen on the square ones. Neither shows for a
-  stream with no duration.
+- an **elapsed / total** chip, on a **progress** line: an arc in the gap at
+  the foot of the volume ring on the round panels, a bar along the foot of
+  the screen on the square ones. Neither shows for a stream with no
+  duration. It is drawn in the cover's own colour -- its most prominent
+  strong one -- as is a pressed transport button's ring, and in the accent
+  colour when the cover has none.
 
 Volume is an **arc round the bezel** on the round panels, and a **bar across
 the top** on the square one. You do not have to grab it: a sideways swipe

@@ -23,6 +23,12 @@ bool hasArt();
  *  streaming. For keeping what was drawn from it. */
 uint32_t identity();
 
+/** The colour now playing's highlights take from the cover on screen --
+ *  ui::cover_colour says how it is chosen -- or `fallback` when the cover has
+ *  no clear one, there is no cover, or it has not been drawn into the canvas
+ *  yet. Taken once per cover, as draw() first paints it. */
+uint16_t highlight(uint16_t fallback);
+
 /** Paint the art centre-cropped to fill a `diameter` square whose TOP-LEFT
  *  corner is (x, y) -- not its centre. LovyanGFX treats the image position as
  *  the corner of the fit box and uses the datum only to place the image

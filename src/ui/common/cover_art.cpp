@@ -18,6 +18,7 @@
 #include "services/ha_client.h"
 #include "services/yielding_client.h"
 #include "ui/canvas.h"
+#include "ui/cover_colour.h"
 
 namespace ui::cover {
 namespace {
@@ -42,6 +43,14 @@ bool s_stream_only = false;
 /** Source pixel size, for the centre-crop scale. Zero when not known. */
 uint16_t s_src_w = 0;
 uint16_t s_src_h = 0;
+
+/** The cover's highlight colour, and the identity it was taken from: a
+ *  colour belongs to one cover, and is good only while identity() still
+ *  names it. s_highlight_found is false for a cover with no clear colour. */
+uint32_t s_highlight_of = 0;
+bool s_highlight_taken = false;
+bool s_highlight_found = false;
+uint16_t s_highlight = 0;
 
 /** The mutex is made in init(), on the Arduino task before the worker
  *  exists, and deliberately never here. prepare() runs on the artwork worker
@@ -77,6 +86,60 @@ void resetLocked() {
 
 bool hasArtLocked() {
   return s_picture[0] != '\0' && (s_buffer_len > 0 || s_stream_only);
+}
+
+/** identity(), for a caller that holds the lock. */
+uint32_t identityLocked() {
+  // FNV-1a over the picture, then what is held of it.
+  uint32_t h = 2166136261u;
+  auto mix = [&](uint8_t byte) {
+    h ^= byte;
+    h *= 16777619u;
+  };
+  for (const char* p = s_picture; *p != '\0'; ++p) {
+    mix(static_cast<uint8_t>(*p));
+  }
+  const uint32_t len = static_cast<uint32_t>(s_buffer_len);
+  for (int shift = 0; shift < 32; shift += 8) {
+    mix(static_cast<uint8_t>(len >> shift));
+  }
+  mix(s_stream_only ? 1 : 0);
+  return h;
+}
+
+/** Take the highlight from the cover just drawn into `gfx` -- at panel size,
+ *  before any scrim darkens it -- when `gfx` is the canvas and the colour is
+ *  not already known for this cover. Caller holds the lock. */
+void takeHighlightLocked(const lgfx::LGFXBase& gfx, int x, int y,
+                         int diameter) {
+  const uint32_t of = identityLocked();
+  if (s_highlight_taken && s_highlight_of == of) {
+    return;
+  }
+  const uint16_t* pixels = ui::canvasPixels(gfx);
+  if (pixels == nullptr) {
+    return;
+  }
+  // The part of the box on the frame.
+  const int x0 = x < 0 ? 0 : x;
+  const int y0 = y < 0 ? 0 : y;
+  const int x1 = x + diameter > board::kDisplayWidth ? board::kDisplayWidth
+                                                     : x + diameter;
+  const int y1 = y + diameter > board::kDisplayHeight ? board::kDisplayHeight
+                                                      : y + diameter;
+  uint16_t colour = 0;
+  s_highlight_found = ui::cover_colour::pick(
+      pixels, board::kDisplayWidth, x0, y0, x1 - x0, y1 - y0,
+      ui::canvasColorDepth() != lgfx::color_depth_t::rgb565_nonswapped,
+      colour);
+  s_highlight = colour;
+  s_highlight_of = of;
+  s_highlight_taken = true;
+  if (s_highlight_found) {
+    LOG_DEBUG("Cover art: highlight 0x%04X", colour);
+  } else {
+    LOG_DEBUG("Cover art: no clear colour, keeping the accent");
+  }
 }
 
 /** Cleared for the session once a server refuses a rewritten size. */
@@ -641,21 +704,16 @@ bool hasArt() {
 
 uint32_t identity() {
   Guard guard;
-  // FNV-1a over the picture, then what is held of it.
-  uint32_t h = 2166136261u;
-  auto mix = [&](uint8_t byte) {
-    h ^= byte;
-    h *= 16777619u;
-  };
-  for (const char* p = s_picture; *p != '\0'; ++p) {
-    mix(static_cast<uint8_t>(*p));
+  return identityLocked();
+}
+
+uint16_t highlight(uint16_t fallback) {
+  Guard guard;
+  if (!hasArtLocked() || !s_highlight_taken || !s_highlight_found ||
+      s_highlight_of != identityLocked()) {
+    return fallback;
   }
-  const uint32_t len = static_cast<uint32_t>(s_buffer_len);
-  for (int shift = 0; shift < 32; shift += 8) {
-    mix(static_cast<uint8_t>(len >> shift));
-  }
-  mix(s_stream_only ? 1 : 0);
-  return h;
+  return s_highlight;
 }
 
 void prepare(const char* picture) {
@@ -910,6 +968,7 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
     if (scale > 1.0f) {
       uint16_t* dst = ui::canvasPixels(gfx);
       if (dst != nullptr && upscaleInto(dst, x, y, diameter, scale)) {
+        takeHighlightLocked(gfx, x, y, diameter);
         return true;
       }
     }
@@ -924,6 +983,8 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
           "Cover art: decode failed (%u bytes, %ux%u, fmt %d, scale %.3f)",
           static_cast<unsigned>(s_buffer_len), s_src_w, s_src_h,
           static_cast<int>(s_format), scale);
+    } else {
+      takeHighlightLocked(gfx, x, y, diameter);
     }
     return drawn;
   }
@@ -970,6 +1031,8 @@ bool draw(lgfx::LGFXBase& gfx, int x, int y, int diameter) {
   if (!drawn) {
     LOG_WARN("Cover art: streamed decode failed (%d bytes, fmt %d)",
                   content_length, static_cast<int>(format));
+  } else {
+    takeHighlightLocked(gfx, x, y, diameter);
   }
   return drawn;
 }

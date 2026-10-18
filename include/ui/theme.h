@@ -100,8 +100,10 @@ constexpr int kElapsedPillRadius = px(8);
 // --- Track progress, under the elapsed chip ---
 // How far through the track it is, display only: the bottom half of now
 // playing is the lower swipes', so a drag there is not a seek.
-// The accent colour, apart from the volume's white. Not drawn where the chip
-// shows no time -- a stream with no duration, or offline.
+// The cover's own colour where it has one (ui::cover::highlight), and the
+// accent where it has not, apart from the volume's white either way. Not
+// drawn where the chip shows no time -- a stream with no duration, or
+// offline.
 constexpr uint16_t kProgressFill = kAccent;
 /** The round build's progress arc: the volume arc's ring, in the gap at its
  *  foot, kept this far clear of the volume arc's ends at both sides. It

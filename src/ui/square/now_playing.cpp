@@ -179,7 +179,8 @@ void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
 
   gfx.fillCircle(button.cx, cy, button.radius, fill);
   gfx.drawCircle(button.cx, cy, button.radius,
-                 pressed ? theme::kAccent : theme::kTextMuted);
+                 pressed ? ui::cover::highlight(theme::kAccent)
+                         : theme::kTextMuted);
 
   switch (button.action) {
     case Action::kPrevious:
@@ -368,7 +369,7 @@ bool drawProgressBar(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   const int filled = static_cast<int>(f * static_cast<float>(kBarWidth) + 0.5f);
   if (filled >= kBarHeight) {
     gfx.fillRoundRect(kBarLeft, kProgressY, filled, kBarHeight, kBarRadius,
-                      theme::kProgressFill);
+                      ui::cover::highlight(theme::kProgressFill));
   }
   return true;
 }
