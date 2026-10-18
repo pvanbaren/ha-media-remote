@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "services/ha_client.h"
@@ -95,6 +96,13 @@ struct Input {
   float level = 0.0f;
   int index = -1;
 };
+
+/** The size from which a plain malloc should go to PSRAM first, for
+ *  setup() to hand heap_caps_malloc_extmem_enable() before anything else
+ *  allocates. The UI's to say because the panel is what pays for it: one
+ *  scanned out of a PSRAM framebuffer competes with every allocation moved
+ *  there. See config::kPsramMallocFromBytes. */
+size_t psramMallocFromBytes();
 
 /** Claim buffers and bring the panel up, turned `rotation` quarter turns
  *  clockwise (0..3). Call once in setup(), before Wi-Fi, while the heap is

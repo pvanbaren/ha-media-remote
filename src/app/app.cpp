@@ -2739,6 +2739,9 @@ void setup() {
   delay(500);
   LOG_INFO("HA Media Remote");
 
+  // Before anything allocates: see config::kPsramMallocFromBytes.
+  heap_caps_malloc_extmem_enable(ui::psramMallocFromBytes());
+
   // mDNS says nothing. Out of internal RAM it logs every packet it cannot
   // take, from the network stack's task, and that task's first log line
   // makes a lock -- which, with no RAM for it either, aborts: a TLS

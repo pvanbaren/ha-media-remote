@@ -779,6 +779,14 @@ Input isolateTouch(const hw::TouchReport& report) {
 
 }  // namespace
 
+size_t psramMallocFromBytes() {
+#if defined(BOARD_PANEL_RGB)
+  return config::kPsramMallocFromBytesRgb;
+#else
+  return config::kPsramMallocFromBytes;
+#endif
+}
+
 bool init(uint8_t rotation) {
   displayInit(rotation);
   canvasInit();

@@ -1,4 +1,5 @@
 #include "ui/ui.h"
+#include "config.h"
 #include "log.h"
 
 #include <Arduino.h>
@@ -57,6 +58,9 @@ const char* playbackName(services::ha::PlaybackState state) {
 }
 
 }  // namespace
+
+// No panel, so nothing in PSRAM to compete with.
+size_t psramMallocFromBytes() { return config::kPsramMallocFromBytes; }
 
 bool init(uint8_t) {
   LOG_INFO("UI: headless -- no panel, serial only");

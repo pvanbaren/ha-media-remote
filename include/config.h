@@ -290,6 +290,28 @@ constexpr bool kHaKeepAlive = true;
 constexpr size_t kHaTlsRoomBytes = 56 * 1024;
 constexpr unsigned long kHaTlsRoomWaitMs = 1000;
 
+/** Plain mallocs at least this big go to PSRAM first, internal RAM only
+ *  when PSRAM is out. The SDK's own rule keeps everything under 4 KB
+ *  internal (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL) -- every String, every
+ *  JSON node, every list -- in the same RAM mbedTLS needs for its record
+ *  buffers, which it asks for as internal and always gets there or nowhere.
+ *  What must be internal says so by its caps: task stacks, Wi-Fi, DMA and
+ *  the drivers' buffers are unaffected.
+ *
+ *  Measured on all six boards, a few minutes after boot, internal RAM free
+ *  over leaving the SDK's rule alone: +21 KB from 32 bytes, +20 from 64,
+ *  +16.5 from 128, +13.5 from 256, +11 from 512, +6.3 from 1024, +4.8 from
+ *  2048, nothing from 4096 -- the same on every board, to half a KB.
+ *
+ *  The smaller the size, the more of the firmware's constant small traffic
+ *  lands in PSRAM, and a panel scanned out of a PSRAM framebuffer has to
+ *  win every read of it against that traffic. At 32 bytes the 2.8C and the
+ *  Qualia blinked and jumped sideways while sitting idle. So 256 where the
+ *  panel keeps its own picture, and kPsramMallocFromBytesRgb where it is
+ *  scanned out of PSRAM; ui::psramMallocFromBytes() chooses. */
+constexpr size_t kPsramMallocFromBytes = 256;
+constexpr size_t kPsramMallocFromBytesRgb = 2048;
+
 /** Volume to set on the *media player* when the remote switches the
  *  amplifier on -- play pressed, or something picked from the list, while it
  *  was off -- and only when a separate entity carries volume and power. Never
