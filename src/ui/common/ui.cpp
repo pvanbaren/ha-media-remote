@@ -52,6 +52,10 @@ float s_vol_level = 0.0f;
 float s_vol_drawn = -1.0f;
 int s_vol_last_x = 0;
 unsigned long s_vol_sent_ms = 0;
+/** When the drag was claimed, and the x the finger landed at: for telling a
+ *  flick from a drag when it lifts. */
+unsigned long s_vol_claimed_ms = 0;
+int s_vol_landed_x = 0;
 /** Snapshot taken when the slider was grabbed, reused for the whole drag:
  *  mute and the feature bits cannot change under a finger. */
 PlayerState s_drag_state;
@@ -127,6 +131,15 @@ constexpr ScrollableList kSettingsList{settings_list::scrollByPx,
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
 
+/** A sideways swipe in the volume's half that lifts this soon after it was
+ *  claimed, having gone at least kFlickMinPx, is a flick: the swipe to the
+ *  search or the inputs, as lower down, not a volume change. A drag meant
+ *  for the volume moves slower than that, or not as far. Nothing goes to
+ *  the volume until this long has passed, so a flick never touches it. */
+constexpr unsigned long kFlickMaxMs = 250;
+/** About a fifth of the panel, at the 240 px design size. */
+constexpr int kFlickMinPx = static_cast<int>(48 * board::kUiScale + 0.5f);
+
 /** Whether a volume swipe or a turn of the knob should switch the volume
  *  device on rather than set its level: it is off, and it can be switched on
  *  -- a device reporting no features at all counting as one that can, as
@@ -151,9 +164,12 @@ bool powerOnForVolume(const PlayerState& state) {
  *  it to whatever angle the finger points at.
  *
  *  Only a predominantly horizontal press is claimed. A vertical one is left
- *  alone so swipe-up still opens the browse list.
+ *  alone so swipe-up still opens the browse list. And a quick flick, rather
+ *  than a drag, is the swipe to the search or the inputs, as anywhere else
+ *  on now playing: see kFlickMaxMs.
  *
- *  Returns true when the caller should be told the level changed. */
+ *  Returns true when the caller should be told the level changed, or about
+ *  the swipe a flick was. */
 bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
   if (screen != Screen::kNowPlaying) {
     s_vol_dragging = false;
@@ -165,6 +181,16 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
     s_vol_powering = false;
     if (!s_vol_dragging) {
       return false;
+    }
+    // A flick: the swipe it would have been lower down. Nothing was sent to
+    // the volume yet -- see kFlickMaxMs -- so there is nothing to undo but
+    // the knob, which the screen this opens covers anyway.
+    const int travel = s_vol_last_x - s_vol_landed_x;
+    if (millis() - s_vol_claimed_ms < kFlickMaxMs &&
+        abs(travel) >= kFlickMinPx) {
+      s_vol_dragging = false;
+      out.intent = travel < 0 ? Intent::kOpenSearch : Intent::kOpenSources;
+      return true;
     }
     // Always close with an authoritative set: the throttle below may have
     // skipped the last position the finger actually rested on. The app is
@@ -217,6 +243,8 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
     s_vol_level = state->volume;
     s_vol_drawn = -1.0f;
     s_vol_last_x = x;
+    s_vol_claimed_ms = millis();
+    s_vol_landed_x = x - travel_x;
   } else {
     const int moved = x - s_vol_last_x;
     s_vol_last_x = x;
@@ -236,7 +264,9 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
     now_playing::refreshVolume(s_drag_state, s_vol_level);
   }
 
-  if (millis() - s_vol_sent_ms >= config::kVolumeSendIntervalMs) {
+  // Held back while the swipe could still turn out to be a flick.
+  if (millis() - s_vol_claimed_ms >= kFlickMaxMs &&
+      millis() - s_vol_sent_ms >= config::kVolumeSendIntervalMs) {
     s_vol_sent_ms = millis();
     out.intent = Intent::kSetVolume;
     out.level = s_vol_level;
@@ -935,7 +965,8 @@ Input poll(Screen screen, const PlayerState* state) {
   }
   // Straight to the search, without the list on the way. Only a swipe that
   // started in the lower half gets here: one in the top half is the volume,
-  // claimed by driveVolume() as soon as it commits sideways.
+  // claimed by driveVolume() as soon as it commits sideways -- which sends
+  // the same intents itself when that one turns out to be a flick.
   if (report.event == hw::TouchEvent::kSwipeLeft) {
     out.intent = Intent::kOpenSearch;
     return out;

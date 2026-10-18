@@ -22,6 +22,7 @@ GitHub release from that version's section, with
 ### Changed
 
 - A swipe left goes back on the search and on the volume device's inputs, as a swipe right already did.
+- A quick flick sideways across the top half of now playing is the swipe to the search (left) or the inputs (right), as in the lower half, rather than a jump in the volume. A slower drag there sets the volume as before, starting a quarter of a second in.
 - On the square boards the swipe-up list starts near the top of the screen, without the empty band above it. Round boards keep it, to keep the first row out of the circle's narrow top.
 - With the screen turned a quarter, the RGB boards copy each repaint a tile at a time, moving a fraction of the memory they did; on the 4848S040 the old copy showed as vertical noise.
 - More internal RAM is left for Home Assistant's secure connections: ordinary allocations of 256 bytes and up go to PSRAM first, where before only those of 4 KB and up did -- about 13 KB more free. On the boards whose screen is scanned out of PSRAM (the Qualia, the 2.8C, the MaTouch and the 4848S040) it is 2 KB and up, about 5 KB more: lower than that, the small allocations' traffic made the 2.8C's and the Qualia's pictures blink and jump.

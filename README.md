@@ -81,7 +81,9 @@ bottom:
 Volume is an **arc round the bezel** on the round panels, and a **bar across
 the top** on the square one. You do not have to grab it: a sideways swipe
 anywhere in the **top half** moves it, by as far as the finger travels, from
-wherever it already was. The arc on a round panel spans 70% of the
+wherever it already was. A quick **flick** there is not a volume change but
+the swipe it would be lower down -- left to the search, right to the inputs
+-- so a fast swipe never sends the volume flying. The arc on a round panel spans 70% of the
 circumference, centred on twelve o'clock, leaving the gap at the bottom for
 the transport row and the chip.
 
@@ -157,7 +159,7 @@ untouched (`kListIdleReturnMs`).
 ### Artist search
 
 **Swipe left** on the list for a keyboard, or on the lower half of now
-playing to go straight there. Type part of a name -- the search
+playing -- or flick left on the top half -- to go straight there. Type part of a name -- the search
 reaches every Music Assistant provider and forgives partial names, so
 "radioh" finds Radiohead -- press **SEARCH**, and tap a result. The artist's
 **radio** starts: an endless queue seeded from them, which is what a wall
@@ -177,7 +179,8 @@ A tap on the results that misses every result does the same.
 
 ### Sources
 
-**Swipe right** on the lower half of now playing for a list of the volume
+**Swipe right** on the lower half of now playing, or flick right on the top
+half, for a list of the volume
 device's inputs -- a Triad zone's players, a receiver's HDMI and AirPlay --
 the one it is on marked. **Tap** one to switch to it -- switching the device
 on first, if it is off; the remote goes straight back to now playing, which follows the new input
@@ -322,8 +325,8 @@ wakes the screen leave it alone. Details in
 | Isolate card | Tap Cancel, or swipe right | Leave them on, and back to now playing |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
-| Now playing | Swipe left, lower half | Artist search |
-| Now playing | Swipe right, lower half | The volume device's inputs |
+| Now playing | Swipe left, lower half, or flick left, top half | Artist search |
+| Now playing | Swipe right, lower half, or flick right, top half | The volume device's inputs |
 | Sources | Tap an input | Switch to it, and back to now playing |
 | Sources | Swipe right, or the back button | Back to now playing |
 | Status page | Tap the gear | Open the settings |
