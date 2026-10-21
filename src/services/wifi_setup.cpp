@@ -277,6 +277,26 @@ char s_keyboard_attrs[320] = " type=\"hidden\"";
 WiFiManagerParameter s_param_keyboard("keyboard", "Search keyboard", "0", 2,
                                       s_keyboard_attrs);
 
+/** Auto-off: whether the volume device is switched off when the screen
+ *  blanks. A dropdown over a hidden input like the keyboard's, rather than a
+ *  checkbox: an unticked box submits nothing, which reads like a field that
+ *  was not on the page at all. */
+char s_auto_off_attrs[320] = " type=\"hidden\"";
+WiFiManagerParameter s_param_auto_off(
+    "auto_off", "Auto-off: switch the volume device off when the screen blanks",
+    "1", 2, s_auto_off_attrs);
+
+void buildAutoOffSelect() {
+  const bool on = services::ha::autoOffControl();
+  snprintf(s_auto_off_attrs, sizeof(s_auto_off_attrs),
+           " type=\"hidden\"><select id=\"auto_off_sel\" "
+           "onchange='document.getElementById(\"auto_off\").value=this.value'>"
+           "<option value=\"1\"%s>Enabled</option>"
+           "<option value=\"0\"%s>Disabled</option></select",
+           on ? " selected" : "", on ? "" : " selected");
+  s_param_auto_off.setValue(on ? "1" : "0", 2);
+}
+
 void buildKeyboardSelect() {
   const bool qwerty = services::display::keyboardLayout() ==
                       services::display::KeyboardLayout::kQwerty;
@@ -734,6 +754,7 @@ void refreshPortalParamDefaults() {
   refreshMaTokenField();
   buildRotationSelect();
   buildKeyboardSelect();
+  buildAutoOffSelect();
   buildTxPowerSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
@@ -976,6 +997,15 @@ void onPortalParamsSaved() {
   }
   buildKeyboardSelect();  // the choice just saved, marked
 
+  const char* auto_off =
+      submitted("auto_off") ? s_param_auto_off.getValue() : nullptr;
+  if (auto_off != nullptr && (auto_off[0] == '0' || auto_off[0] == '1') &&
+      auto_off[1] == '\0' &&
+      (auto_off[0] == '1') != services::ha::autoOffControl()) {
+    services::ha::saveAutoOffControl(auto_off[0] == '1');
+  }
+  buildAutoOffSelect();  // the choice just saved, marked
+
   const char* txpow = submitted("txpow") ? s_param_txpow.getValue() : nullptr;
   if (txpow != nullptr && txpow[0] != '\0') {
     char* end = nullptr;
@@ -1051,6 +1081,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ma_forget);
   wm.addParameter(&s_param_rotation);
   wm.addParameter(&s_param_keyboard);
+  wm.addParameter(&s_param_auto_off);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 

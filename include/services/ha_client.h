@@ -205,6 +205,12 @@ float playerWakeVolume();
 int playerWakeVolumePercent();
 /** Store `percent`, 0..100, or -1 to turn the pin off. */
 void savePlayerWakeVolumePercent(int percent);
+/** Whether the volume/power entity is switched off when the screen blanks,
+ *  after config::kIdleTimeoutMs with the player paused, idle or off. What
+ *  the portal or the settings page stored, config::kTurnOffControlOnBlank
+ *  until either has. The portal and the page call it Auto-off. */
+bool autoOffControl();
+void saveAutoOffControl(bool on);
 /** Every input `entity_id` lists (source_list), for the portal. Returns the
  *  count, or -1 on failure. */
 int fetchSources(const char* entity_id,

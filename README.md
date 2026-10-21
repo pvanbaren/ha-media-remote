@@ -263,6 +263,7 @@ row a setting's name over its value:
 | Volume & power | The media player itself, or another of them |
 | Player's input | The volume device's inputs, or the one named after the player |
 | Player volume at switch-on | Off, or 10% to 100% |
+| Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
@@ -311,7 +312,10 @@ itself within a couple of seconds.
 After **five minutes** with the player paused, idle, off or unavailable
 (`kIdleTimeoutMs`, `kBlankWhenPaused`), the screen blanks -- backlight off,
 panel asleep -- and the **volume device is switched off** with it. Any touch
-wakes it, and so does playback starting from anywhere else.
+wakes it, and so does playback starting from anywhere else. The **Auto-off**
+setting, on the device or in the portal, turns the switching off off: the
+screen still blanks, and the volume device is left as it is. It is on until
+changed.
 
 The volume device is **switched on** only from the remote: pressing play,
 choosing something from the list or the search, or a tap in the top half of
@@ -593,6 +597,12 @@ or −90°, for a panel mounted any way up. The touch turns with the picture.
 
 **Search keyboard** -- alphabetical or QWERTY. Takes effect the next time the
 search opens.
+
+**Auto-off** -- *Enabled*, the default, switches the volume device off when the
+screen blanks after five minutes with the player paused, idle or off;
+*Disabled* leaves it on, and the screen still blanks
+([Blanking, and the amplifier](#blanking-and-the-amplifier)). The default for a
+remote that has never stored one is `config::kTurnOffControlOnBlank`.
 
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the

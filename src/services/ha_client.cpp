@@ -37,6 +37,10 @@ constexpr char kPrefsControlInputKey[] = "ctlin";
 constexpr char kPrefsWakeVolumeKey[] = "wakevol";
 /** Read back when nothing is stored. */
 constexpr int32_t kWakeVolumeUnset = -2;
+/** Whether the volume/power entity goes off with the screen; absent until
+ *  the portal or the settings page first stores it, which leaves
+ *  config::kTurnOffControlOnBlank to stand. */
+constexpr char kPrefsAutoOffKey[] = "ctl_auto_off";
 
 // Records come back from the template API delimited by ASCII unit (\037) and
 // record (\036) separators rather than tabs or newlines, so a track title
@@ -245,6 +249,7 @@ char s_selected[config::kEntityIdMaxLen] = {};
 char s_ma_entry[config::kMaConfigEntryIdMaxLen + 1] = {};
 /** -1 off, 0..100 percent; see playerWakeVolume(). */
 int s_wake_volume_pct = -1;
+bool s_auto_off = config::kTurnOffControlOnBlank;
 /** Empty means "whatever is playing also carries the volume and the power",
  *  which is the ordinary case; controlEntity() resolves that. */
 char s_control[config::kEntityIdMaxLen] = {};
@@ -1297,6 +1302,7 @@ void init() {
   prefs.getString(kPrefsControlInputKey, s_control_input,
                   sizeof(s_control_input));
   const int32_t wake = prefs.getInt(kPrefsWakeVolumeKey, kWakeVolumeUnset);
+  s_auto_off = prefs.getBool(kPrefsAutoOffKey, config::kTurnOffControlOnBlank);
   prefs.end();
 
   // Settings stored before they were trimmed on the way in are trimmed here,
@@ -1819,6 +1825,19 @@ void savePlayerWakeVolumePercent(int percent) {
   } else {
     LOG_INFO("HA: player volume at switch-on: left alone");
   }
+}
+
+bool autoOffControl() { return s_auto_off; }
+
+void saveAutoOffControl(bool on) {
+  s_auto_off = on;
+  Preferences prefs;
+  if (!prefs.begin(kPrefsNamespace, false)) {
+    return;
+  }
+  prefs.putBool(kPrefsAutoOffKey, on);
+  prefs.end();
+  LOG_INFO("HA: volume device switched off when idle: %s", on ? "yes" : "no");
 }
 
 int fetchSources(const char* entity_id, char (*out)[config::kSourceNameMaxLen],

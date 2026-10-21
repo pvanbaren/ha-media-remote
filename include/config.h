@@ -426,7 +426,9 @@ constexpr unsigned long kIdleTimeoutMs = 300000;
  *  switching off, which is the case that most wants it to. */
 constexpr bool kBlankWhenPaused = true;
 
-/** Switch the volume/power entity off when the panel blanks.
+/** Switch the volume/power entity off when the panel blanks -- the default
+ *  for the Auto-off setting, which the portal and the settings page change
+ *  (services::ha::autoOffControl()).
  *
  *  The counterweight to play and the list switching it on. Narrow by
  *  construction: standing

@@ -825,7 +825,7 @@ void startCommands() {
   // The amplifier goes with the screen. Getting here at all means the player
   // has been paused, idle, off or unavailable for the whole timeout, since
   // anything else would have woken the panel several branches ago.
-  if (config::kTurnOffControlOnBlank && !g_control_off_sent) {
+  if (services::ha::autoOffControl() && !g_control_off_sent) {
     g_control_off_sent = true;
     g_turn_off_control = true;
     g_poll_now = true;
@@ -1688,6 +1688,7 @@ enum class Setting : uint8_t {
   kControl,
   kInput,
   kWakeVolume,
+  kAutoOff,
   kTxPower,
   kKeyboard,
   kRotation,
@@ -1695,7 +1696,7 @@ enum class Setting : uint8_t {
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 10;
+constexpr int kMaxSettingRows = 11;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -1813,6 +1814,10 @@ void showSettingsPage(int focus) {
     formatWakeVolume(value, sizeof(value),
                      services::ha::playerWakeVolumePercent());
     addSettingRow(Setting::kWakeVolume, "Player volume at switch-on", value);
+  }
+  if (linked) {
+    addSettingRow(Setting::kAutoOff, "Auto-off",
+                  services::ha::autoOffControl() ? "Enabled" : "Disabled");
   }
   formatTxPower(value, sizeof(value), wifiTxPower());
   addSettingRow(Setting::kTxPower, "Wi-Fi transmit power", value);
@@ -1945,6 +1950,15 @@ void openSettingChoices(Setting setting, int row) {
       break;
     }
 
+    case Setting::kAutoOff: {
+      ui::settingsBegin("Auto-off",
+                        "Switch the volume device off when the screen blanks");
+      const bool on = services::ha::autoOffControl();
+      addChoice("Enabled", 1, on);
+      addChoice("Disabled", 0, !on);
+      break;
+    }
+
     case Setting::kTxPower: {
       ui::settingsBegin("Transmit power", "");
       const WifiTxPowerStep* steps = nullptr;
@@ -2052,6 +2066,12 @@ bool applySettingChoice(int row) {
     case Setting::kWakeVolume:
       if (value != services::ha::playerWakeVolumePercent()) {
         services::ha::savePlayerWakeVolumePercent(value);
+        changed = true;
+      }
+      break;
+    case Setting::kAutoOff:
+      if ((value == 1) != services::ha::autoOffControl()) {
+        services::ha::saveAutoOffControl(value == 1);
         changed = true;
       }
       break;
