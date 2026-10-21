@@ -148,12 +148,45 @@ void drawQuery(lgfx::LovyanGFX& gfx) {
   back_button::lineSpan(theme::kSearchQueryY, theme::kSearchQueryTextPx,
                         center_x, width);
   char line[text::kMaxLineLen];
-  text::ellipsize(gfx, empty ? "Artist name" : q, width, line, sizeof(line));
+  text::ellipsize(gfx, empty ? services::search::typePrompt() : q, width, line,
+                  sizeof(line));
   gfx.drawString(line, center_x, theme::kSearchQueryY);
+}
+
+/** The type selector's pill, centred on the gap between the query and the
+ *  keys, sized to its label. */
+int typePillWidth(lgfx::LovyanGFX& gfx) {
+  displayFontApplyHeight(gfx, theme::kSearchTypeTextPx);
+  return gfx.textWidth(services::search::typeLabel()) +
+         2 * theme::kSearchTypePadX + theme::kSearchTypeArrowW;
+}
+
+/** What the search looks for, on a pill a tap steps on: the label, and a
+ *  small arrowhead after it saying there is more round the corner. */
+void drawTypePill(lgfx::LovyanGFX& gfx) {
+  const int w = typePillWidth(gfx);
+  const int h = theme::kSearchTypeHeight;
+  const int x = theme::kCenterX - w / 2;
+  const int y = theme::kSearchTypeY - h / 2;
+  gfx.fillRoundRect(x, y, w, h, h / 2, theme::kSurface);
+
+  const int text_cx = x + theme::kSearchTypePadX +
+                      (w - 2 * theme::kSearchTypePadX -
+                       theme::kSearchTypeArrowW) / 2;
+  gfx.setTextDatum(textdatum_t::middle_center);
+  gfx.setTextColor(theme::kAccent);
+  gfx.drawString(services::search::typeLabel(), text_cx, theme::kSearchTypeY);
+
+  const int ax = x + w - theme::kSearchTypePadX - theme::kSearchTypeArrowW / 2;
+  const int ah = theme::kSearchTypeArrowW / 2;
+  gfx.fillTriangle(ax - ah / 2, theme::kSearchTypeY - ah, ax - ah / 2,
+                   theme::kSearchTypeY + ah, ax + ah / 2, theme::kSearchTypeY,
+                   theme::kTextMuted);
 }
 
 void drawKeyboard(lgfx::LovyanGFX& gfx) {
   drawQuery(gfx);
+  drawTypePill(gfx);
 
   const Layout& l = layout();
   for (int row = 0; row < l.row_count; ++row) {
@@ -543,8 +576,8 @@ void showStarting(int index) {
   displayFontApplyHeight(gfx, theme::kListHeaderTextPx);
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(theme::kTextMuted);
-  gfx.drawString(config::kSearchPlaysRadio ? "Starting radio..."
-                                           : "Starting...",
+  gfx.drawString(services::search::playsAsRadio(index) ? "Starting radio..."
+                                                       : "Starting...",
                  theme::kCenterX,
                  top + theme::kListRowHeight + theme::px(16));
   back_button::draw(gfx);
@@ -575,8 +608,21 @@ Result handleTap(int x, int y, int& index) {
       return Result::kSelected;
     }
     // Anywhere else on the results screen goes back to editing the query,
-    // which is what a miss usually means: that was not the artist.
+    // which is what a miss usually means: that was not the one.
     return Result::kBack;
+  }
+
+  // The type selector: the whole gap between the query and the keys, across
+  // the pill and a little either side of it, so it is not a fingertip's
+  // precision task.
+  if (y >= theme::kSearchTypeY - theme::kSearchTypeHitHalf &&
+      y < theme::kKeyRow0Y) {
+    const int half = typePillWidth(ui::canvas()) / 2 + theme::kSearchTypePadX;
+    if (x >= theme::kCenterX - half && x < theme::kCenterX + half) {
+      services::search::nextType();
+      return Result::kChanged;
+    }
+    return Result::kNone;
   }
 
   // SEARCH

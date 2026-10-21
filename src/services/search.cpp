@@ -10,6 +10,22 @@
 namespace services::search {
 namespace {
 
+/** The kinds the selector steps through, in order. */
+struct Type {
+  const char* label;
+  const char* prompt;
+  const char* media_type;
+};
+constexpr Type kTypes[] = {
+    {"Artist", "Artist name", "artist"},
+    {"Album", "Album name", "album"},
+    {"Track", "Track name", "track"},
+    {"Playlist", "Playlist name", "playlist"},
+    {"Radio", "Station name", "radio"},
+};
+constexpr int kTypeCount = sizeof(kTypes) / sizeof(kTypes[0]);
+int s_type = 0;
+
 char s_query[config::kSearchQueryMaxLen + 1] = {};
 size_t s_len = 0;
 
@@ -18,6 +34,16 @@ int s_count = 0;
 Status s_status = Status::kIdle;
 
 }  // namespace
+
+const char* typeLabel() { return kTypes[s_type].label; }
+const char* typePrompt() { return kTypes[s_type].prompt; }
+const char* mediaType() { return kTypes[s_type].media_type; }
+
+void nextType() {
+  s_type = (s_type + 1) % kTypeCount;
+  s_count = 0;
+  s_status = Status::kIdle;
+}
 
 const char* query() { return s_query; }
 
@@ -53,8 +79,8 @@ void run() {
   }
 
   s_status = Status::kSearching;
-  const int found =
-      ha::searchArtists(s_query, s_results, config::kMaxSearchResults);
+  const int found = ha::search(s_query, mediaType(), s_results,
+                               config::kMaxSearchResults);
   if (found < 0) {
     s_count = 0;
     s_status = Status::kFailed;
@@ -73,6 +99,12 @@ const ha::LibraryItem* at(int index) {
     return nullptr;
   }
   return &s_results[index];
+}
+
+bool playsAsRadio(int index) {
+  const ha::LibraryItem* item = at(index);
+  return config::kSearchPlaysRadio && item != nullptr &&
+         strcmp(item->media_type, "artist") == 0;
 }
 
 }  // namespace services::search

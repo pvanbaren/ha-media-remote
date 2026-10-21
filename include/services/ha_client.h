@@ -279,8 +279,15 @@ int fetchLibrary(const char* media_type, const char* order_by, int limit,
  *  or -1 on failure.
  *
  *  Same flat item shape as fetchLibrary(), under an "artists" key rather than
- *  "items", so it shares the parser. */
+ *  "items", so it shares the parser. search(name, "artist", ...). */
 int searchArtists(const char* name, LibraryItem* out, size_t capacity);
+
+/** As searchArtists(), for any `media_type` Music Assistant searches:
+ *  "artist", "album", "track", "playlist" or "radio". Each item comes back
+ *  carrying that media_type; an album's or a track's name has its first
+ *  artist after it, " · " between, since a title alone says too little. */
+int search(const char* name, const char* media_type, LibraryItem* out,
+           size_t capacity);
 
 /** Play a library item on `entity_id`, via `music_assistant.play_media`.
  *  `uri` and `media_type` come from a LibraryItem.

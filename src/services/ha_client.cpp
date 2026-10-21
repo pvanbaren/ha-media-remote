@@ -729,6 +729,10 @@ struct ItemFields {
   size_t name_len;
   char* image;
   size_t image_len;
+  /** Where to put the first name in the item's own "artists" array -- an
+   *  album's or a track's -- or nullptr to step over it. */
+  char* artist = nullptr;
+  size_t artist_len = 0;
 };
 
 /** Read one object of the items array into `fields`, and return what follows
@@ -790,6 +794,20 @@ const char* readLibraryItem(const char* p, const ItemFields& fields) {
     }
     if (dest != nullptr && *value == '"') {
       readJsonString(value, dest, dest_len);
+    }
+    // The first artist's name, out of the nested array: an object of the
+    // same shape, read for its name alone.
+    if (fields.artist != nullptr && strcmp(key, "artists") == 0 &&
+        *value == '[') {
+      const char* first = value + 1;
+      while (*first == ' ') {
+        ++first;
+      }
+      if (*first == '{') {
+        const ItemFields artist{nullptr, 0, fields.artist, fields.artist_len,
+                                nullptr, 0};
+        readLibraryItem(first, artist);
+      }
     }
 
     p = skipJsonValue(value);
@@ -1942,8 +1960,58 @@ int fetchLibrary(const char* media_type, const char* order_by, int limit,
   return count;
 }
 
+namespace {
+
+/** The key a search response lists `media_type`'s matches under: its
+ *  plural, but for radio, which is its own. */
+const char* searchResponseKey(const char* media_type) {
+  if (strcmp(media_type, "album") == 0) return "albums";
+  if (strcmp(media_type, "track") == 0) return "tracks";
+  if (strcmp(media_type, "playlist") == 0) return "playlists";
+  if (strcmp(media_type, "radio") == 0) return "radio";
+  return "artists";
+}
+
+/** Append " · `artist`" to `name`, cut short on a character boundary when
+ *  the buffer runs out: an album's or a track's title alone says too
+ *  little. */
+void appendArtist(char* name, size_t name_len, const char* artist) {
+  if (artist[0] == '\0') {
+    return;
+  }
+  const size_t used = strlen(name);
+  if (used + 4 >= name_len) {
+    return;  // no room for even the separator and a letter
+  }
+  snprintf(name + used, name_len - used, " \xC2\xB7 %s", artist);
+  // snprintf cuts at a byte: drop a UTF-8 sequence it left unfinished. Walk
+  // back over continuation bytes to the last character's first byte, and
+  // see whether all the bytes it promises are there.
+  const size_t end = strlen(name);
+  size_t first = end;
+  while (first > used &&
+         (static_cast<uint8_t>(name[first - 1]) & 0xC0) == 0x80) {
+    --first;
+  }
+  if (first > used) {
+    const uint8_t c = static_cast<uint8_t>(name[first - 1]);
+    const size_t want = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+    if (end - (first - 1) < want) {
+      name[first - 1] = '\0';
+    }
+  }
+}
+
+}  // namespace
+
 int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
-  if (out == nullptr || capacity == 0 || name == nullptr || name[0] == '\0') {
+  return search(name, "artist", out, capacity);
+}
+
+int search(const char* name, const char* media_type, LibraryItem* out,
+           size_t capacity) {
+  if (out == nullptr || capacity == 0 || name == nullptr || name[0] == '\0' ||
+      media_type == nullptr) {
     return -1;
   }
   if (s_ma_entry[0] == '\0') {
@@ -1955,7 +2023,9 @@ int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
   appendJsonString(body, s_ma_entry);
   body += ",\"name\":";
   appendJsonString(body, name);
-  body += ",\"media_type\":[\"artist\"],\"limit\":";
+  body += ",\"media_type\":[";
+  appendJsonString(body, media_type);
+  body += "],\"limit\":";
   body += static_cast<int>(capacity);
   body += '}';
 
@@ -1967,13 +2037,17 @@ int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
 
   // {"artists":[...],"albums":[],...} -- the same item objects fetchLibrary
   // parses, so readLibraryItem does the work here too.
-  const char* p = strstr(response.c_str(), "\"artists\":[");
+  char key[16];
+  snprintf(key, sizeof(key), "\"%s\":[", searchResponseKey(media_type));
+  const char* p = strstr(response.c_str(), key);
   if (p == nullptr) {
-    setError("no artists in search response");
+    setError("no matches list in search response");
     LOG_WARN("HA: response body: %s", response.c_str());
     return -1;
   }
-  p += 11;
+  p += strlen(key);
+  const bool with_artist =
+      strcmp(media_type, "album") == 0 || strcmp(media_type, "track") == 0;
 
   int count = 0;
   while (count < static_cast<int>(capacity)) {
@@ -1986,11 +2060,16 @@ int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
 
     LibraryItem& item = out[count];
     item = LibraryItem{};
-    snprintf(item.media_type, sizeof(item.media_type), "%s", "artist");
+    snprintf(item.media_type, sizeof(item.media_type), "%s", media_type);
 
-    const ItemFields fields{item.uri,   sizeof(item.uri),
-                            item.name,  sizeof(item.name),
-                            item.image, sizeof(item.image)};
+    char artist[config::kFriendlyNameMaxLen] = {};
+    ItemFields fields{item.uri,   sizeof(item.uri),
+                      item.name,  sizeof(item.name),
+                      item.image, sizeof(item.image)};
+    if (with_artist) {
+      fields.artist = artist;
+      fields.artist_len = sizeof(artist);
+    }
     const char* next = readLibraryItem(p, fields);
     if (next == nullptr) {
       break;
@@ -1998,11 +2077,12 @@ int searchArtists(const char* name, LibraryItem* out, size_t capacity) {
     p = next;
 
     if (item.uri[0] != '\0' && item.name[0] != '\0') {
+      appendArtist(item.name, sizeof(item.name), artist);
       ++count;
     }
   }
 
-  LOG_DEBUG("HA: %d artist%s matching \"%s\"", count,
+  LOG_DEBUG("HA: %d %s%s matching \"%s\"", count, media_type,
                 count == 1 ? "" : "s", name);
   return count;
 }

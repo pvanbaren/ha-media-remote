@@ -190,7 +190,7 @@ constexpr int kListScrollBarInset = px(6);
 /** A thumb shorter than this is hard to see and hard to read as a position. */
 constexpr int kListScrollBarMinLength = px(16);
 
-// --- Artist search: keyboard, then results ---
+// --- Search: keyboard, then results ---
 // The alphabetical layout is four rows of seven keys, sized against the chord
 // at each row (QWERTY's are below, with its key width): the narrowest
 // (y=72) allows 205 px and the row needs 201. The fifth row is one wide key,
@@ -202,6 +202,19 @@ constexpr int kListScrollBarMinLength = px(16);
 // as covering its keys.
 constexpr int kSearchQueryY = px(34);
 constexpr int kSearchQueryTextPx = textPx(20);
+/** What the search looks for -- Artist, Album, Track, Playlist, Radio -- on
+ *  a pill in the gap between the query (its text ends about y=44, the back
+ *  button at 45) and the first row of keys at 72. A tap steps it on. Where
+ *  the pill sits the circle gives over 200 px, so even "Playlist" has room.
+ *  A tap anywhere from kSearchTypeHitHalf above its centre down to the keys
+ *  counts. */
+constexpr int kSearchTypeY = px(59);
+constexpr int kSearchTypeHeight = px(20);
+constexpr int kSearchTypeTextPx = textPx(15);
+constexpr int kSearchTypePadX = px(10);
+/** The arrowhead after the label, and the room kept for it. */
+constexpr int kSearchTypeArrowW = px(8);
+constexpr int kSearchTypeHitHalf = px(12);
 constexpr int kKeyRow0Y = px(72);
 constexpr int kKeyRowPitch = px(28);
 constexpr int kKeyWidth = px(27);

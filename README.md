@@ -4,7 +4,8 @@ A touch remote for one Home Assistant `media_player`, on an ESP32-S3 with a
 small display. It shows what is playing -- the cover art filling the screen,
 the title and artist over it, a volume control and the elapsed time -- and
 gives you previous / play-pause / next, a volume swipe, a list of this room's
-recent artists and recommendations, and an artist search. It talks to Home
+recent artists and recommendations, and a search for artists, albums,
+tracks, playlists and radio stations. It talks to Home
 Assistant directly, over its WebSocket and REST APIs, with nothing to install
 on the server; Music Assistant adds the list and the search.
 
@@ -156,14 +157,22 @@ The list follows your finger and glides on release. **Tap the title strip** or
 **swipe right** to go back; it also goes back by itself after a minute
 untouched (`kListIdleReturnMs`).
 
-### Artist search
+### Search
 
 **Swipe left** on the list for a keyboard, or on the lower half of now
 playing -- or flick left on the top half -- to go straight there. Type part of a name -- the search
 reaches every Music Assistant provider and forgives partial names, so
-"radioh" finds Radiohead -- press **SEARCH**, and tap a result. The artist's
-**radio** starts: an endless queue seeded from them, which is what a wall
-remote is for (`kSearchPlaysRadio` plays the artist straight instead).
+"radioh" finds Radiohead -- press **SEARCH**, and tap a result.
+
+The pill between the name and the keys says what the search looks for:
+**Artist**, **Album**, **Track**, **Playlist** or **Radio**. Tap it to step
+to the next; the name typed so far stays, and the choice is kept the next
+time the search opens. Albums and tracks are listed with their artist after
+the title.
+
+An artist's **radio** starts: an endless queue seeded from them, which is
+what a wall remote is for (`kSearchPlaysRadio` plays the artist straight
+instead). An album, a track, a playlist or a station plays as itself.
 
 The keyboard is **alphabetical** by default, seven keys to a row, the last two
 space and backspace. The **Search keyboard** setting, on the device or in
@@ -325,7 +334,7 @@ wakes the screen leave it alone. Details in
 | Isolate card | Tap Cancel, or swipe right | Leave them on, and back to now playing |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
-| Now playing | Swipe left, lower half, or flick left, top half | Artist search |
+| Now playing | Swipe left, lower half, or flick left, top half | Search |
 | Now playing | Swipe right, lower half, or flick right, top half | The volume device's inputs |
 | Sources | Tap an input | Switch to it, and back to now playing |
 | Sources | Swipe right, or the back button | Back to now playing |
@@ -348,9 +357,10 @@ wakes the screen leave it alone. Details in
 | List | Drag up / down | Scroll; it glides on release |
 | List | Tap a row | Play it |
 | List | Tap the title strip, or swipe right | Back to now playing |
-| List | Swipe left | Artist search |
+| List | Swipe left | Search |
 | Search | Tap keys, then SEARCH | Search |
-| Search results | Tap a result | Play that artist's radio |
+| Search keyboard | Tap the pill above the keys | Search for the next kind: artist, album, track, playlist, radio |
+| Search results | Tap a result | Play it: an artist as radio, anything else as itself |
 | Search | Swipe right | Back one step |
 | Blank screen | Any touch | Wake it; the volume device is left as it is |
 | Knob (MaTouch 2.1") | Turn, on now playing | Volume, 2% a click; with the volume device off, the first turn switches it on, as play does, where it can be |

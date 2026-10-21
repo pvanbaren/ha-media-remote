@@ -190,7 +190,7 @@ constexpr int kBrowseSectionCount =
 constexpr int kMaxBrowseItems = 16;
 
 // =====================================================================
-// Artist search — the swipe-left screen
+// Search — the swipe-left screen
 // =====================================================================
 /** Longest name that can be typed. Music Assistant's search is forgiving
  *  about partial names -- "radioh" finds Radiohead -- so this is generous

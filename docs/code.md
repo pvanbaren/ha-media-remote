@@ -72,7 +72,7 @@ src/services/
   player_list.cpp          cached media_player list, for the portal and the
                            device's lists
   browse.cpp               the swipe-up list's sections
-  search.cpp               the artist search query and results
+  search.cpp               the search: its kind, query and results
   history.cpp              the room's recent artists
   recommend.cpp            the room's recommendations, on a task of its own
   ma_api.cpp               Music Assistant's own API, and its settings

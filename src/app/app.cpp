@@ -2442,7 +2442,7 @@ void portalIdle() {
         job.kind = CommandKind::kPlayItem;
         job.power_first = true;
         job.generation = g_play_generation;
-        job.radio = config::kSearchPlaysRadio;
+        job.radio = services::search::playsAsRadio(in.index);
         const services::ha::LibraryItem* item =
             services::search::at(in.index);
         if (item != nullptr) {
