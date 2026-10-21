@@ -312,7 +312,14 @@ itself within a couple of seconds.
 After **five minutes** with the player paused, idle, off or unavailable
 (`kIdleTimeoutMs`, `kBlankWhenPaused`), the screen blanks -- backlight off,
 panel asleep -- and the **volume device is switched off** with it. Any touch
-wakes it, and so does playback starting from anywhere else. The **Auto-off**
+wakes it, and so does playback starting from anywhere else.
+
+A source with a **power switch of its own** -- a Control4 room, a TV being
+cast to -- is the exception, when the volume device is on its input: idle or
+paused, it is still on, so the screen stays lit and the volume device stays
+on until the **source itself is switched off**. The five minutes start from
+then. A source with no power of its own, such as a Music Assistant player,
+blanks and switches the volume device off as above. The **Auto-off**
 setting, on the device or in the portal, turns the switching off off: the
 screen still blanks, and the volume device is left as it is. It is on until
 changed.

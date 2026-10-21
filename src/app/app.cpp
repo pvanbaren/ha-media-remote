@@ -369,8 +369,34 @@ void showNowPlaying() {
   g_last_elapsed_ms = millis();
 }
 
+/** Whether what the room is hearing has a power switch of its own -- a
+ *  Control4 room, a TV a phone is casting to -- rather than leaving power to
+ *  the zone: a separate volume device's source, not the volume device
+ *  itself, that claims TURN_OFF. `supported_features` is the heard entity's
+ *  (PlayerState::media_entity, or the transport entity behind it). */
+bool sourcePowersItself(const PlayerState& state) {
+  if (!services::ha::controlIsSeparate()) {
+    return false;
+  }
+  const char* heard = state.media_entity[0] != '\0'
+                          ? state.media_entity
+                          : services::ha::selectedEntity();
+  if (strcmp(heard, services::ha::controlEntity()) == 0) {
+    return false;
+  }
+  return (state.supported_features & services::ha::kFeatureTurnOff) != 0;
+}
+
 /** Whether the player is doing nothing worth lighting the panel for. */
 bool playerIsIdle(const PlayerState& state) {
+  // A source that switches itself on and off says when the room is done:
+  // idle or paused it is still on, and the zone stays on with it -- and so
+  // does the panel, since blanking is what switches the zone off. Only once
+  // the source itself is off does the idle timeout start.
+  if (sourcePowersItself(state)) {
+    return state.playback == PlaybackState::kOff ||
+           state.playback == PlaybackState::kUnavailable;
+  }
   switch (state.playback) {
     case PlaybackState::kIdle:
     case PlaybackState::kOff:

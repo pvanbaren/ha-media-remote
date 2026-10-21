@@ -438,7 +438,9 @@ constexpr bool kBlankWhenPaused = true;
  *  playback cancels it.
  *
  *  Only sent once per blanking, and only to an entity whose supported_features
- *  claim TURN_OFF. */
+ *  claim TURN_OFF. A source on the volume device's input with a power switch
+ *  of its own holds the blank off until it is switched off (app.cpp,
+ *  sourcePowersItself()), so this never cuts a room that source still has. */
 constexpr bool kTurnOffControlOnBlank = true;
 
 /** How long the browse list or the search screen stays up with nobody
