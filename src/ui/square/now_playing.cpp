@@ -664,6 +664,23 @@ bool volumeSwipeRegion(int x, int y) {
   return y < theme::kCenterY;
 }
 
+bool seekRegion(int x, int y, const PlayerState& state) {
+  if (progressFraction(state) < 0.0f ||
+      (state.supported_features & services::ha::kFeatureSeek) == 0) {
+    return false;
+  }
+  // The bar and the chip over its middle, down to the foot of the screen,
+  // and a little past either end.
+  return y >= kProgressY - theme::kSeekBandAboveBar &&
+         x >= kBarLeft - theme::px(8) && x <= kBarLeft + kBarWidth + theme::px(8);
+}
+
+float seekFraction(int x, int y) {
+  (void)y;
+  const float f = static_cast<float>(x - kBarLeft) / kBarWidth;
+  return f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+}
+
 Action hitTest(int x, int y) {
   // The Token rejected chip first: it is a control only while it says that.
   if (s_relink_chip.shown && x >= s_relink_chip.left - kRelinkHitPad &&

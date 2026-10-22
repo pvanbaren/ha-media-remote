@@ -51,6 +51,19 @@ bool volumeAvailable(const services::ha::PlayerState& state);
  *  browse list. */
 bool volumeSwipeRegion(int x, int y);
 
+/** Whether a press starting at (x, y) may become a seek: it landed on the
+ *  progress line or the elapsed chip over it (theme::kSeekBandInsideArc and
+ *  the rest), while there is a position to move -- the line is showing --
+ *  and what is playing claims SEEK. As with the volume, only a sideways drag
+ *  is taken; the caller leaves a vertical one, swipe-up, alone. */
+bool seekRegion(int x, int y, const services::ha::PlayerState& state);
+
+/** How far along the progress line (x, y) is, 0..1: by its angle round the
+ *  arc on a round panel, by x across the bar on a square one. Absolute, not
+ *  relative like the volume: the line is a timeline, and the place the
+ *  finger points at is the time wanted. */
+float seekFraction(int x, int y);
+
 /** Level change per pixel of horizontal finger travel.
  *
  *  Scaled so the knob moves the same distance along the arc that the finger

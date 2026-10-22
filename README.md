@@ -78,6 +78,10 @@ bottom:
   duration. It is drawn in the cover's own colour -- its most prominent
   strong one -- as is a pressed transport button's ring, and in the accent
   colour when the cover has none.
+  **Drag along it** to seek: the line and the chip follow the finger,
+  showing the time it points at, and the track moves there when it lets go.
+  A drag has to start on the line or the chip, and only where the player can
+  seek.
 
 Volume is an **arc round the bezel** on the round panels, and a **bar across
 the top** on the square one. You do not have to grab it: a sideways swipe
@@ -345,6 +349,7 @@ wakes the screen leave it alone. Details in
 | Isolate card | Tap Cancel, or swipe right | Leave them on, and back to now playing |
 | Now playing | Swipe up | Open the list |
 | Now playing | Swipe down | Open the status page |
+| Now playing | Drag along the progress line or the elapsed chip | Seek to that point in the track |
 | Now playing | Swipe left, lower half, or flick left, top half | Search |
 | Now playing | Swipe right, lower half, or flick right, top half | The volume device's inputs |
 | Sources | Tap an input | Switch to it, and back to now playing |

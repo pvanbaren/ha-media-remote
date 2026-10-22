@@ -98,8 +98,9 @@ constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);
 
 // --- Track progress, under the elapsed chip ---
-// How far through the track it is, display only: the bottom half of now
-// playing is the lower swipes', so a drag there is not a seek.
+// How far through the track it is. A sideways drag that starts on it seeks
+// (kSeekBandInsideArc and the rest, below); anywhere else in the bottom half
+// of now playing, a sideways swipe is the search's or the inputs'.
 // The cover's own colour where it has one (ui::cover::highlight), and the
 // accent where it has not, apart from the volume's white either way. Not
 // drawn where the chip shows no time -- a stream with no duration, or
@@ -113,6 +114,15 @@ constexpr float kProgressArcStartDeg =
     kVolumeArcEndDeg + kProgressArcClearDeg;  // +44, lower right
 constexpr float kProgressArcEndDeg =
     kVolumeArcStartDeg + 360.0f - kProgressArcClearDeg;  // +136, lower left
+/** Seeking: a sideways drag that starts on the progress line, or on the
+ *  elapsed chip over it, moves the track there. On the round panel, from
+ *  this far inside the arc's inner edge out to the bezel, and this many
+ *  degrees past either end of it, so the chip is inside and a fingertip
+ *  need not land on the 7 px ring; on the square one, from this far above
+ *  the bar down to the foot of the screen. */
+constexpr int kSeekBandInsideArc = px(26);
+constexpr float kSeekBandSlackDeg = 6.0f;
+constexpr int kSeekBandAboveBar = px(16);
 
 // --- Now-playing text block: artist above, track title below ---
 // The artist is one line and the title may be two, so putting the artist first

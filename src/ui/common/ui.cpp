@@ -52,6 +52,11 @@ float s_vol_level = 0.0f;
 float s_vol_drawn = -1.0f;
 int s_vol_last_x = 0;
 unsigned long s_vol_sent_ms = 0;
+/** The finger is seeking along the progress line, and where to, 0..1. The
+ *  drag's state is s_drag_state: a seek and a volume drag are never both
+ *  under one finger. */
+bool s_seek_dragging = false;
+float s_seek_fraction = -1.0f;
 /** When the drag was claimed, and the x the finger landed at: for telling a
  *  flick from a drag when it lifts. */
 unsigned long s_vol_claimed_ms = 0;
@@ -271,6 +276,60 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
     out.intent = Intent::kSetVolume;
     out.level = s_vol_level;
     return true;
+  }
+  return false;
+}
+
+/** Seek along the progress line: a sideways drag that starts on it, or on the
+ *  elapsed chip over it (now_playing::seekRegion()), as the volume's starts
+ *  in the top half. The line and the chip follow the finger, showing the
+ *  time it points at; nothing is sent until it lifts, and then only the
+ *  one seek. A vertical press is left alone, for swipe-up, as is any press
+ *  elsewhere in the lower half, for the swipes to the search and the inputs.
+ *
+ *  Returns true when the caller should be told to seek. */
+bool driveSeek(Screen screen, const PlayerState* state, Input& out) {
+  if (screen != Screen::kNowPlaying) {
+    s_seek_dragging = false;
+    return false;
+  }
+  if (!hw::touchIsDown()) {
+    if (!s_seek_dragging) {
+      return false;
+    }
+    s_seek_dragging = false;
+    out.intent = Intent::kSeek;
+    out.level = s_seek_fraction;
+    return true;
+  }
+
+  int x = 0;
+  int y = 0;
+  hw::touchPosition(x, y);
+  if (!s_seek_dragging) {
+    const int travel_x = hw::touchDragDx();
+    const int travel_y = hw::touchDragDy();
+    if (abs(travel_x) < kDragSlopPx || abs(travel_x) <= abs(travel_y)) {
+      return false;
+    }
+    if (state == nullptr ||
+        !now_playing::seekRegion(x - travel_x, y - travel_y, *state)) {
+      return false;
+    }
+    s_drag_state = *state;
+    hw::touchCancel();
+    s_seek_dragging = true;
+    s_seek_fraction = -1.0f;
+  }
+
+  // The preview: the line and the chip at the time under the finger, held
+  // there -- sampled_ms 0 stops the interpolation that would run it on.
+  const float f = now_playing::seekFraction(x, y);
+  if (fabsf(f - s_seek_fraction) >= kVolumeRedrawEpsilon) {
+    s_seek_fraction = f;
+    s_drag_state.position_s = f * s_drag_state.duration_s;
+    s_drag_state.sampled_ms = 0;
+    now_playing::refreshElapsed(s_drag_state);
   }
   return false;
 }
@@ -862,6 +921,9 @@ Input poll(Screen screen, const PlayerState* state) {
   if (driveVolume(screen, state, out)) {
     return out;
   }
+  if (driveSeek(screen, state, out)) {
+    return out;
+  }
   if (driveKnob(screen, state, out)) {
     return out;
   }
@@ -1159,6 +1221,10 @@ void showWifiLost() { statusScreenWifiLost(); }
 void showSettingsCleared() { statusScreenWifiReset(); }
 
 void refreshElapsed(const PlayerState& state) {
+  // Not under a seek: the line and the chip show where the finger is.
+  if (s_seek_dragging) {
+    return;
+  }
   now_playing::refreshElapsed(state);
 }
 

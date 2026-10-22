@@ -1765,6 +1765,27 @@ bool setVolume(const char* entity_id, float level) {
   return ok;
 }
 
+bool seek(const char* entity_id, float position_s) {
+  if (!validEntityId(entity_id)) {
+    setError("bad entity id");
+    return false;
+  }
+  char position[16];
+  snprintf(position, sizeof(position), "%.1f",
+           position_s < 0.0f ? 0.0f : position_s);
+
+  String body("{\"entity_id\":");
+  appendJsonString(body, entity_id);
+  body += ",\"seek_position\":";
+  body += position;
+  body += '}';
+
+  const bool ok = serviceCall("media_player", "media_seek", body);
+  LOG_DEBUG("HA: media_seek %s %s -> %s", entity_id, position,
+                ok ? "ok" : s_last_error);
+  return ok;
+}
+
 const char* controlEntity() {
   return s_control[0] != '\0' ? s_control : s_selected;
 }

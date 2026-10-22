@@ -89,6 +89,8 @@ enum class Intent : uint8_t {
                       // with the volume device off: switch it on, so the
                       // volume can follow
   kRelinkHa,          // the Token rejected chip on now playing: link again
+  kSeek,              // a drag along the progress line let go: `level` is
+                      // where, 0.0-1.0 of the track's duration
 };
 
 struct Input {

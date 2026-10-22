@@ -735,6 +735,49 @@ bool volumeSwipeRegion(int x, int y) {
   return y < theme::kCenterY;
 }
 
+namespace {
+
+/** (x, y)'s angle round the centre in LovyanGFX's terms: 0 at three
+ *  o'clock, clockwise, 0..360. */
+float angleOf(int x, int y) {
+  constexpr float kDeg = 180.0f / 3.14159265f;
+  float a = atan2f(static_cast<float>(y - theme::kCenterY),
+                   static_cast<float>(x - theme::kCenterX)) *
+            kDeg;
+  return a < 0.0f ? a + 360.0f : a;
+}
+
+}  // namespace
+
+bool seekRegion(int x, int y, const PlayerState& state) {
+  if (progressFraction(state) < 0.0f ||
+      (state.supported_features & services::ha::kFeatureSeek) == 0) {
+    return false;
+  }
+  const int dx = x - theme::kCenterX;
+  const int dy = y - theme::kCenterY;
+  const int inside = theme::kVolumeArcInnerRadius - theme::kSeekBandInsideArc;
+  if (dx * dx + dy * dy < inside * inside) {
+    return false;
+  }
+  const float a = angleOf(x, y);
+  return a >= theme::kProgressArcStartDeg - theme::kSeekBandSlackDeg &&
+         a <= theme::kProgressArcEndDeg + theme::kSeekBandSlackDeg;
+}
+
+float seekFraction(int x, int y) {
+  // The arc fills from its lower-left end, kProgressArcEndDeg, towards its
+  // lower-right one: 0 at the left, 1 at the right. Past either end -- up
+  // the left side or the right -- holds at that end.
+  const float a = angleOf(x, y);
+  if (a >= 270.0f) {
+    return 1.0f;
+  }
+  const float f = (theme::kProgressArcEndDeg - a) /
+                  (theme::kProgressArcEndDeg - theme::kProgressArcStartDeg);
+  return f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+}
+
 Action hitTest(int x, int y) {
   // The Token rejected chip first: it is a control only while it says that.
   if (s_relink_chip.shown && x >= s_relink_chip.left - kRelinkHitPad &&

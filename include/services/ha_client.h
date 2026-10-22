@@ -117,6 +117,7 @@ struct PlayerState {
 
 // MediaPlayerEntityFeature bits used here (homeassistant/components/media_player).
 constexpr uint32_t kFeaturePause = 1u << 0;
+constexpr uint32_t kFeatureSeek = 1u << 1;
 constexpr uint32_t kFeatureVolumeSet = 1u << 2;
 constexpr uint32_t kFeatureVolumeMute = 1u << 3;
 constexpr uint32_t kFeaturePreviousTrack = 1u << 4;
@@ -305,6 +306,10 @@ bool playMedia(const char* entity_id, const char* uri, const char* media_type,
 
 /** POST /api/services/media_player/<service> for one entity. */
 bool callService(const char* service, const char* entity_id);
+
+/** media_player.media_seek: `entity_id` to `position_s` seconds into what it
+ *  is playing. */
+bool seek(const char* entity_id, float position_s);
 
 /** media_player.select_source for one entity. */
 bool selectSource(const char* entity_id, const char* source);

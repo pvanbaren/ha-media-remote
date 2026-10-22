@@ -613,6 +613,7 @@ enum class CommandKind : uint8_t {
   kSource,     // an input picked from the volume device's list
   kPlayItem,   // a pick from the browse list or the search
   kIsolate,    // the other rooms on this input off
+  kSeek,       // a drag along the progress line
 };
 
 struct CommandJob {
@@ -634,6 +635,8 @@ struct CommandJob {
   char entity[config::kEntityIdMaxLen] = {};
   char source[config::kSourceNameMaxLen] = {};
   services::ha::LibraryItem item;
+  /** kSeek: seconds into the track. */
+  float position = 0.0f;
   /** kIsolate: the rooms, comma-separated, as PlayerState::peer_ids. */
   char ids[sizeof(PlayerState::peer_ids)] = {};
 };
@@ -737,6 +740,9 @@ void runCommand(CommandJob& job, CommandResult& r) {
       pinPlayerVolume();
       break;
     }
+    case CommandKind::kSeek:
+      r.ok = services::ha::seek(job.entity, job.position);
+      break;
     case CommandKind::kSource:
       if (job.turn_on_first) {
         services::ha::callService("turn_on", job.entity);
@@ -1323,6 +1329,41 @@ const char* serviceFor(Intent intent) {
     default:
       return nullptr;
   }
+}
+
+/** Seek to `fraction` of the way through what is playing, from a drag along
+ *  the progress line: sent to the entity play and pause go to (sendCommand()
+ *  says which), and shown there at once, as play and pause are, until the
+ *  poll that follows says where it really is. */
+[[gnu::noinline]] void sendSeek(float fraction) {
+  PlayerState before;
+  if (!snapshotState(before) || before.duration_s <= 0.0f || fraction < 0.0f) {
+    return;
+  }
+  const char* entity = before.transport_entity[0] != '\0'
+                           ? before.transport_entity
+                       : before.media_entity[0] != '\0'
+                           ? before.media_entity
+                           : services::ha::selectedEntity();
+  const float position = fraction * before.duration_s;
+  CommandJob& job = loopJob();
+  job.kind = CommandKind::kSeek;
+  job.intent = Intent::kSeek;
+  job.position = position;
+  snprintf(job.entity, sizeof(job.entity), "%s", entity);
+  if (!queueCommand(job)) {
+    return;
+  }
+  LOG_INFO("UI: seek %s to %.0f s of %.0f", entity, position,
+           before.duration_s);
+  if (g_state_mutex != nullptr &&
+      xSemaphoreTake(g_state_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    g_state.position_s = position;
+    g_state.sampled_ms = millis();
+    xSemaphoreGive(g_state_mutex);
+    g_state_dirty = true;
+  }
+  g_poll_now = true;
 }
 
 [[gnu::noinline]] void sendCommand(Intent intent) {
@@ -2388,6 +2429,10 @@ void portalIdle() {
       // either fail or move a software gain nobody can hear.
       commandVolume(services::ha::controlEntity(), in.level);
       g_poll_now = true;
+      break;
+
+    case Intent::kSeek:
+      sendSeek(in.level);
       break;
 
     case Intent::kTogglePower:
