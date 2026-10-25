@@ -74,6 +74,10 @@ PlayerState g_state;
 bool g_state_valid = false;
 
 std::atomic<bool> g_state_dirty{false};
+/** millis() when this remote last asked for the volume device to go on or
+ *  off, for config::kOffHereHoldMs; 0 before it ever has. Any task writes
+ *  it. */
+std::atomic<unsigned long> g_control_power_asked_ms{0};
 /** Set to cut the poll task's wait short after a transport command. */
 std::atomic<bool> g_poll_now{false};
 /** The panel has been dark long enough and the volume/power entity should be
@@ -203,6 +207,16 @@ unsigned long g_untitled_since_ms = 0;
 /** A frame went up with the label held back; one more is owed when the
  *  delay runs out, if the title is still missing then. Loop task only. */
 bool g_untitled_repaint_owed = false;
+/** A frame went up with "Off in this room" held back; one more is owed when
+ *  the hold runs out, in case the device is off still. Loop task only. */
+bool g_off_here_repaint_owed = false;
+
+/** True while the volume device was asked to come on by this remote less
+ *  than config::kOffHereHoldMs ago. */
+bool controlPowerChangedBriefly() {
+  const unsigned long asked = g_control_power_asked_ms.load();
+  return asked != 0 && millis() - asked < config::kOffHereHoldMs;
+}
 
 void publishState(const PlayerState& incoming) {
   PlayerState fresh = incoming;
@@ -361,6 +375,13 @@ void showNowPlaying() {
   if (snapshot.title[0] == '\0' && untitledBriefly()) {
     snapshot.hold_label = true;
     g_untitled_repaint_owed = true;
+  }
+  // The device just asked to go on or off by this remote, and the two not
+  // agreeing yet: no "Off in this room" for the moment, and a repaint owed
+  // for when that is up.
+  if (snapshot.control_off && controlPowerChangedBriefly()) {
+    snapshot.hold_off_here = true;
+    g_off_here_repaint_owed = true;
   }
 
   LOG_DEBUG("UI: now playing \"%s\"", snapshot.title);
@@ -533,6 +554,7 @@ void pinPlayerVolume() {
     }
   }
 
+  g_control_power_asked_ms = millis();
   const bool ok = services::ha::callService("turn_on", control);
   if (ok) {
     if (have_state) {
@@ -564,6 +586,7 @@ bool powerOffControl() {
     }
   }
 
+  g_control_power_asked_ms = millis();
   return services::ha::callService("turn_off", control);
 }
 
@@ -1128,6 +1151,9 @@ bool g_toggle_was_known = false;
   PlayerState before;
   g_toggle_was_known = snapshotState(before);
   g_toggle_was_off = g_toggle_was_known && before.control_off;
+  // On or off, this tap changes it: either way the device and the player
+  // report the change apart for a moment.
+  g_control_power_asked_ms = millis();
 
   LOG_INFO("UI: tap toggles %s", control);
   // Sent by the command worker; handleCommandResults() notes when, which is
@@ -2794,6 +2820,21 @@ void haPollTask(void*) {
   }
 }
 
+/** The hold on "Off in this room" has run out: the frame that held it back
+ *  is redrawn, in case the device is still off. One that came on meanwhile
+ *  has repainted already, and this repaint changes nothing. */
+[[gnu::noinline]] void handleOffHereRepaint() {
+  if (!g_off_here_repaint_owed || controlPowerChangedBriefly()) {
+    return;
+  }
+  g_off_here_repaint_owed = false;
+  PlayerState snapshot;
+  if (g_screen == Screen::kNowPlaying && snapshotState(snapshot) &&
+      snapshot.control_off) {
+    g_state_dirty = true;
+  }
+}
+
 /** The untitled label's delay has run out with the title still missing:
  *  the frame that held it back is redrawn with it. A title that arrived in
  *  the meantime has already repainted, and cancels this. */
@@ -2968,6 +3009,7 @@ void loop() {
   }
 
   handleUntitledRepaint();
+  handleOffHereRepaint();
 
   // Thumbnails are fetched on artwork's own worker; this only queues what the
   // screen wants and repaints when some of it has arrived.

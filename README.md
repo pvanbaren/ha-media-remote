@@ -92,6 +92,12 @@ the swipe it would be lower down -- left to the search, right to the inputs
 circumference, centred on twelve o'clock, leaving the gap at the bottom for
 the transport row and the chip.
 
+**Off in this room.** While the player is playing but this room's volume
+device is off -- heard in other rooms, or by no one -- an amber **"Off in
+this room"** chip shows at the top of now playing, so it does not look as it
+does when the room is listening. A tap there switches the volume device on,
+as a tap anywhere in the top half does.
+
 **Isolate.** While other zones of the volume device -- other Triad
 outputs -- are on the same input as this room, a **"+N rooms"** chip shows
 at the top of now playing. Tap it to be asked *Isolate this room?* over a

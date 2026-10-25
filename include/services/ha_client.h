@@ -103,6 +103,10 @@ struct PlayerState {
    *  config::kUntitledLabelDelayMs, so the screen leaves the title area blank
    *  instead of labelling a gap between tracks as nothing playing. */
   bool hold_label = false;
+  /** Set by the app, not the server: this remote switched the volume device
+   *  on or off less than config::kOffHereHoldMs ago, so "Off in this room" is
+   *  not shown while the device and the player catch up with each other. */
+  bool hold_off_here = false;
   /** Set by the app, not the server: Home Assistant has not been heard from
    *  for config::kHaOfflineMarkMs, so this is the last state there was and
    *  now playing says so. */

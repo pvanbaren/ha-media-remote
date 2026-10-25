@@ -67,6 +67,15 @@ constexpr size_t kEntityIdMaxLen = 64;
  *  the music stopping; until this has passed the title area is left blank. */
 constexpr unsigned long kUntitledLabelDelayMs = 3000;
 
+/** How long after this remote switches the volume device on or off that
+ *  "Off in this room" is held back. Play from the remote switches the device
+ *  on and starts the player together, and for a second or two Home Assistant
+ *  has the player playing while the device still reports off; switching it
+ *  off, the device reports off a moment before the player stops. Either way
+ *  the chip flashed up. A device still off, with the player still playing,
+ *  when this runs out shows it. */
+constexpr unsigned long kOffHereHoldMs = 8000;
+
 /** How long a track change's repaint waits for its cover. The cover is
  *  fetched on the artwork worker, off the task that services the state
  *  stream; a quick one lands in time and the title and the art appear
