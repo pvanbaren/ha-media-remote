@@ -16,9 +16,9 @@ src/
     headless/    draws nothing, narrates to serial
   hardware/
     waveshare/  round360/  amoled466/  qualia/  lcd28c/  matouch21/
-    guition4848/  headless/    <- one per board
+    guition4848/  lcd4b/  headless/    <- one per board
     rgb/         the RGB panels' output stage, for qualia/, lcd28c/,
-                 matouch21/ and guition4848/
+                 matouch21/ and guition4848/, and the P4 4B's DSI panel
 include/
   board/         one header per board: pins, sizes, scales, timings
   config.h       everything about the application that is a number
@@ -105,15 +105,18 @@ src/hardware/
   <board>/touch_raw.cpp    reads the touch controller
   <board>/font_table.cpp   the faces this board embeds
   <board>/boot_button.cpp  the reset button (the Qualia's is on its expander)
-  rgb/rgb_panel.cpp        an RGB panel's framebuffer, copy and scroll
+  rgb/framebuffer.cpp      the framebuffer: copy, scroll and flush
+  rgb/rgb_panel.cpp        the S3's RGB peripheral, opened for it
   qualia/expander.cpp      the TCA9554: panel reset, backlight, buttons
   lcd28c/panel.cpp         the 2.8C's TCA9554, and its ST7701's register init
   matouch21/panel.cpp      the MaTouch's ST7701 register init, bit-banged
   guition4848/panel.cpp    the 4848S040's ST7701 register init, bit-banged
+  lcd4b/panel.cpp          the P4 4B's DSI bus, LDOs and ST7703 init
 scripts/
   build_ui_font.py         the VLW font generator
   board_header_stamp.py    rebuilds everything when the board header changes
   merge_firmware.py        pio run -t merge
+  pin_components.py        holds a source build's IDF components
 partitions/media_remote.csv  the flash layout, shared by every board
 .github/workflows/build.yml  CI: builds every board on each push
 .github/workflows/pages.yml  the install page, on each published release
@@ -132,7 +135,7 @@ site/                        the install page and its board manifests
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
-| Touch sampler (Qualia, 2.8C, MaTouch, 4848S040) | Reads the touch controller into a queue of timestamped changes |
+| Touch sampler (Qualia, 2.8C, MaTouch, 4848S040, P4 4B) | Reads the touch controller into a queue of timestamped changes |
 
 They share three kinds of thing, each with its own discipline:
 

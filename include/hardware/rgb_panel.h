@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "esp_lcd_types.h"
+
 /**
  * The RGB output stage, for a board whose panel is RGB-parallel -- the
  * Adafruit Qualia's square 720 and the Waveshare 2.8C's round 480: an esp_lcd
@@ -17,7 +19,7 @@
  * short of.
  *
  * So every repaint writes the buffer being scanned, and what is left is
- * damage control, all of it in rgb.cpp: copy only the rectangle that changed
+ * damage control, all of it in framebuffer.cpp: copy only the rectangle that changed
  * rather than the frame, stand off the bus between slabs of a large copy or
  * move so the scan-out can refill its FIFO, and let the UI ration how often
  * it asks. The every-VSYNC restart pulls the picture back if a burst still
@@ -35,12 +37,22 @@
  *
  * Bring the panel out of reset first -- and on a panel that wants one, send
  * its register init -- since it wants that done before pixels start arriving.
+ *
+ * The Waveshare ESP32-P4 4B's panel is on MIPI-DSI rather than RGB, but in
+ * video mode (DPI) it is the same thing at this level: a framebuffer in PSRAM
+ * that a DMA scans out without a break. So it shares everything here but the
+ * opening -- its own rgbInit() in hardware/lcd4b/, in place of rgb_panel.cpp.
  */
 namespace hw::rgb {
 
-/** Start the RGB panel and claim its framebuffer. False on failure, in which
+/** Start the panel and claim its framebuffer. False on failure, in which
  *  case rgbPresent() does nothing and the remote runs blind. */
 bool rgbInit();
+
+/** For rgbInit() alone: the panel it opened, and the one framebuffer that
+ *  panel scans out of, for everything below to work on. Clears it to
+ *  black. */
+void rgbAdopt(esp_lcd_panel_handle_t panel, uint16_t* framebuffer);
 
 /**
  * Copy a rectangle of a composed frame into the framebuffer being scanned.

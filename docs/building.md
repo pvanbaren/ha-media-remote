@@ -25,6 +25,7 @@ pio run -e qualia-720        # 4" square 720x720
 pio run -e lcd28c-s3         # 2.8" round 480x480
 pio run -e matouch21-s3      # 2.1" round 480x480
 pio run -e guition4848-s3    # 4" square 480x480
+pio run -e lcd4b-p4          # 4" square 720x720, ESP32-P4
 pio run -e headless          # no panel
 ```
 
@@ -32,7 +33,7 @@ Each board's build embeds only the fonts it uses and compiles only its own
 `src/hardware/<board>/` and `src/ui/<shape>/` (see
 [the code](code.md)).
 
-`guition4848-s3` is the one build that compiles ESP-IDF from source
+`guition4848-s3` and `lcd4b-p4` are the builds that compile ESP-IDF from source
 (`custom_sdkconfig` in `platformio.ini` says why), so its first build takes
 about five minutes more. It needs PlatformIO Core 6.1.19 -- 6.2.0 stops it
 with `No module named 'SCons.Tool.FortranCommon'`
@@ -44,6 +45,18 @@ the two alternate. To build it beside the others, give it a home of its own:
 ```bash
 PLATFORMIO_CORE_DIR=~/.platformio-guition pio run -e guition4848-s3
 ```
+
+`lcd4b-p4` likewise, in a home of its own again (its ESP-Hosted differs),
+and its first build takes about twenty minutes:
+
+```bash
+PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e lcd4b-p4
+```
+
+Its component versions are pinned in the env's `custom_component_pins`,
+which `scripts/pin_components.py` writes into `.dummy/idf_component.yml`,
+the project pioarduino builds the libraries in. A change of pins rebuilds
+the libraries, as a change of `custom_sdkconfig` does.
 
 GitHub Actions builds every board on every push and pull request
 (`.github/workflows/build.yml`). Each run's page under **Actions** has the
@@ -101,6 +114,9 @@ device keeps its settings across a USB flash.
   CH343.
 - **MaTouch 2.1"**: the S3's own USB port, which also carries the console.
 - **4848S040**: a CH340 USB-serial bridge to UART0, which carries the console.
+- **P4 4B**: a CH343 USB-serial bridge to UART0, which carries the console.
+  The ESP32-C6 beside the P4 has its own firmware (ESP-Hosted), updated
+  over SDIO from the P4, not from this port.
 - **Qualia**: the firmware's USB port reboots into the bootloader on a
   different COM port partway through. If PlatformIO reports the old port gone,
   run the upload again, or name the bootloader's port with `--upload-port`.
@@ -157,6 +173,7 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 | 2.8C | 23, 26, 30, 36 -- the DFR1221's, at a text scale of 0.75 |
 | MaTouch 2.1" | 23, 26, 30, 36 -- the 2.8C's |
 | 4848S040 | 23, 26, 30, 36, and 15, 17, 20 for the lists -- the Qualia's sizes at two thirds |
+| P4 4B | 34, 38, 45, 54, and 23, 26, 30 for the lists -- the Qualia's |
 
 The character set is 305 glyphs: ASCII, the Latin-1 letters and
 punctuation, all of Latin Extended-A, Romanian's ș and ț, ẞ, and the dashes
