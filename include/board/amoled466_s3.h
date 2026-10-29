@@ -187,11 +187,12 @@ constexpr int kComposeSlabRows = 0;
 // --- Audio: ES8311 speaker codec, ES7210 microphone ADC --------------------
 // One I2S port, both directions: the S3 sends the speaker on DOUT and reads
 // the microphones on DIN, and is the clock for both codecs. They are set up
-// over the touch bus, in hardware/amoled466/audio_codec.cpp; pins and setup
-// are Waveshare's BSP for the 1.75. Two microphones face the front, on the
+// over the touch bus, in hardware/es8311_es7210.cpp; pins and setup are
+// Waveshare's BSP for the 1.75. Two microphones face the front, on the
 // ES7210's MIC1 and MIC2; only MIC1 is used. Its MIC3 is the speaker looped
 // back, for echo cancelling, which nothing here does.
 #define BOARD_HAS_MIC 1
+#define BOARD_AUDIO_ES8311_ES7210 1
 
 /** The 1.75C's is GPIO 16, as Waveshare's pin_config.h for it has it. */
 #ifdef BOARD_AMOLED466_175C

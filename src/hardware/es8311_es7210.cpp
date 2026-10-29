@@ -1,19 +1,28 @@
 #include "hardware/audio_codec.h"
 
+// The headless build has no board; the other boards without these codecs
+// leave BOARD_AUDIO_ES8311_ES7210 undefined, and this file is empty for them.
+#if defined(BOARD_HEADER)
+#include "board/board.h"
+#endif
+
+#if defined(BOARD_AUDIO_ES8311_ES7210)
+
 #include <Arduino.h>
 
-#include "board/board.h"
 #include "hardware/i2c_bus.h"
 #include "log.h"
 
 /**
- * The AMOLED 1.75's codecs: an ES8311 driving the speaker and an ES7210
- * reading the microphones, both I2S slaves at 16 kHz with MCLK at 256 x fs,
- * 4.096 MHz. Neither has a driver in the Arduino framework (Espressif's
- * esp_codec_dev is IDF-only), so the registers are written by hand. The
- * sequences are Waveshare's es8311.c and Espressif's esp_codec_dev es7210.c,
- * cut down to the one rate and format used here; run on the board on
- * 2026-10-14, where speech came back clear and Home Assistant understood it.
+ * An ES8311 driving the speaker and an ES7210 reading the microphones, both
+ * I2S slaves at 16 kHz with MCLK at 256 x fs, 4.096 MHz, set up over the
+ * touch controller's I2C bus: the pair the AMOLED 1.75 and the P4 4B both
+ * have, at the same addresses. Neither has a driver in the Arduino
+ * framework (Espressif's esp_codec_dev is IDF-only), so the registers are
+ * written by hand. The sequences are Waveshare's es8311.c and Espressif's
+ * esp_codec_dev es7210.c, cut down to the one rate and format used here; run
+ * on the AMOLED on 2026-10-14, where speech came back clear and Home
+ * Assistant understood it.
  */
 namespace hw::audio::codec {
 namespace {
@@ -168,3 +177,5 @@ void speaker(bool on) {
 }
 
 }  // namespace hw::audio::codec
+
+#endif  // BOARD_AUDIO_ES8311_ES7210
