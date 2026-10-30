@@ -1,0 +1,13 @@
+{
+  "name": "Home Assistant Media Remote (Waveshare ESP32-P4-WIFI6-Touch-LCD-4B, 720x720)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "parts": [
+        { "path": "firmware/firmware-lcd4b-p4-merged.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

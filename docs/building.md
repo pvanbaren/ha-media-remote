@@ -79,7 +79,9 @@ Edge or Opera on a computer (Web Serial; not Firefox, Safari or a phone).
 The **Qualia** goes into download mode by hand first -- hold BOOT, tap RESET,
 let go of BOOT -- since its USB port is the firmware's own and the browser
 cannot restart it into the bootloader. The **2.8C** is there from v1.2.0, the
-first release built with it.
+first release built with it, and the **P4 4B** from the first release built
+with it -- until then the workflow, which wants an image for every manifest,
+fails if it is run by hand.
 
 It writes the release's `firmware-<board>-merged.bin` from address 0, so like
 any merged image **it wipes the settings**: it is for a blank board, or one

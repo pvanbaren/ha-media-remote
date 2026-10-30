@@ -169,6 +169,18 @@
         <span slot="not-allowed" class="unsupported">Open this page over https to install.</span>
       </esp-web-install-button>
     </section>
+
+    <section class="board">
+      <div>
+        <h3>Waveshare ESP32-P4-WIFI6-Touch-LCD-4B</h3>
+        <p>4" 720×720 square, on an ESP32-P4. For a P4 before revision 3: see below.</p>
+      </div>
+      <esp-web-install-button manifest="manifest-lcd4b-p4.json">
+        <button slot="activate" class="install">Install</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on a computer to install.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over https to install.</span>
+      </esp-web-install-button>
+    </section>
   </div>
 
   <div class="note">
@@ -180,6 +192,7 @@
     <li>Use Chrome, Edge or Opera on a desktop or laptop. Firefox, Safari and phones can't flash over USB.</li>
     <li>Use a USB cable that carries data, not one for charging only.</li>
     <li><b>Qualia:</b> its USB port is run by the firmware, so the browser can't restart it into the bootloader by itself. Hold <b>BOOT</b>, tap <b>RESET</b>, then let go of <b>BOOT</b>, and click Install. If it does not start by itself when the install is done, tap <b>RESET</b>.</li>
+    <li><b>Waveshare 4B:</b> this firmware is built for an ESP32-P4 before revision 3 (the board it was made on has v1.3); a revision 3 P4 will not start it. Its Wi-Fi is an ESP32-C6 beside the P4, with firmware of its own; this has been tried with the C6 on ESP-Hosted 2.12.13.</li>
     <li>If no port is offered, unplug the board and plug it in again, or put it in download mode as for the Qualia.</li>
   </ul>
 
