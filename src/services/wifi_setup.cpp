@@ -26,6 +26,8 @@
 #include "services/ha_link.h"
 #include "services/ma_api.h"
 #include "services/player_list.h"
+#include "services/voice.h"
+#include "services/wake_word.h"
 
 bool s_long_press_handled = false;
 
@@ -326,6 +328,38 @@ void buildRecentHereSelect() {
            "<option value=\"0\"%s>Music Assistant</option></select",
            room ? " selected" : "", room ? "" : " selected");
   s_param_recent_here.setValue(room ? "1" : "0", 2);
+}
+
+/** Voice: Disabled, or the wake word the remote listens for. A dropdown as
+ *  Auto-off's is, of every word this build has, and on the page only in a
+ *  build with voice. */
+char s_voice_attrs[512] = " type=\"hidden\"";
+WiFiManagerParameter s_param_voice(
+    "voice", "Voice: listen for a wake word, and answer through Assist", "0",
+    2, s_voice_attrs);
+
+void buildVoiceSelect() {
+  const int voice = services::voice::setting();
+  size_t at = snprintf(
+      s_voice_attrs, sizeof(s_voice_attrs),
+      " type=\"hidden\"><select id=\"voice_sel\" "
+      "onchange='document.getElementById(\"voice\").value=this.value'>"
+      "<option value=\"0\"%s>Disabled</option>",
+      voice == 0 ? " selected" : "");
+  for (int i = 0; i < services::wake_word::kWordCount; ++i) {
+    const auto word = static_cast<services::wake_word::Word>(i);
+    if (services::wake_word::has(word) && at < sizeof(s_voice_attrs)) {
+      at += snprintf(s_voice_attrs + at, sizeof(s_voice_attrs) - at,
+                     "<option value=\"%d\"%s>%s</option>", i + 1,
+                     voice == i + 1 ? " selected" : "",
+                     services::wake_word::phraseOf(word));
+    }
+  }
+  if (at < sizeof(s_voice_attrs)) {
+    snprintf(s_voice_attrs + at, sizeof(s_voice_attrs) - at, "</select");
+  }
+  const char value[2] = {static_cast<char>('0' + voice), '\0'};
+  s_param_voice.setValue(value, 2);
 }
 
 void buildKeyboardSelect() {
@@ -788,6 +822,7 @@ void refreshPortalParamDefaults() {
   buildRotationSelect();
   buildKeyboardSelect();
   buildAutoOffSelect();
+  buildVoiceSelect();
   buildTxPowerSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
@@ -1071,6 +1106,13 @@ void onPortalParamsSaved() {
   }
   buildAutoOffSelect();  // the choice just saved, marked
 
+  const char* voice = submitted("voice") ? s_param_voice.getValue() : nullptr;
+  if (voice != nullptr && voice[0] >= '0' && voice[0] <= '9' &&
+      voice[1] == '\0' && voice[0] - '0' != services::voice::setting()) {
+    services::voice::saveSetting(voice[0] - '0');  // refuses a word not here
+  }
+  buildVoiceSelect();  // the choice just saved, marked
+
   const char* txpow = submitted("txpow") ? s_param_txpow.getValue() : nullptr;
   if (txpow != nullptr && txpow[0] != '\0') {
     char* end = nullptr;
@@ -1149,6 +1191,9 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_rotation);
   wm.addParameter(&s_param_keyboard);
   wm.addParameter(&s_param_auto_off);
+  if (services::voice::built()) {
+    wm.addParameter(&s_param_voice);
+  }
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 

@@ -11,8 +11,8 @@
  * It does not listen while a request is listening or a reply is playing --
  * the remote's own voice is no wake word -- and starts afresh after.
  *
- * On a board without a microphone, or one built without any of the models,
- * init() says false and nothing here does anything.
+ * In a build without voice (see services/voice.h), or one without any of the
+ * models, init() says false and nothing here does anything.
  */
 namespace services::wake_word {
 

@@ -27,7 +27,19 @@
 
 #include "services/voice.h"
 
+// The headless build has no board.
+#if defined(BOARD_HEADER)
+#include "board/board.h"
+#endif
+
+#if defined(VOICE_ASSIST)
+
+#if !defined(BOARD_HAS_MIC)
+#error "VOICE_ASSIST is for a board with a microphone (BOARD_HAS_MIC)"
+#endif
+
 #include <Arduino.h>
+#include <Preferences.h>
 
 #include <atomic>
 #include <cctype>
@@ -44,6 +56,7 @@
 #include "hardware/audio.h"
 #include "log.h"
 #include "services/ha_client.h"
+#include "services/wake_word.h"
 #include "services/yielding_client.h"
 
 namespace services::voice {
@@ -53,6 +66,17 @@ using ha::detail::eachMember;
 using ha::detail::readJson;
 
 constexpr hw::audio::Reader kMic = hw::audio::Reader::kRequest;
+
+constexpr char kPrefsNamespace[] = "voice";
+/** The Voice setting: 0 Disabled, or 1 + a wake_word::Word. */
+constexpr char kPrefsWakeKey[] = "wake";
+/** Before there was a choice of wake word, an on/off switch, on by default.
+ *  Not read -- a remote waits to be given a wake word -- and removed when
+ *  the setting is next stored. */
+constexpr char kPrefsOldEnabledKey[] = "enabled";
+
+/** The Voice setting, read in init(). */
+std::atomic<uint8_t> s_setting{0};
 
 constexpr char kRunBody[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"stt\","
@@ -729,7 +753,23 @@ void voiceTask(void*) {
 }  // namespace
 
 void init() {
-  if (s_jobs != nullptr || !hw::audio::begin()) {
+  if (s_jobs != nullptr) {
+    return;
+  }
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, true)) {
+    const uint8_t stored = prefs.getUChar(kPrefsWakeKey, 0);
+    // A word this build no longer has is as none chosen.
+    if (stored >= 1 && stored <= wake_word::kWordCount &&
+        wake_word::has(static_cast<wake_word::Word>(stored - 1))) {
+      s_setting = stored;
+      wake_word::setWord(static_cast<wake_word::Word>(stored - 1));
+    }
+    prefs.end();
+  }
+  // The audio starts either way, so that the setting can be turned on
+  // again without a restart.
+  if (!hw::audio::begin()) {
     return;
   }
   hw::audio::setVolume(config::kVoiceVolume);
@@ -755,11 +795,52 @@ void init() {
   }
   ha::setStreamHook(hook);
   ha::setStreamListener(listener);
-  LOG_INFO("VOICE: ready");
+  if (s_setting != 0) {
+    LOG_INFO("VOICE: ready, listening for \"%s\"", wake_word::phrase());
+  } else {
+    LOG_INFO("VOICE: ready, but disabled");
+  }
+}
+
+int setting() {
+  return s_setting;
+}
+
+bool enabled() {
+  return s_setting != 0;
+}
+
+bool saveSetting(int value) {
+  if (value < 0 || value > wake_word::kWordCount ||
+      (value > 0 && !wake_word::has(static_cast<wake_word::Word>(value - 1)))) {
+    return false;
+  }
+  if (value > 0) {
+    wake_word::setWord(static_cast<wake_word::Word>(value - 1));
+  }
+  s_setting = static_cast<uint8_t>(value);
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, false)) {
+    prefs.putUChar(kPrefsWakeKey, static_cast<uint8_t>(value));
+    prefs.remove(kPrefsOldEnabledKey);
+    prefs.end();
+  }
+  if (value == 0) {
+    cancel();
+  }
+  // A no-op where the wake word never started.
+  wake_word::setListening(value != 0);
+  if (value != 0) {
+    LOG_INFO("VOICE: listening for \"%s\"", wake_word::phrase());
+  } else {
+    LOG_INFO("VOICE: disabled");
+  }
+  return true;
 }
 
 bool available() {
-  return s_jobs != nullptr && hw::audio::ready() && ha::streamIsOpen();
+  return s_setting != 0 && s_jobs != nullptr && hw::audio::ready() &&
+         ha::streamIsOpen();
 }
 
 namespace {
@@ -857,3 +938,25 @@ void status(Status& out) {
 }
 
 }  // namespace services::voice
+
+#else  // a build without voice
+
+namespace services::voice {
+
+void init() {}
+int setting() { return 0; }
+bool enabled() { return false; }
+bool saveSetting(int) { return false; }
+bool available() { return false; }
+bool start() { return false; }
+bool startAt(uint32_t) { return false; }
+bool say(const char*) { return false; }
+void finish() {}
+void cancel() {}
+bool busy() { return false; }
+uint16_t level() { return 0; }
+void status(Status& out) { out = Status{}; }
+
+}  // namespace services::voice
+
+#endif  // VOICE_ASSIST

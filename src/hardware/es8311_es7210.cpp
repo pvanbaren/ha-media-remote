@@ -1,12 +1,14 @@
 #include "hardware/audio_codec.h"
 
 // The headless build has no board; the other boards without these codecs
-// leave BOARD_AUDIO_ES8311_ES7210 undefined, and this file is empty for them.
+// leave BOARD_AUDIO_ES8311_ES7210 undefined, and this file is empty for them,
+// as it is in a build without voice (-DVOICE_ASSIST), which nothing calls
+// it in.
 #if defined(BOARD_HEADER)
 #include "board/board.h"
 #endif
 
-#if defined(BOARD_AUDIO_ES8311_ES7210)
+#if defined(BOARD_AUDIO_ES8311_ES7210) && defined(VOICE_ASSIST)
 
 #include <Arduino.h>
 
@@ -178,4 +180,4 @@ void speaker(bool on) {
 
 }  // namespace hw::audio::codec
 
-#endif  // BOARD_AUDIO_ES8311_ES7210
+#endif  // BOARD_AUDIO_ES8311_ES7210 && VOICE_ASSIST

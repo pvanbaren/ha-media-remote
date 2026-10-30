@@ -19,9 +19,14 @@
  * a board with a microphone. One is loaded at a time, the one chosen, into
  * the same arenas. Where a model is not embedded its symbol is not there,
  * and it is not offered.
+ *
+ * In a build without voice (-DVOICE_ASSIST, services/voice.h) this is the
+ * stubs at the end, and TensorFlow Lite Micro is not linked in at all.
  */
 
 #include "services/wake_word.h"
+
+#if defined(VOICE_ASSIST)
 
 #include <Arduino.h>
 
@@ -459,3 +464,22 @@ void takeStats(Stats& out) {
 }
 
 }  // namespace services::wake_word
+
+#else  // a build without voice
+
+namespace services::wake_word {
+
+bool has(Word) { return false; }
+const char* phraseOf(Word) { return ""; }
+bool init() { return false; }
+void setWord(Word) {}
+Word word() { return Word::kHeyJarvis; }
+void setListening(bool) {}
+bool listening() { return false; }
+const char* phrase() { return ""; }
+bool takeDetection(uint32_t&) { return false; }
+void takeStats(Stats& out) { out = Stats{}; }
+
+}  // namespace services::wake_word
+
+#endif  // VOICE_ASSIST

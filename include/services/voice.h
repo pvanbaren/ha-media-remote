@@ -16,8 +16,25 @@
  *
  * start() and the rest may be called from any task. The work happens on the
  * stream's owner and on a small task of this module's own.
+ *
+ * Two switches. A build has voice only if its env opts in, with
+ * -DVOICE_ASSIST in its build_flags, on a board with a microphone; without
+ * it, the audio, this and the wake word are stubs, and none of their code or
+ * the wake word's model is in the image. And a build that has it can be
+ * told not to use it -- the Voice setting, on the device and in the portal,
+ * stored with saveSetting(): Disabled, the default, or the wake word to
+ * listen for.
  */
 namespace services::voice {
+
+/** Whether this build has voice at all (-DVOICE_ASSIST). */
+constexpr bool built() {
+#if defined(VOICE_ASSIST)
+  return true;
+#else
+  return false;
+#endif
+}
 
 enum class Phase : uint8_t {
   kIdle,
@@ -43,11 +60,24 @@ struct Status {
 };
 
 /** Once, after services::ha::init(): starts the audio and hooks into the
- *  stream. Harmless on a board without a microphone. */
+ *  stream, and reads the Voice setting. Harmless in a build without voice. */
 void init();
 
-/** True when a request can be started now: there is a microphone, and the
- *  stream is open. */
+/** The Voice setting as one value: 0 for Disabled, or 1 + the
+ *  wake_word::Word listened for. Disabled until a wake word is chosen: a
+ *  remote never listens until someone has asked it to. Always 0 in a build
+ *  without voice. */
+int setting();
+/** Whether requests may be made, and the wake word is listened for: a wake
+ *  word is chosen. */
+bool enabled();
+/** Store the setting, 0 to kWordCount, a word this build has. Disabled, a
+ *  request under way is dropped and the wake word stops listening; a word
+ *  chosen, it listens for that one. False for a value it cannot take. */
+bool saveSetting(int value);
+
+/** True when a request can be started now: there is a microphone, the
+ *  Voice setting is on, and the stream is open. */
 bool available();
 
 /** Start a request: a beep, then listening. False when one is already

@@ -285,6 +285,7 @@ row a setting's name over its value:
 | Player volume at switch-on | Off, or 10% to 100% |
 | Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |
 | Recent list | Room only, or Music Assistant: whether the list's top section is the artists played in this room, or on any player |
+| Voice | Disabled, or the wake word to listen for: Hey Jarvis, Okay Nabu, Hey Mycroft or Alexa. Only in a build with voice |
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
@@ -655,6 +656,16 @@ screen blanks after five minutes with the player paused, idle or off;
 *Disabled* leaves it on, and the screen still blanks
 ([Blanking, and the amplifier](#blanking-and-the-amplifier)). The default for a
 remote that has never stored one is `config::kTurnOffControlOnBlank`.
+
+**Voice** *(only in a build with voice)* -- *Disabled*, the default, takes
+no voice requests and listens for nothing; choosing a wake word -- *Hey
+Jarvis*, *Okay Nabu*, *Hey Mycroft* or *Alexa*, microWakeWord's four, each
+with the threshold its model's manifest gives -- listens for that one and
+answers voice requests through Home Assistant's Assist. A remote never
+listens until someone has picked a wake word on it. The microphone and the
+speaker stay set up either way, so turning it back on needs no restart. The
+default for a remote that has never stored one is
+`config::kVoiceEnabledByDefault`.
 
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the

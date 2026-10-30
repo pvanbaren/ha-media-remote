@@ -1,11 +1,13 @@
 #include "hardware/audio.h"
 
-// The headless build has no board, and no audio: it gets the no-ops below.
+// The headless build has no board, and no audio: it gets the no-ops below,
+// as does any build without voice (-DVOICE_ASSIST, services/voice.h), whose
+// audio this is.
 #if defined(BOARD_HEADER)
 #include "board/board.h"
 #endif
 
-#if defined(BOARD_HAS_MIC)
+#if defined(BOARD_HAS_MIC) && defined(VOICE_ASSIST)
 
 #include <Arduino.h>
 #include <ESP_I2S.h>
@@ -673,7 +675,7 @@ bool playing() {
 
 }  // namespace hw::audio
 
-#else  // no microphone or speaker on this board
+#else  // no microphone or speaker on this board, or no voice in this build
 
 namespace hw::audio {
 
