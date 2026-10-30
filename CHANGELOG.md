@@ -25,6 +25,8 @@ GitHub release from that version's section, with
 - **Auto-off setting:** whether the volume device is switched off when the screen blanks after five minutes idle, on the device's settings page and in the portal. On by default, as before; off leaves the volume device alone while the screen still blanks.
 - **Search for more than artists:** a pill between the name and the keys picks what the search looks for -- Artist, Album, Track, Playlist or Radio -- a tap stepping to the next. Albums and tracks are listed with their artist. An artist still starts its radio; anything else plays as itself.
 - The swipe-up list has the back button the other pages have, on its first heading at the heading's size, scrolling away with it.
+- An artist tapped on the swipe-up list, under Recent here or Recommended, starts the artist's radio, as one picked in the search does, rather than playing their tracks straight through. The card says "Starting radio...".
+- **Favourite artists stand in for Recommended:** until the room has recommendations, or without a Music Assistant token, Recommended lists your favourite artists in Music Assistant, topped up with others from the library at random, instead of a random draw of albums. An artist already under Recent here is not listed again.
 
 ### Changed
 

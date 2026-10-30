@@ -245,7 +245,9 @@ every six hours regardless. Each artist in the pool counts how many seeds
 pointed at it. A list load **draws eight at random, weighted by that count**,
 leaving out anyone already on Recent here: the section changes from one load
 to the next and leans toward the artists more than one seed agrees on. Until
-there is a pool, a random draw of library albums stands in.
+there is a pool, the library's favourite artists stand in, topped up with
+others at random (`favorites_first` in `kBrowseSections`); a library query
+asks for a list's worth and leaves out anyone an earlier section shows.
 
 ## The list and the search
 

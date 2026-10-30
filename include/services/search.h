@@ -53,7 +53,7 @@ int count();
 /** nullptr when `index` is out of range. */
 const ha::LibraryItem* at(int index);
 /** Whether result `index` is played as radio, an endless queue seeded from
- *  it: an artist, when config::kSearchPlaysRadio. Anything else -- an
+ *  it: an artist, when config::kArtistsPlayRadio. Anything else -- an
  *  album, a track, a playlist, a station -- plays as itself. */
 bool playsAsRadio(int index);
 

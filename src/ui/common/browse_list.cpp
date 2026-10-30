@@ -573,7 +573,9 @@ void showStarting(int row_index) {
   displayFontApplyHeight(gfx, theme::kListHeaderTextPx);
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(theme::kTextMuted);
-  gfx.drawString("Starting...", theme::kCenterX,
+  gfx.drawString(services::browse::playsAsRadio(row.item) ? "Starting radio..."
+                                                         : "Starting...",
+                 theme::kCenterX,
                  card_top + theme::kListRowHeight + theme::px(16));
   back_button::draw(gfx);
   ui::canvasPresent();

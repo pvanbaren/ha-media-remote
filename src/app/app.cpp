@@ -2533,6 +2533,7 @@ void portalIdle() {
         job.kind = CommandKind::kPlayItem;
         job.power_first = true;
         job.generation = g_play_generation;
+        job.radio = services::browse::playsAsRadio(in.index);
         if (services::browse::itemAt(in.index, job.item)) {
           startPlaying(queueCommand(job));
         }

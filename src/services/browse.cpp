@@ -22,6 +22,9 @@ ha::LibraryItem s_items[config::kMaxBrowseItems];
 /** Staged here rather than on the caller's stack: ten items are ~3 KB, and
  *  refresh() runs on the Arduino loop task alongside an open TLS connection. */
 ha::LibraryItem s_fetching[config::kMaxBrowseItems];
+/** A library query's answer, before what the list already shows is taken out
+ *  of it: PSRAM, claimed on the first one. */
+ha::LibraryItem* s_library = nullptr;
 int s_count = 0;
 Problem s_problem = Problem::kNotLoaded;
 
@@ -99,6 +102,41 @@ int roomArtists(int want, ha::LibraryItem* out) {
   return n;
 }
 
+bool listed(const ha::LibraryItem* list, int count, const char* name) {
+  for (int i = 0; i < count; ++i) {
+    if (strcasecmp(list[i].name, name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Up to `want` items from a section's library query into list[have...],
+ *  leaving out any of the `have` before them -- an artist on Recent here is
+ *  not offered again under Recommended. Asks for a list's worth, so what is
+ *  left out can be made up. The count added, or -1 when the request failed. */
+int fetchUnique(const config::BrowseSection& section, bool favorites,
+                int want, ha::LibraryItem* list, int have) {
+  if (s_library == nullptr) {
+    s_library = static_cast<ha::LibraryItem*>(heap_caps_calloc_prefer(
+        config::kMaxBrowseItems, sizeof(ha::LibraryItem), 2,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_8BIT));
+    if (s_library == nullptr) {
+      return -1;
+    }
+  }
+  const int got = ha::fetchLibrary(section.media_type, section.order_by,
+                                   config::kMaxBrowseItems, s_library,
+                                   config::kMaxBrowseItems, favorites);
+  int n = 0;
+  for (int i = 0; i < got && n < want; ++i) {
+    if (!listed(list, have + n, s_library[i].name)) {
+      list[have + n++] = s_library[i];
+    }
+  }
+  return got < 0 ? -1 : n;
+}
+
 /** Where the room sections come from, as one number: a change in the
  *  history, the recommendations or the Music Assistant settings -- a token
  *  saved, which is what switches the room sections on -- means a reload. */
@@ -111,8 +149,8 @@ uint32_t roomGeneration() {
 /** The room's own sections are on only with a Music Assistant token: they
  *  are this device's history and the similar artists drawn from it, and
  *  without the token there are no similar artists to draw. Without one both
- *  sections are the server's -- its recent artists and a random draw of
- *  albums, as they always were. */
+ *  sections are the server's -- its recent artists, and its favourite
+ *  artists topped up with others at random. */
 bool roomSectionsOn() { return ma::configured(); }
 
 /** The load itself. The caller holds the lock. */
@@ -174,8 +212,18 @@ bool loadLocked() {
           section.fallback_title != nullptr) {
         titles[i] = section.fallback_title;
       }
-      got = ha::fetchLibrary(section.media_type, section.order_by, want,
-                             &s_fetching[total], static_cast<size_t>(room));
+      int favorites = section.favorites_first
+                          ? fetchUnique(section, true, want, s_fetching, total)
+                          : 0;
+      if (favorites < 0) {
+        favorites = 0;
+      }
+      got = favorites;
+      if (favorites < want) {
+        const int rest = fetchUnique(section, false, want - favorites,
+                                     s_fetching, total + favorites);
+        got = rest >= 0 ? favorites + rest : (favorites > 0 ? favorites : -1);
+      }
     }
     if (got < 0) {
       // One section failing should not empty the others; it simply shows
@@ -311,6 +359,12 @@ bool itemAt(int index, ha::LibraryItem& out) {
   }
   out = s_items[index];
   return true;
+}
+
+bool playsAsRadio(int index) {
+  Guard guard;
+  return config::kArtistsPlayRadio && index >= 0 && index < s_count &&
+         strcmp(s_items[index].media_type, "artist") == 0;
 }
 
 bool imageUrlAt(int index, char* out, size_t out_len) {

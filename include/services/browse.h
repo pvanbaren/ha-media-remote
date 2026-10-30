@@ -100,6 +100,11 @@ bool rowAt(int index, Row& out);
  *  list meanwhile cannot change what is played. False when out of range. */
 bool itemAt(int index, ha::LibraryItem& out);
 
+/** Whether item `index` is played as radio, an endless queue seeded from it:
+ *  an artist, when config::kArtistsPlayRadio. Anything else plays as
+ *  itself. */
+bool playsAsRadio(int index);
+
 /** Copy item `index`'s artwork URL into `out`, empty when it has none. False
  *  when `index` is not an item. Taken under the lock and returned by value,
  *  like everything else here. */

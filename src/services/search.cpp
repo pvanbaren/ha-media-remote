@@ -103,7 +103,7 @@ const ha::LibraryItem* at(int index) {
 
 bool playsAsRadio(int index) {
   const ha::LibraryItem* item = at(index);
-  return config::kSearchPlaysRadio && item != nullptr &&
+  return config::kArtistsPlayRadio && item != nullptr &&
          strcmp(item->media_type, "artist") == 0;
 }
 

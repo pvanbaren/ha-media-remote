@@ -1930,7 +1930,7 @@ void saveMaConfigEntry(const char* entry_id) {
 }
 
 int fetchLibrary(const char* media_type, const char* order_by, int limit,
-                 LibraryItem* out, size_t capacity) {
+                 LibraryItem* out, size_t capacity, bool favorites) {
   if (out == nullptr || capacity == 0 || media_type == nullptr) {
     return -1;
   }
@@ -1949,6 +1949,9 @@ int fetchLibrary(const char* media_type, const char* order_by, int limit,
   if (order_by != nullptr && order_by[0] != '\0') {
     body += ",\"order_by\":";
     appendJsonString(body, order_by);
+  }
+  if (favorites) {
+    body += ",\"favorite\":true";
   }
   body += ",\"limit\":";
   body += limit;

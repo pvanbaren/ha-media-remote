@@ -150,20 +150,25 @@ Details worth knowing:
 ### The swipe-up list
 
 **Swipe up** on now playing for a short list in two sections, each row with
-its artwork; **tap a row to play it**. The row stays on screen with
-"Starting..." under it while Music Assistant builds the queue -- four seconds
-and more for an artist.
+its artwork; **tap a row to play it**. An artist plays as **radio**, an
+endless queue seeded from them, as from the search; an album plays as itself.
+The row stays on screen with "Starting radio..." or "Starting..." under it
+while Music Assistant builds the queue -- four seconds and more for an
+artist.
 
 | Section | With a Music Assistant token | Without one |
 |---|---|---|
 | **Recent here** | The last artists heard *in this room*, most recent first | Music Assistant's recent artists, headed "Recent artists" |
-| **Recommended** | Artists similar to this room's recent ones, a fresh draw each load | A random draw of library albums |
+| **Recommended** | Artists similar to this room's recent ones, a fresh draw each load | Your favourite artists in Music Assistant, topped up with others from the library at random |
 
 "This room" is this remote's player: Music Assistant's own "recently played"
 is shared by every player on the server, so two remotes in two rooms would
 otherwise show the same list. How the room's list and the recommendations are
 kept is in [Recent here](docs/internals.md#recent-here-the-rooms-history) and
-[Recommended](docs/internals.md#recommended-artists-like-this-rooms).
+[Recommended](docs/internals.md#recommended-artists-like-this-rooms). Until
+the room has recommendations, Recommended lists the favourites, as it does
+without a token. An artist already under Recent here is not listed again
+under Recommended.
 
 The list follows your finger and glides on release. **Tap the title strip** or
 **swipe right** to go back; it also goes back by itself after a minute
@@ -183,8 +188,8 @@ time the search opens. Albums and tracks are listed with their artist after
 the title.
 
 An artist's **radio** starts: an endless queue seeded from them, which is
-what a wall remote is for (`kSearchPlaysRadio` plays the artist straight
-instead). An album, a track, a playlist or a station plays as itself.
+what a wall remote is for (`kArtistsPlayRadio` plays the artist straight
+instead, here and on the swipe-up list). An album, a track, a playlist or a station plays as itself.
 
 The keyboard is **alphabetical** by default, seven keys to a row, the last two
 space and backspace. The **Search keyboard** setting, on the device or in
@@ -379,7 +384,7 @@ wakes the screen leave it alone. Details in
 | Player list | Drag up / down, then tap a player | Choose it; the last row fetches the list again |
 | Player list | Tap the gear, top right | Open the settings |
 | List | Drag up / down | Scroll; it glides on release |
-| List | Tap a row | Play it |
+| List | Tap a row | Play it: an artist as radio, an album as itself |
 | List | Tap the title strip, or swipe right | Back to now playing |
 | List | Swipe left | Search |
 | Search | Tap keys, then SEARCH | Search |

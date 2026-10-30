@@ -135,6 +135,9 @@ struct BrowseSection {
   /** The heading while the library query stands in for the room, or nullptr
    *  to keep `title`. */
   const char* fallback_title = nullptr;
+  /** The library query takes the library's favourites first, topped up from
+   *  the whole library when there are too few. */
+  bool favorites_first = false;
 };
 
 /** How many of the room's most recent artists "Recommended" is built from.
@@ -176,14 +179,18 @@ constexpr size_t kMaResponseMaxBytes = 192 * 1024;
  *  "Recommended" is artists like the room's recent ones, from Music
  *  Assistant's own API (services::recommend), which needs its token in the
  *  portal. Built in the background and drawn from at random, so a load costs
- *  nothing; a random draw of library albums stands in until it has any.
+ *  nothing. Until it has any, the library's favourite artists stand in,
+ *  topped up with others at random -- artists, so that a tap starts radio,
+ *  as it does on the rest of the list.
  *
  *  A library query costs a request when the list loads -- which, once the
- *  room has a history, is only a stand-in's. */
+ *  room has a history, is only a stand-in's -- and leaves out whatever an
+ *  earlier section already shows. */
 constexpr BrowseSection kBrowseSections[] = {
     {"Recent here", "artist", "last_played_desc", 8,
      BrowseSource::kRoomArtists, "Recent artists"},
-    {"Recommended", "album", "random", 8, BrowseSource::kRoomSimilar, nullptr},
+    {"Recommended", "artist", "random", 8, BrowseSource::kRoomSimilar, nullptr,
+     true},
 };
 constexpr int kBrowseSectionCount =
     static_cast<int>(sizeof(kBrowseSections) / sizeof(kBrowseSections[0]));
@@ -209,11 +216,12 @@ constexpr size_t kSearchQueryMaxLen = 24;
 /** Results held. More than fits on screen at once, so the list scrolls. */
 constexpr int kMaxSearchResults = 8;
 
-/** Play the chosen artist as *radio* -- an endless queue seeded from them --
- *  rather than playing their tracks straight through. Artist radio is the
- *  reason to search for an artist from a wall remote; playing a discography
+/** Play a chosen artist -- from the search, or from Recent here or
+ *  Recommended on the swipe-up list -- as *radio*, an endless queue seeded
+ *  from them, rather than playing their tracks straight through. Artist radio
+ *  is the reason to pick an artist from a wall remote; playing a discography
  *  in order is something you would reach for a phone to do. */
-constexpr bool kSearchPlaysRadio = true;
+constexpr bool kArtistsPlayRadio = true;
 
 /** How long the list stays fresh before a reopen refetches it. Short enough
  *  that "recent artists" means it, and that a random "Recommended" draw is
