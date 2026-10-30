@@ -230,7 +230,7 @@ constexpr unsigned long kBrowseRetryMs = 60000;
 /** Most media_player entities a picker will hold. Entities past this are
  *  dropped from the list and become unselectable, so it has to clear the real
  *  count: a house with Chromecasts, a receiver's zones and a Music Assistant
- *  bridge runs to dozens. ~110 bytes each, so this array is ~10 KB. */
+ *  bridge runs to dozens. ~105 bytes each, so this array is ~10 KB, in PSRAM. */
 constexpr size_t kMaxPlayers = 96;
 
 /** Player controlled until one is chosen in the portal. Whatever the portal
