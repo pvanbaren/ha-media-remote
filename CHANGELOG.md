@@ -12,35 +12,42 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-30
+
+This release adds three boards -- the Guition ESP32-4848S040, the Waveshare AMOLED 1.75 and the Waveshare ESP32-P4 4B, the first on an ESP32-P4 -- and shows how far through the track it is, in the album art's colour, with a drag along the line to seek. The search finds albums, tracks, playlists and radio as well as artists, an artist on the swipe-up list starts their radio, and the screen no longer stops while Home Assistant answers a button.
+
 ### Added
 
-- **Waveshare ESP32-P4-WIFI6-Touch-LCD-4B:** a 4" square 720×720 ST7703 on MIPI-DSI with GT911 touch, on an ESP32-P4 with an ESP32-C6 for Wi-Fi, built as `lcd4b-p4` and laid out as the Qualia. Made for a P4 before revision 3 (this one is v1.3); a revision 3 board needs the `esp32-p4_r3` board definition. It builds ESP-IDF from source with a newer ESP-Hosted (2.13.1) than the Arduino core ships, and its network buffers in PSRAM: with the stock libraries the link to the C6 stalled for good at the first cover art download. The C6 should run ESP-Hosted 2.12.13 or later. On the install page.
-- **Track progress on now playing:** an arc in the gap at the foot of the volume ring on the round boards, a bar along the foot of the screen on the square ones, under the elapsed chip. It takes its colour from the album art -- the cover's most prominent strong colour, lifted to full brightness -- as does the ring of a pressed transport button; a black and white cover, or none, leaves both in the accent colour. Not shown for a stream with no duration, or while offline.
-- **"Off in this room":** while the player is playing but this room's separate volume device is off, an amber chip says so at the top of now playing, where the "+N rooms" chip goes. A tap there switches the room on, as a tap on the top half does.
-- **Seek by dragging the progress line:** a sideways drag that starts on the progress arc or bar, or on the elapsed chip over it, moves the track to the point under the finger when it lets go; the line and the chip show that time while it is held. Only where the player can seek.
-- **Guition (Sunton) ESP32-4848S040**, also sold as AITRIP's "ESP32-S3 4.0 inch 480 × 480": a 4" square 480×480 ST7701 with GT911 touch, built as `guition4848-s3`, laid out as the Qualia at two thirds of its pixels. GPIO 0 is a display line on this board, so there is no BOOT button: a finger held on the screen for 10 s, begun within 15 s of power-up, clears the settings instead. Its panel needs a small bounce buffer, which the other RGB boards do without.
-- **Waveshare ESP32-S3-Touch-AMOLED-1.75:** a 1.75" round 466 px CO5300 AMOLED with CST9217 touch, built as `amoled466-s3` and on the install page, at a brightness of 200 of 255 since an OLED ages with what it shows. Made for the 1.75 (Rev 1.1, with an SD card slot); the 1.75C has its resets on other pins and has not been tried. The USB-C port is the S3's own USB, so uploads and the serial console need no driver.
-- The Starting... card shown after picking something from the list or the search has the back button, which stops waiting for it, for when Music Assistant is slow to start it; a swipe right or the MaTouch's knob does the same. A swipe down from it opens the status page, and the settings from there, as from now playing. A pick not yet sent to Home Assistant is dropped; one already sent still starts.
-- **A source with its own power keeps the room on:** when the volume device is on a source that can switch itself on and off -- a Control4 room, a TV being cast to -- the screen no longer blanks and the volume device is no longer switched off while that source is idle or paused; the five minutes start once the source itself is off. A source without power of its own, such as a Music Assistant player, goes off as before.
-- **Auto-off setting:** whether the volume device is switched off when the screen blanks after five minutes idle, on the device's settings page and in the portal. On by default, as before; off leaves the volume device alone while the screen still blanks.
-- **Search for more than artists:** a pill between the name and the keys picks what the search looks for -- Artist, Album, Track, Playlist or Radio -- a tap stepping to the next. Albums and tracks are listed with their artist. An artist still starts its radio; anything else plays as itself.
-- The swipe-up list has the back button the other pages have, on its first heading at the heading's size, scrolling away with it.
-- An artist tapped on the swipe-up list, under Recent here or Recommended, starts the artist's radio, as one picked in the search does, rather than playing their tracks straight through. The card says "Starting radio...".
-- **Favourite artists stand in for Recommended:** until the room has recommendations, or without a Music Assistant token, Recommended lists your favourite artists in Music Assistant, topped up with others from the library at random, instead of a random draw of albums. An artist already under Recent here is not listed again.
+- **Waveshare ESP32-P4-WIFI6-Touch-LCD-4B:** a 4" square 720×720 ST7703 on MIPI-DSI with GT911 touch, on an ESP32-P4 with an ESP32-C6 for Wi-Fi, built as `lcd4b-p4`, laid out as the Qualia, and on the install page. For a P4 before revision 3; a revision 3 board needs the `esp32-p4_r3` board definition. It is built with ESP-Hosted 2.13.1 and its network buffers in PSRAM -- with the stock libraries the link to the C6 stalled for good at the first cover art download -- and the C6 should run ESP-Hosted 2.12.13 or later. It asks for 1024 px cover art; a cover smaller than that at its source comes whole.
+- **Guition (Sunton) ESP32-4848S040**, also sold as AITRIP's "ESP32-S3 4.0 inch 480 × 480": a 4" square 480×480 ST7701 with GT911 touch, built as `guition4848-s3`, laid out as the Qualia at two thirds of its pixels, and on the install page. It has no BOOT button, GPIO 0 being a display line: a finger held on the screen for 10 s, begun within 15 s of power-up, clears the settings instead.
+- **Waveshare ESP32-S3-Touch-AMOLED-1.75:** a 1.75" round 466 px CO5300 AMOLED with CST9217 touch, built as `amoled466-s3` and on the install page, at a brightness of 200 of 255 since an OLED ages with what it shows. For the 1.75 (Rev 1.1, with an SD card slot); the 1.75C has its resets on other pins and has not been tried.
+- **Track progress on now playing:** an arc at the foot of the volume ring on the round boards, a bar along the foot of the screen on the square ones. It takes its colour from the album art -- the cover's most prominent strong colour, at full brightness -- as does the ring of a pressed transport button; a black and white cover, or none, leaves both in the accent colour.
+- **Seek by dragging the progress line:** a sideways drag that starts on the arc or bar, or on the elapsed chip, moves the track to the point under the finger when it lets go. Only where the player can seek.
+- **Search for more than artists:** a pill between the name and the keys picks Artist, Album, Track, Playlist or Radio, a tap stepping to the next. Albums and tracks are listed with their artist. An artist still starts their radio; anything else plays as itself.
+- **"Off in this room":** while the player plays but this room's volume device is off, an amber chip at the top of now playing says so; a tap switches the room on.
+- **Auto-off setting:** whether the volume device is switched off when the screen blanks after five minutes idle, on the device's settings page and in the portal. On by default, as before.
+- **A source with its own power keeps the room on:** when the volume device is on a source that can switch itself off -- a Control4 room, a TV being cast to -- the screen no longer blanks and the device is not switched off while that source is idle or paused; the five minutes start once the source is off.
+- **Favourite artists stand in for Recommended:** until the room has recommendations, or without a Music Assistant token, Recommended lists your favourite artists in Music Assistant, topped up from the library at random, instead of random albums. An artist already under Recent here is not listed again.
+- **A way back from Starting...:** the card shown after a pick has the back button, which stops waiting -- as do a swipe right and the MaTouch's knob -- and a swipe down to the status page. A pick not yet sent to Home Assistant is dropped; one already sent still starts.
+- The swipe-up list has the back button, on its first heading.
 
 ### Changed
 
-- A swipe left goes back on the search and on the volume device's inputs, as a swipe right already did.
-- A quick flick sideways across the top half of now playing is the swipe to the search (left) or the inputs (right), as in the lower half, rather than a jump in the volume. A slower drag there sets the volume as before, starting a quarter of a second in.
-- On the square boards the swipe-up list starts near the top of the screen, without the empty band above it. Round boards keep it, to keep the first row out of the circle's narrow top.
-- With the screen turned a quarter, the RGB boards copy each repaint a tile at a time, moving a fraction of the memory they did; on the 4848S040 the old copy showed as vertical noise.
-- More internal RAM is left for Home Assistant's secure connections: ordinary allocations of 256 bytes and up go to PSRAM first, where before only those of 4 KB and up did -- about 13 KB more free. On the boards whose screen is scanned out of PSRAM (the Qualia, the 2.8C, the MaTouch and the 4848S040) it is 2 KB and up, about 5 KB more: lower than that, the small allocations' traffic made the 2.8C's and the Qualia's pictures blink and jump. The media player list, about 10 KB, is kept in PSRAM too.
+- **The screen keeps going while Home Assistant answers:** play, pause, skip, the volume, power, an input and a pick were sent from the loop that reads touch and paints the screen, which stood still until the answer came -- six seconds for play on an idle Music Assistant player. They go from a task of their own now; the button shows the change at once and stays lit until the answer.
+- **An artist on the swipe-up list starts their radio**, under Recent here or Recommended, as one picked in the search does, rather than playing their tracks straight through.
+- **Swipes:** a swipe left goes back on the search and on the inputs, as a swipe right did. A quick flick across the top half of now playing is the swipe to the search or the inputs, as on the lower half; a slower drag there still sets the volume.
+- On the square boards the swipe-up list starts near the top of the screen, without the empty band above it.
+- **Sharper covers on the Qualia:** 512 px instead of 256 px, as on the 2.8C.
+- With the screen turned a quarter, the RGB boards copy each repaint a tile at a time; on the 4848S040 the old copy showed as vertical noise.
+- **More internal RAM for Home Assistant's secure connections:** allocations of 256 bytes and up go to PSRAM first, where before only those of 4 KB and up did -- 2 KB and up on the boards that scan their screen out of PSRAM, where smaller ones made the picture blink -- and the cover art worker's stack and the media player list are in PSRAM too.
 
 ### Fixed
 
-- The volume device's inputs now and then came up "Could not load inputs": the request's TLS connection could not get the internal RAM it needed at that moment. A request that fails that way now waits for room, up to a second, and tries again.
-- The Starting... card could give way to now playing, still showing the old track, seconds before the pick began to play. It now stays until the pick is playing, or for up to a minute.
-- An accented letter sent as a plain letter followed by a separate accent, as Music Assistant sends some titles, lost its accent, which the screen has no character for on its own. The two are now put together into the accented letter.
+- The volume device's inputs now and then came up "Could not load inputs", the TLS connection short of internal RAM. Such a request now waits for room, up to a second, and tries again.
+- A remote could restart when internal RAM ran out just as an mDNS packet arrived.
+- With no Music Assistant config entry set, the swipe-up list's preload was tried, and logged, several times a second; after a failure it now waits a minute.
+- The Starting... card could give way to now playing, still showing the old track, seconds before the pick played. It now stays until the pick is playing, or for up to a minute.
+- An accented letter sent as a plain letter and a separate accent, as Music Assistant sends some titles, lost its accent.
 
 ## [1.3.0] - 2026-10-13
 
@@ -145,7 +152,8 @@ The first release: a touch remote for one Home Assistant `media_player`, running
 - **Web portal setup:** Wi-Fi, Home Assistant URL and token, player, volume device, rotation, transmit power and more.
 - **Network updates:** two app slots, and settings are kept across updates.
 
-[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.0.0...v1.1.0
