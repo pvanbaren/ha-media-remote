@@ -11,20 +11,21 @@ on the server; Music Assistant adds the list and the search.
 
 ![The now-playing screen on the Qualia's 720×720 square panel and the DFRobot's 360×360 round one](assets/media-remote-players.jpg)
 
-Eight boards are supported:
+Nine boards are supported:
 
 | Board | Panel | Flash / PSRAM | Env |
 |---|---|---|---|
 | Waveshare ESP32-S3-Touch-LCD-1.28 | 1.28" round, 240×240 GC9A01 (SPI), CST816S touch | 16 MB / 2 MB | `waveshare-s3` (default) |
 | DFRobot DFR1221 | 1.85" round, 360×360 ST77916 (quad SPI), CST816S touch | 16 MB / 8 MB | `round360-s3` |
 | Waveshare ESP32-S3-Touch-AMOLED-1.75 | 1.75" round, 466×466 CO5300 AMOLED (quad SPI), CST9217 touch | 16 MB / 8 MB | `amoled466-s3` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.75C (untried) | 1.75" round, 466×466 CO5300 AMOLED (quad SPI), CST9217 touch | 32 MB / 8 MB | `amoled466c-s3` |
 | Adafruit Qualia ESP32-S3 (5800) | 4" square (5794), 720×720 TL040HDS20 (RGB-666 parallel), FT6336 touch | 16 MB / 8 MB | `qualia-720` |
 | Waveshare ESP32-S3-Touch-LCD-2.8C | 2.8" round, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `lcd28c-s3` |
 | Makerfabs MaTouch ESP32-S3 Rotary 2.1" | 2.1" round, 480×480 ST7701 (RGB parallel), CST826 touch, rotary encoder | 16 MB / 8 MB | `matouch21-s3` |
 | Guition (Sunton) ESP32-4848S040, also sold as AITRIP's 4" 480×480 | 4" square, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `guition4848-s3` |
 | Waveshare ESP32-P4-WIFI6-Touch-LCD-4B | 4" square, 720×720 ST7703 (MIPI-DSI), GT911 touch; Wi-Fi on an ESP32-C6 | 32 MB / 32 MB | `lcd4b-p4` |
 
-A ninth target, `headless`, runs the whole remote with no display and
+A tenth target, `headless`, runs the whole remote with no display and
 narrates to the serial console.
 
 What you need:

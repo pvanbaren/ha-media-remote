@@ -397,11 +397,12 @@ The CST9217 touch controller is read by hand (`touch_raw.cpp`): LovyanGFX's
 `Touch_CST226` speaks the same protocol but accepts only the CST226's chip id.
 The AXP2101 power manager, QMI8658 IMU and audio are left alone.
 
-This is the 1.75 (Rev 1.1, with an SD card slot). The 1.75C has the same
-pins but for its resets -- the display's on GPIO 1 and the touch's on GPIO 2,
-which on the 1.75 are SD card lines, against 39 and 40 here -- so it needs
-`kDisplayPinRst` and `kTouchPinRst` set back in `board/amoled466_s3.h`. It
-has not been tried on a 1.75C.
+`amoled466-s3` is the 1.75 (Rev 1.1, with an SD card slot). The 1.75C has
+the same pins but for its resets -- the display's on GPIO 1 and the touch's
+on GPIO 2, which on the 1.75 are SD card lines, against 39 and 40 there --
+and is built as `amoled466c-s3`, which sets `BOARD_AMOLED466_175C` for
+`board/amoled466_s3.h` to pick those. It has 32 MB of flash; the build uses
+the first 16. It has not been tried on a 1.75C.
 
 ## The Qualia
 

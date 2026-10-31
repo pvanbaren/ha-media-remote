@@ -12,11 +12,12 @@
  * controller, and on the same board an AXP2101 power manager, a QMI8658 IMU
  * and ES8311/ES7210 audio that this firmware does not use.
  *
- * Not the 1.75C, which these pins began as and which differs in its resets:
- * it has the display's on GPIO 1 and the touch's on GPIO 2, where the 1.75
- * has its SD card, and the 1.75 has them on 39 and 40. A 1.75C needs
- * kDisplayPinRst and kTouchPinRst set back to 1 and 2; it has not been
- * tried.
+ * The 1.75C builds from this header too, as env amoled466c-s3, which sets
+ * BOARD_AMOLED466_175C. Its pins are the 1.75's but for its resets: the
+ * display's on GPIO 1 and the touch's on GPIO 2, where the 1.75 has its SD
+ * card, against 39 and 40 on the 1.75. It has 32 MB of flash, of which the
+ * build uses the first 16, and no SD card slot. It has not been tried on the
+ * glass.
  *
  * Named for the panel, as the DFR1221's round360 is, rather than for a vendor
  * that makes several round boards.
@@ -56,7 +57,11 @@
 
 namespace board {
 
+#ifdef BOARD_AMOLED466_175C
+constexpr char kName[] = "Waveshare ESP32-S3-Touch-AMOLED-1.75C 466x466 round";
+#else
 constexpr char kName[] = "ESP32-S3 + 1.75\" round 466x466 CO5300 AMOLED";
+#endif
 
 // --- Panel geometry --------------------------------------------------------
 constexpr int kDisplayDiameter = 466;
@@ -99,8 +104,11 @@ constexpr gpio_num_t kDisplayPinIo1 = GPIO_NUM_5;
 constexpr gpio_num_t kDisplayPinIo2 = GPIO_NUM_6;
 constexpr gpio_num_t kDisplayPinIo3 = GPIO_NUM_7;
 constexpr gpio_num_t kDisplayPinCs = GPIO_NUM_12;
-/** The 1.75's; a 1.75C's is GPIO 1. */
+#ifdef BOARD_AMOLED466_175C
+constexpr gpio_num_t kDisplayPinRst = GPIO_NUM_1;
+#else
 constexpr gpio_num_t kDisplayPinRst = GPIO_NUM_39;
+#endif
 
 constexpr uint32_t kDisplaySpiWriteHz = 40000000;
 
@@ -128,8 +136,11 @@ constexpr uint8_t kDisplayBrightness = 200;
 constexpr gpio_num_t kTouchPinSda = GPIO_NUM_15;
 constexpr gpio_num_t kTouchPinScl = GPIO_NUM_14;
 constexpr gpio_num_t kTouchPinInt = GPIO_NUM_11;
-/** The 1.75's; a 1.75C's is GPIO 2. */
+#ifdef BOARD_AMOLED466_175C
+constexpr gpio_num_t kTouchPinRst = GPIO_NUM_2;
+#else
 constexpr gpio_num_t kTouchPinRst = GPIO_NUM_40;
+#endif
 constexpr uint8_t kTouchI2cAddress = 0x5A;
 constexpr uint32_t kTouchI2cHz = 400000;
 
@@ -172,9 +183,9 @@ constexpr unsigned long kListRedrawMinMs = 24;
 constexpr int kComposeSlabRows = 0;
 
 // --- Not used here ---------------------------------------------------------
-// I2S audio on 8/9/10/16/45 with the amplifier enable on 46, the AXP2101
-// and QMI8658 on the touch bus, and the SD card, on GPIO 1 and 2 among
-// others. Listed so that nobody reaches for one of those pins thinking it is
-// spare.
+// I2S audio on 8/9/10/45 with its MCLK on 42 (16 on the 1.75C) and the
+// amplifier enable on 46, the AXP2101 and QMI8658 on the touch bus, and on
+// the 1.75 the SD card, on GPIO 1 and 2 among others. Listed so that nobody
+// reaches for one of those pins thinking it is spare.
 
 }  // namespace board
