@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Added
+
+- **More letters and symbols:** the fonts have the letters Azerbaijani, Welsh, Skolt and Inari Sami, Uzbek, Hawaiian, Navajo, Guarani, Yoruba, Igbo, Hausa and Akan need beyond the European set, and € £ ¥ © ® µ × ½ • ‚ ‹ ›, which showed as blanks. A letter sent with a separate accent, such as Yoruba's ọ or the ụ of a Vietnamese name, is put together as one.
+
 ## [1.4.0] - 2026-10-30
 
 This release adds three boards -- the Guition ESP32-4848S040, the Waveshare AMOLED 1.75 and the Waveshare ESP32-P4 4B, the first on an ESP32-P4 -- and shows how far through the track it is, in the album art's colour, with a drag along the line to seek. The search finds albums, tracks, playlists and radio as well as artists, an artist on the swipe-up list starts their radio, and the screen no longer stops while Home Assistant answers a button.

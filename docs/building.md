@@ -180,11 +180,15 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 | 4848S040 | 23, 26, 30, 36, and 15, 17, 20 for the lists -- the Qualia's sizes at two thirds |
 | P4 4B | 34, 38, 45, 54, and 23, 26, 30 for the lists -- the Qualia's |
 
-The character set is 305 glyphs: ASCII, the Latin-1 letters and
+The character set is 369 glyphs: ASCII, the Latin-1 letters and
 punctuation, all of Latin Extended-A, Romanian's ș and ț, ẞ, and the dashes
 and curly quotes track titles are full of -- the languages of western and
-central Europe, Romanian, Turkish and the Baltic ones. A missing glyph
-renders as a space.
+central Europe, Romanian, Turkish and the Baltic ones. Then the letters a few
+more Latin-script languages need: Azerbaijani's ə, Welsh's ẁ ẃ ẅ ỳ, Sami's
+ǥ ǧ ǩ ʒ ǯ, the ʻokina and ʼ, Navajo's ǫ, Guarani's ẽ ỹ, Yoruba's and Igbo's
+ẹ ọ ṣ ị ụ ṅ, Hausa's ɓ ɗ ƙ ƴ, and the ɛ and ɔ of Akan, Ewe and Lingala,
+with their capitals. And the symbols that turn up in names: € £ ¥ © ® µ ×
+½ • ‚ ‹ ›. A missing glyph renders as a space.
 
 Most of Latin Extended-A's capitals -- Č, Ś, Ž, Ă, Ÿ -- carry a mark above
 the cap height, and LovyanGFX sets a face's line height from its tallest
