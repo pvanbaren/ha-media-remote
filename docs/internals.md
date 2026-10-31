@@ -297,22 +297,25 @@ up a volume change or the next track. At most one thumbnail fetch is ever
 ahead of it, and a newer cover replaces one still waiting.
 
 **Held compressed** in one static buffer (`board::kCoverArtBufferBytes`,
-128 KB to 512 KB by board, in PSRAM), claimed at boot before Wi-Fi and never
+128 KB to 1 MB by board, in PSRAM), claimed at boot before Wi-Fi and never
 freed -- sizing it per image meant a free and a differently sized `malloc`
 every track, which is how a long-running heap fragments. The image's
 dimensions come from its JPEG `SOF` or PNG `IHDR` so it is centre-cropped to
 fill. A cover too big for the buffer is streamed through the decoder on every
 repaint instead, which is the case that costs.
 
-**Asked for at the panel's size, or below it.** Music Assistant's image
-proxy accepts `size=` from a ladder -- 0, 80, 160, 256, 512, 1024 -- and
-answers 400 to anything else, so the request rounds up to a power of two
-(`board::kCoverArtRequestPx`): 256 for a 240 px panel, a 28 KB cover instead of
-88 KB. The Qualia asks for 256 too and scales it up: the cover is a
-backdrop under a scrim. The 480 px round panels, the 2.8C and the MaTouch,
-ask for 512, which a 256 px cover scaled up made look soft; on the 2.8C that
-costs about 0.16 s more per track change. A refusal is retried with the
-original URL and rewriting stops for the session.
+**Asked for at the size the board wants.** Music Assistant's image proxy
+accepts `size=` from a ladder -- 0, 80, 160, 256, 512, 1024 -- and answers
+400 to anything else, so the `size=` in a cover's URL is rewritten to
+`board::kCoverArtRequestPx` rounded up to a power of two: 256 for a 240 px
+panel, a 28 KB cover instead of 88 KB. The 360 to 480 px panels and the
+Qualia ask for 512, which a 256 px cover scaled up made look soft; on the
+2.8C that costs about 0.16 s more per track change. The P4 4B asks for 1024,
+up from the 512 Music Assistant's URLs carry, and scales it down onto its
+720 px panel; the proxy does not enlarge a cover, so one smaller at its
+source -- 600 px is common -- comes whole. `size=0`, the original, is left
+as it is. A refusal is retried with the original URL and rewriting stops for
+the session.
 
 **A small cover is scaled in one pass.** One smaller than the panel is decoded
 at its own size into a PSRAM sprite laid out as the frame is, then copied in

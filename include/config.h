@@ -504,7 +504,7 @@ constexpr unsigned long kThumbRepaintMinMs = 300;
  *  worth holding depends on how many pixels the panel asked for. */
 constexpr size_t kCoverArtMaxBytes = 2u * 1024u * 1024u;
 
-/** Rewrite an existing `size=` query parameter down towards kDisplayDiameter,
+/** Rewrite an existing `size=` query parameter to board::kCoverArtRequestPx,
  *  to fetch art near the panel's size instead of the integration's default.
  *
  *  Servers offer a ladder of sizes rather than any value -- Music Assistant's

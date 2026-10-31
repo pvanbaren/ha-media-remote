@@ -139,8 +139,12 @@ constexpr gpio_num_t kBootButtonPin = GPIO_NUM_35;
 
 // --- Artwork ---------------------------------------------------------------
 constexpr int kThumbPx = 38;
-constexpr int kCoverArtRequestPx = 512;
-constexpr size_t kCoverArtBufferBytes = 512u * 1024u;
+/** 1024 px, scaled down onto the 720 px panel, where 512 px was scaled up
+ *  1.4x. Four times the decode of a 512 on every compose pass, for a P4.
+ *  A 1024 px JPEG runs to a few hundred KB; the cache holds 1 MB, of 32 MB
+ *  of PSRAM. */
+constexpr int kCoverArtRequestPx = 1024;
+constexpr size_t kCoverArtBufferBytes = 1024u * 1024u;
 
 /** The Qualia's ration on list repaints is for an S3's octal PSRAM shared
  *  with a 24 MB/s scan-out. The P4's is several times faster; half the

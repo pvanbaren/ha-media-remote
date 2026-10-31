@@ -170,7 +170,9 @@ int nextPowerOfTwo(int n) {
  *
  *  The target is board::kCoverArtRequestPx rather than the panel size: a board
  *  may prefer to upscale a smaller cover, and only the board knows whether
- *  that trade is worth making. */
+ *  that trade is worth making. It can also be larger than the integration's
+ *  own size -- Music Assistant's URLs ask for 512 -- and the request goes up
+ *  to it; size=0, the original, is left alone. */
 bool requestPanelSize(String& url, int target_px) {
   if (!config::kCoverArtRequestPanelSize || !s_size_rewrite_ok) {
     return false;
@@ -200,8 +202,8 @@ bool requestPanelSize(String& url, int target_px) {
 
   const long current = url.substring(value_start, value_end).toInt();
   const int wanted = nextPowerOfTwo(target_px);
-  if (current <= wanted) {
-    return false;  // already no larger than the panel needs
+  if (current == 0 || current == wanted) {
+    return false;  // the original, or already the size wanted
   }
 
   url = url.substring(0, value_start) + String(wanted) +
