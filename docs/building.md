@@ -35,12 +35,15 @@ Each board's build embeds only the fonts it uses and compiles only its own
 
 `guition4848-s3` and `lcd4b-p4` are the builds that compile ESP-IDF from source
 (`custom_sdkconfig` in `platformio.ini` says why), so its first build takes
-about five minutes more. It needs PlatformIO Core 6.1.19 -- 6.2.0 stops it
-with `No module named 'SCons.Tool.FortranCommon'`
-([pioarduino/platform-espressif32#529](https://github.com/pioarduino/platform-espressif32/issues/529))
--- and it replaces the Arduino libraries in the PlatformIO home it builds
-in, so every other board re-downloads them, and it rebuilds them, each time
-the two alternate. To build it beside the others, give it a home of its own:
+about five minutes more. Its link needs SCons 4.11.1 where the platform
+asks for 4.8.1, which stops it with `No module named
+'SCons.Tool.FortranCommon'`
+([pioarduino/platform-espressif32#529](https://github.com/pioarduino/platform-espressif32/issues/529)):
+once the platform is installed, set `tool-scons`'s `package-version` to
+`4.41101.0` in `platforms/espressif32/platform.json` in the PlatformIO home,
+as the CI workflow does. It also replaces the Arduino libraries in the
+PlatformIO home it builds in, so every other board re-downloads them, and
+it rebuilds them, each time the two alternate. To build it beside the others, give it a home of its own:
 
 ```bash
 PLATFORMIO_CORE_DIR=~/.platformio-guition pio run -e guition4848-s3

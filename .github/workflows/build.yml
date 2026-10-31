@@ -58,7 +58,22 @@ jobs:
           restore-keys: platformio-${{ runner.os }}-${{ matrix.env == 'guition4848-s3' && 'idf' || matrix.env == 'lcd4b-p4' && 'p4' || 'prebuilt' }}-
 
       - name: Install PlatformIO
-        run: pip install platformio==6.1.19
+        run: pip install platformio==6.2.0
+
+      # The platform asks for SCons 4.8.1, with which the boards that build
+      # ESP-IDF from source fail at the link: "No module named
+      # SCons.Tool.FortranCommon" (pioarduino/platform-espressif32 #529).
+      # 4.11.1 builds every board, as it does locally.
+      - name: Use SCons 4.11.1
+        run: |
+          pio pkg install -e ${{ matrix.env }}
+          python - <<'EOF'
+          import json, pathlib
+          p = pathlib.Path.home() / ".platformio/platforms/espressif32/platform.json"
+          d = json.loads(p.read_text())
+          d["packages"]["tool-scons"]["package-version"] = "4.41101.0"
+          p.write_text(json.dumps(d, indent=2))
+          EOF
 
       - name: Build
         run: pio run -e ${{ matrix.env }}
