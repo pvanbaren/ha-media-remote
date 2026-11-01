@@ -26,7 +26,10 @@ Nine boards are supported:
 | Waveshare ESP32-P4-WIFI6-Touch-LCD-4B | 4" square, 720×720 ST7703 (MIPI-DSI), GT911 touch; Wi-Fi on an ESP32-C6 | 32 MB / 32 MB | `lcd4b-p4` |
 
 A tenth target, `headless`, runs the whole remote with no display and
-narrates to the serial console.
+narrates to the serial console. Voice -- a wake word, "Hey Jarvis", "Okay
+Nabu", "Hey Mycroft" or "Alexa", and Home Assistant's Assist -- is built
+into `amoled466-s3`, `amoled466c-s3` and `lcd4b-p4`; see
+[Building](docs/building.md).
 
 What you need:
 
@@ -443,8 +446,9 @@ and the search work straight away.
 The rest of what needs no typing is in [the settings](#settings-on-the-device),
 behind the gear on the status page (swipe down on now playing): a separate
 **Volume & power** device -- an amplifier or receiver -- and the player's input
-on it, the player volume at switch-on, Auto-off, the Recent list, Wi-Fi
-transmit power, the search keyboard and the screen rotation.
+on it, the player volume at switch-on, Auto-off, the Recent list, Voice
+(in a build with it), Wi-Fi transmit power, the search keyboard and the
+screen rotation.
 
 The few settings that are typed are in [the portal](#the-portal):
 
@@ -556,7 +560,7 @@ A few rules hold for every field:
 
 In the order the page shows them. Wi-Fi transmit power, the screen rotation,
 the search keyboard, the media player, Volume & power, the player's input,
-the player volume at switch-on, Auto-off and the Recent list are on [the device's
+the player volume at switch-on, Auto-off, the Recent list and Voice are on [the device's
 settings](#settings-on-the-device) as well. After a save the confirmation page goes
 back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
 long enough for a setting that restarts the device to have taken effect. A
@@ -713,7 +717,7 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Music Assistant URL and token | cleared | kept |
 | Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
-| Recent list, the room's history | kept | kept |
+| Recent list, Voice, the room's history | kept | kept |
 
 Either way the device reboots into the setup access point.
 

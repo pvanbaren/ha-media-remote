@@ -80,6 +80,10 @@ src/services/
   ma_api.cpp               Music Assistant's own API, and its settings
   display_settings.cpp     rotation and keyboard layout
   device_name.cpp          hostname and mDNS
+  voice.cpp                Assist requests and spoken replies, the Voice
+                           setting (builds with -DVOICE_ASSIST)
+  wake_word.cpp            the wake word chosen, of microWakeWord's four,
+                           on TensorFlow Lite Micro
   firmware_update.cpp      the latest release on GitHub, and installing it;
                            the portal's /firmware page
   fonts.cpp                the font pack from GitHub; the portal's /fonts
@@ -106,6 +110,9 @@ src/hardware/
   touch_gestures.cpp       press tracking, tap / swipe, the touch queue
   encoder.cpp              the knob, on a board with one
   display_font.cpp         picks the embedded face for a height
+  audio.cpp                microphone and speaker streams, for voice
+  es8311_es7210.cpp        the codec and microphone ADC
+  i2c_bus.cpp              the shared I2C bus
   outline_fonts.cpp        other scripts and symbols behind each face
   font_pack.cpp            the font pack, in its flash partition
   <board>/display.cpp      panel bring-up, backlight, sleep, rotation
@@ -148,6 +155,7 @@ site/                        the install page and its board manifests
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
+| Voice (`voice`, `wake`, `audio_in`, `audio_out`; builds with `-DVOICE_ASSIST`) | The wake word, Assist requests, the microphone and the speaker |
 | Touch sampler (Qualia, 2.8C, MaTouch, 4848S040, P4 4B) | Reads the touch controller into a queue of timestamped changes |
 
 They share three kinds of thing, each with its own discipline:

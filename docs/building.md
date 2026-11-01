@@ -37,7 +37,8 @@ Each board's build embeds only the fonts it uses and compiles only its own
 **Voice** -- the wake word, Assist requests and spoken replies -- is built
 only into an env that opts in with `-DVOICE_ASSIST` in its `build_flags`,
 on a board with a microphone (`BOARD_HAS_MIC`; anything else stops the build
-with an error). `amoled466-s3` and `lcd4b-p4` opt in. Leave the flag out and the audio, the voice requests and the
+with an error). `amoled466-s3` (and `amoled466c-s3`, which extends it) and
+`lcd4b-p4` opt in. Leave the flag out and the audio, the voice requests and the
 wake word are stubs: none of their code, TensorFlow Lite Micro or the wake
 word's model is in the image. A build with voice can still have it turned
 off at run time, by the **Voice** setting.
