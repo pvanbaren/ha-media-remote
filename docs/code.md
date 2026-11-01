@@ -74,7 +74,8 @@ src/services/
   browse.cpp               the swipe-up list's sections
   search.cpp               the search: its kind, query and results
   history.cpp              the room's recent artists
-  recommend.cpp            the room's recommendations, on a task of its own
+  recommend.cpp            recommendations from the recent artists, the
+                           room's or the server's, on a task of its own
   ma_api.cpp               Music Assistant's own API, and its settings
   display_settings.cpp     rotation and keyboard layout
   device_name.cpp          hostname and mDNS

@@ -159,7 +159,7 @@ artist.
 | Section | Shows |
 |---|---|
 | **Recent here** or **Recent artists** | With the **Recent list** setting at *Music Assistant* (the default): Music Assistant's recent artists, headed "Recent artists". At *Room only*: the last artists heard *in this room*, most recent first, headed "Recent here" -- Music Assistant's, headed "Recent artists", until anything has played here |
-| **Recommended** | With a Music Assistant token: artists similar to this room's recent ones, a fresh draw each load. Without one: your favourite artists in Music Assistant, topped up with others from the library at random |
+| **Recommended** | With a Music Assistant token: artists similar to the first three above, a fresh draw each load. Without one: eight artists from the library at random |
 
 "This room" is this remote's player: Music Assistant's own "recently played"
 is shared by every player on the server, so two remotes in two rooms would
@@ -167,8 +167,8 @@ show the same list. The setting is on the [settings page](#settings-on-the-devic
 and in [the portal](#the-portal). How the room's list and the
 recommendations are kept is in
 [Recent here](docs/internals.md#recent-here-the-rooms-history) and
-[Recommended](docs/internals.md#recommended-artists-like-this-rooms). Until
-there are recommendations, Recommended lists the favourites, as it does
+[Recommended](docs/internals.md#recommended-artists-like-the-recent-ones). Until
+there are recommendations, Recommended is random library artists, as it is
 without a token. An artist already under the recent ones is not listed again
 under Recommended.
 
@@ -598,7 +598,9 @@ Linking by the QR code fills it in when it is blank, so it is typed only for
 a remote given its Home Assistant token by hand.
 
 Without it, now playing, the buttons and the volume all work. The list shows
-**Not set up** unless a Music Assistant token is set, the search fails, and
+**Not set up** unless Recent list is *Room only* and something has played
+here, when it shows the room's artists, and with a Music Assistant token
+similar ones; the search fails, and
 the room's history only gains artists picked on the remote, since turning a
 heard name into an artist is a search.
 
@@ -613,17 +615,18 @@ and the placeholder shows the address that works out to.
 **Music Assistant token (for Recommended)** -- a long-lived token from Music
 Assistant's own web UI (your profile there). Home Assistant's token does not
 open Music Assistant's API, and the recommendations need that API. With a
-token Recommended is artists similar to this room's recent ones; without one
-it is your favourite artists (see [the list](#the-swipe-up-list)).
+token Recommended is artists similar to the recent ones; without one it is
+artists from the library at random (see [the list](#the-swipe-up-list)).
 
 **Forget the stored Music Assistant token** -- tick and save to remove it.
-Recommended goes back to your favourite artists. Ticked together with a new
+Recommended goes back to random library artists. Ticked together with a new
 token, the new one is kept.
 
 **Recent list** -- *Music Assistant*, the default, makes the list's top
 section Music Assistant's recent artists, which every player shares; *Room
-only* makes it the artists played on this remote's player. The same setting
-as on the settings page.
+only* makes it the artists played on this remote's player. Recommended is
+like the first three of whichever it is. The same setting as on the settings
+page.
 
 **Screen rotation** *(restarts to apply)* -- upright, +90° (clockwise), 180°
 or −90°, for a panel mounted any way up. The touch turns with the picture.

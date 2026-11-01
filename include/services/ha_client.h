@@ -269,7 +269,6 @@ void streamClose();
  *  `media_type` is "artist", "album", "playlist", "radio" or "track";
  *  `order_by` is one of the integration's sort keys ("last_played_desc",
  *  "random", "play_count_desc", "name", ...) or nullptr for its default.
- *  `favorites` asks for the library's favourites only.
  *  Writes at most `capacity` entries; returns the count, or -1 on failure
  *  (including "no config entry id stored", which is the ordinary un-set-up
  *  case rather than an error).
@@ -281,7 +280,7 @@ void streamClose();
  *  walk is not optional: an album nests an "artists" array whose objects carry
  *  their own "name" and "image", so a flat scan reads the wrong ones. */
 int fetchLibrary(const char* media_type, const char* order_by, int limit,
-                 LibraryItem* out, size_t capacity, bool favorites = false);
+                 LibraryItem* out, size_t capacity);
 
 /** Search Music Assistant for artists by name, via `music_assistant.search`.
  *

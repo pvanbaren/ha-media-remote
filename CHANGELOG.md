@@ -17,6 +17,10 @@ GitHub release from that version's section, with
 - **Recent list, a setting:** on the settings page and in the portal. *Music Assistant*, the default, makes the list's top section Music Assistant's recent artists, which every player shares -- and no longer only for want of a token; *Room only* makes it the artists played on this remote's player, as it was before.
 - **More letters and symbols:** the fonts have the letters Azerbaijani, Welsh, Skolt and Inari Sami, Uzbek, Hawaiian, Navajo, Guarani, Yoruba, Igbo, Hausa and Akan need beyond the European set, and € £ ¥ © ® µ × ½ • ‚ ‹ ›, which showed as blanks. A letter sent with a separate accent, such as Yoruba's ọ or the ụ of a Vietnamese name, is put together as one.
 
+### Changed
+
+- **Recommended without a Music Assistant token** is eight artists from the library at random, rather than your favourite artists topped up at random. With a token it is artists like the first three of the list's top section -- the server's recent artists when Recent list is set to Music Assistant.
+
 ## [1.4.0] - 2026-10-30
 
 This release adds three boards -- the Guition ESP32-4848S040, the Waveshare AMOLED 1.75 and the Waveshare ESP32-P4 4B, the first on an ESP32-P4 -- and shows how far through the track it is, in the album art's colour, with a drag along the line to seek. The search finds albums, tracks, playlists and radio as well as artists, an artist on the swipe-up list starts their radio, and the screen no longer stops while Home Assistant answers a button.

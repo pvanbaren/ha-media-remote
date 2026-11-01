@@ -17,6 +17,7 @@
 #include "config.h"
 #include "log.h"
 #include "ha_internal.h"
+#include "services/browse.h"
 #include "services/history.h"
 #include "services/ma_api.h"
 
@@ -33,7 +34,7 @@ struct Candidate {
   uint16_t weight;
 };
 
-/** The room's history as it stood when a pool was built or drawn from:
+/** The recent artists as they stood when a pool was built or drawn from:
  *  names to leave out, and the seeds. PSRAM, like everything sizeable here. */
 struct Snapshot {
   int count;
@@ -56,8 +57,42 @@ char* s_response = nullptr;
 Snapshot* s_build_history = nullptr;
 Snapshot* s_draw_history = nullptr;
 
+/** The server's recent artists, from the list's last load (setServerRecent),
+ *  under s_lock. */
+ha::LibraryItem* s_server = nullptr;
+int s_server_count = 0;
+
+/** Whose recent artists are the seeds: this room's while Recent list is Room
+ *  only and it has any, the server's otherwise -- the same choice the list's
+ *  top section makes. */
+bool roomSeeds() { return browse::recentHere() && history::count() > 0; }
+
+int seedCount() {
+  if (roomSeeds()) {
+    return history::count();
+  }
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  const int n = s_server_count;
+  xSemaphoreGive(s_lock);
+  return n;
+}
+
+/** Takes s_lock for the server's artists: never call it holding the lock. */
 void takeSnapshot(Snapshot& out) {
   out.count = 0;
+  if (!roomSeeds()) {
+    // No track of theirs played here to seed from: build() asks for their
+    // top track instead.
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < s_server_count; ++i) {
+      strlcpy(out.names[i], s_server[i].name, sizeof(out.names[i]));
+      strlcpy(out.uris[i], s_server[i].uri, sizeof(out.uris[i]));
+      out.tracks[i][0] = '\0';
+    }
+    out.count = s_server_count;
+    xSemaphoreGive(s_lock);
+    return;
+  }
   ha::LibraryItem item;
   for (int i = 0; i < history::kMaxArtists &&
                   history::at(i, item, out.tracks[i], sizeof(out.tracks[i]));
@@ -141,7 +176,7 @@ bool artistFrom(const char* object, ha::LibraryItem& out) {
 
 void add(const ha::LibraryItem& item, uint16_t weight) {
   if (inSnapshot(*s_build_history, item.name)) {
-    return;  // already on this room's list: not a discovery
+    return;  // already among the recent artists: not a discovery
   }
   for (int i = 0; i < s_building_count; ++i) {
     Candidate& c = s_building[i];
@@ -281,9 +316,10 @@ int fromSimilarTracks(const char* track_uri) {
   return n;
 }
 
-/** Build a pool from the room's seeds and publish it. False when every call
- *  failed, which leaves the previous pool in place. */
+/** Build a pool from the seeds and publish it. False when every call failed,
+ *  which leaves the previous pool in place. */
 bool build() {
+  const bool room = roomSeeds();
   takeSnapshot(*s_build_history);
   s_building_count = 0;
   const int seeds = s_build_history->count < config::kRecommendSeedArtists
@@ -322,8 +358,8 @@ bool build() {
   s_count = s_building_count;
   xSemaphoreGive(s_lock);
   ++s_generation;
-  LOG_INFO("Recommend: %d artists like this room's last %d", s_count,
-                seeds);
+  LOG_INFO("Recommend: %d artists like %s last %d", s_count,
+           room ? "this room's" : "the server's", seeds);
   return true;
 }
 
@@ -337,10 +373,11 @@ uint32_t seedKey() {
     }
     hash = (hash ^ 0xFFu) * 16777619u;
   };
-  ha::LibraryItem item;
-  for (int i = 0; i < config::kRecommendSeedArtists && history::at(i, item);
-       ++i) {
-    mix(item.uri);
+  Snapshot* seeds = s_build_history;  // the task's own, free between builds
+  takeSnapshot(*seeds);
+  mix(roomSeeds() ? "room" : "server");
+  for (int i = 0; i < config::kRecommendSeedArtists && i < seeds->count; ++i) {
+    mix(seeds->uris[i]);
   }
   const uint32_t settings = ma::generation();
   hash = (hash ^ settings) * 16777619u;
@@ -360,7 +397,7 @@ void task(void*) {
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(2000));
     if (!ma::configured() || WiFi.status() != WL_CONNECTED ||
-        history::count() == 0) {
+        seedCount() == 0) {
       continue;
     }
     const uint32_t key = seedKey();
@@ -413,12 +450,13 @@ void init() {
   s_building = psramCalloc<Candidate>(config::kRecommendPoolMax);
   s_build_history = psramCalloc<Snapshot>(1);
   s_draw_history = psramCalloc<Snapshot>(1);
+  s_server = psramCalloc<ha::LibraryItem>(history::kMaxArtists);
   s_response = static_cast<char*>(heap_caps_malloc(
       config::kMaResponseMaxBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (s_lock == nullptr || s_pool == nullptr || s_building == nullptr ||
       s_build_history == nullptr || s_draw_history == nullptr ||
-      s_response == nullptr) {
-    LOG_ERROR("Recommend: no memory, albums stand in");
+      s_server == nullptr || s_response == nullptr) {
+    LOG_ERROR("Recommend: no memory, library artists stand in");
     return;
   }
   // Its stack in PSRAM: it only talks HTTP and parses, never touches flash,
@@ -429,7 +467,7 @@ void init() {
           pdPASS &&
       xTaskCreate(task, "recommend", 8192, nullptr, tskIDLE_PRIORITY,
                   nullptr) != pdPASS) {
-    LOG_ERROR("Recommend: no task, albums stand in");
+    LOG_ERROR("Recommend: no task, library artists stand in");
   }
 }
 
@@ -472,5 +510,20 @@ int draw(ha::LibraryItem* out, int want) {
 }
 
 uint32_t generation() { return s_generation; }
+
+void setServerRecent(const ha::LibraryItem* items, int count) {
+  if (s_lock == nullptr || s_server == nullptr || items == nullptr) {
+    return;
+  }
+  if (count > history::kMaxArtists) {
+    count = history::kMaxArtists;
+  }
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  for (int i = 0; i < count; ++i) {
+    s_server[i] = items[i];
+  }
+  s_server_count = count > 0 ? count : 0;
+  xSemaphoreGive(s_lock);
+}
 
 }  // namespace services::recommend

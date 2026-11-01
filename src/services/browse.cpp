@@ -146,8 +146,8 @@ bool listed(const ha::LibraryItem* list, int count, const char* name) {
  *  leaving out any of the `have` before them -- an artist on Recent here is
  *  not offered again under Recommended. Asks for a list's worth, so what is
  *  left out can be made up. The count added, or -1 when the request failed. */
-int fetchUnique(const config::BrowseSection& section, bool favorites,
-                int want, ha::LibraryItem* list, int have) {
+int fetchUnique(const config::BrowseSection& section, int want,
+                ha::LibraryItem* list, int have) {
   if (s_library == nullptr) {
     s_library = static_cast<ha::LibraryItem*>(heap_caps_calloc_prefer(
         config::kMaxBrowseItems, sizeof(ha::LibraryItem), 2,
@@ -158,7 +158,7 @@ int fetchUnique(const config::BrowseSection& section, bool favorites,
   }
   const int got = ha::fetchLibrary(section.media_type, section.order_by,
                                    config::kMaxBrowseItems, s_library,
-                                   config::kMaxBrowseItems, favorites);
+                                   config::kMaxBrowseItems);
   int n = 0;
   for (int i = 0; i < got && n < want; ++i) {
     if (!listed(list, have + n, s_library[i].name)) {
@@ -185,19 +185,20 @@ uint32_t roomGeneration() {
  *  Recent here is this device's history while the setting is Room only, and
  *  the server's recent artists while it is Music Assistant or the history is
  *  empty.
- *  Recommended is artists like this room's, drawn from services::recommend,
- *  with a Music Assistant token -- without one there are no similar artists
- *  to draw -- and the library's favourite artists, topped up with others at
- *  random, without one or until there are any. */
+ *  Recommended is artists like the first of those, drawn from
+ *  services::recommend, with a Music Assistant token -- without one there
+ *  are no similar artists to draw -- and artists from the library at random
+ *  without one, or until there are any. */
 bool loadLocked() {
   const bool recent_here = recentHere();
   const bool similar = ma::configured();
   const uint32_t generation = roomGeneration();
   if (ha::maConfigEntry()[0] == '\0' &&
-      !(recent_here && history::count() > 0) && !similar) {
+      !(recent_here && history::count() > 0)) {
     // Not an error, just not set up: get_library is addressed by config entry,
     // and there is no useful request to make without one. The room's own
-    // artists, and the ones like them, come from memory and need none. Said
+    // artists come from memory and need none, and so do the ones like them;
+    // a Music Assistant token alone has nothing to find artists like. Said
     // once, not every time.
     if (s_problem != Problem::kNoConfigEntry) {
       LOG_INFO(
@@ -252,17 +253,10 @@ bool loadLocked() {
           section.fallback_title != nullptr) {
         titles[i] = section.fallback_title;
       }
-      int favorites = section.favorites_first
-                          ? fetchUnique(section, true, want, s_fetching, total)
-                          : 0;
-      if (favorites < 0) {
-        favorites = 0;
-      }
-      got = favorites;
-      if (favorites < want) {
-        const int rest = fetchUnique(section, false, want - favorites,
-                                     s_fetching, total + favorites);
-        got = rest >= 0 ? favorites + rest : (favorites > 0 ? favorites : -1);
+      got = fetchUnique(section, want, s_fetching, total);
+      if (section.source == config::BrowseSource::kRoomArtists && got >= 0) {
+        // The server's recent artists are what Recommended is like now.
+        recommend::setServerRecent(&s_fetching[total], got);
       }
     }
     if (got < 0) {

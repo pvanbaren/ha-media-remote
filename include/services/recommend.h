@@ -6,10 +6,12 @@
 #include "services/ha_client.h"
 
 /**
- * "Recommended": artists like the ones this room has been playing.
+ * "Recommended": artists like the recent ones at the top of the list -- this
+ * room's while Recent list is Room only (services::browse::recentHere()) and
+ * it has any, and otherwise the server's, as the list last loaded them.
  *
  * Drawn from Music Assistant's own API (services::ma), since Home Assistant
- * does not pass similarity through. For each of the room's
+ * does not pass similarity through. For each of the
  * config::kRecommendSeedArtists most recent artists it asks for similar
  * artists -- which the library answers, merging whatever its providers know --
  * and, when that comes back empty, as it does for YouTube Music's own
@@ -28,10 +30,15 @@ namespace services::recommend {
 /** Start the task. Once, in setup(), after history::init(). */
 void init();
 
-/** Up to `want` artists from the pool into `out`, none already in this
- *  room's history. 0 when the pool is empty -- no token, nothing played yet,
- *  or the calls failing -- and the caller falls back to something else. */
+/** Up to `want` artists from the pool into `out`, none already among the
+ *  recent artists it was built from. 0 when the pool is empty -- no token,
+ *  nothing played yet, or the calls failing -- and the caller falls back to
+ *  something else. */
 int draw(ha::LibraryItem* out, int want);
+
+/** The server's recent artists, as the list just loaded them: the seeds, and
+ *  the artists to leave out, whenever the room's own are not in use. */
+void setServerRecent(const ha::LibraryItem* items, int count);
 
 /** Changes whenever the pool does, so a list built from it knows to rebuild. */
 uint32_t generation();

@@ -217,7 +217,7 @@ void refreshMaTokenField() {
   snprintf(s_ma_token_attrs, sizeof(s_ma_token_attrs),
            " type=\"password\" placeholder=\"%s\"",
            services::ma::hasStoredToken() ? "stored - leave blank to keep"
-                                          : "blank = server's lists");
+                                          : "blank = random library artists");
   s_param_ma_token.setValue("", static_cast<int>(config::kMaTokenMaxLen));
   s_param_ma_forget.setValue("1", 1);
 }

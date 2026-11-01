@@ -51,10 +51,10 @@ HA: stream closed soon after opening, polling; next try in 5 s
 | `connection refused` / timeouts | The URL's host and port, or https against a plain-http server |
 | `transport failure (heap free …, largest …)` | A TLS handshake that could not allocate; something new is using internal RAM |
 | Player missing from the portal | `list hit the N entry cap` -- raise `kMaxPlayers` |
-| The list says **Not set up** | No Music Assistant config entry id, and no Music Assistant token |
+| The list says **Not set up** | No Music Assistant config entry id, and no room history in use: Recent list is *Music Assistant*, or nothing has played here yet |
 | The list says **Music Assistant** and an error | Every section failed; the console has the body |
 | `no items in library response` | Check the config entry id |
-| Recommended is your favourite artists, or random ones | No Music Assistant token, or the pool is not built yet; watch for `Recommend:` lines |
+| Recommended is random library artists | No Music Assistant token, or the pool is not built yet; watch for `Recommend:` lines |
 | The list's top section is "Recent artists", the same on every remote | Recent list is set to Music Assistant, or nothing has played on this remote's player yet |
 | `History: no artist found for "…"` | That name matched no artist exactly; it is not searched for again |
 | `Portal: … has no input "…", cleared` | The new volume device has no input by the old name; choose one |

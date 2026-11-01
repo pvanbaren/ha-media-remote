@@ -117,8 +117,8 @@ enum class BrowseSource : uint8_t {
    *  (services::browse::recentHere()). The library query stands in, under
    *  `fallback_title`, while it is Music Assistant or there are none yet. */
   kRoomArtists,
-  /** Artists like this room's recent ones (services::recommend), with a
-   *  Music Assistant token (services::ma). The library query stands in
+  /** Artists like the first few of the section above (services::recommend),
+   *  with a Music Assistant token (services::ma). The library query stands in
    *  without one, or until there are any. */
   kRoomSimilar,
 };
@@ -136,12 +136,10 @@ struct BrowseSection {
   /** The heading while the library query stands in for the room, or nullptr
    *  to keep `title`. */
   const char* fallback_title = nullptr;
-  /** The library query takes the library's favourites first, topped up from
-   *  the whole library when there are too few. */
-  bool favorites_first = false;
 };
 
-/** How many of the room's most recent artists "Recommended" is built from.
+/** How many of the recent artists "Recommended" is built from: the first of
+ *  the list's top section, this room's or the server's.
  *  Each is one or two Music Assistant calls, made in the background whenever
  *  they change -- not per list load. */
 constexpr int kRecommendSeedArtists = 3;
@@ -179,20 +177,19 @@ constexpr size_t kMaResponseMaxBytes = 192 * 1024;
  *  two rooms see the same list; what played on this remote's player is what
  *  played in this room (services::history).
  *
- *  "Recommended" is artists like the room's recent ones, from Music
- *  Assistant's own API (services::recommend), which needs its token in the
- *  portal. Built in the background and drawn from at random, so a load costs
- *  nothing. Until it has any, the library's favourite artists stand in,
- *  topped up with others at random -- artists, so that a tap starts radio,
- *  as it does on the rest of the list.
+ *  "Recommended" is artists like the first three of the top section, from
+ *  Music Assistant's own API (services::recommend), which needs its token in
+ *  the portal. Built in the background and drawn from at random, so a load
+ *  costs nothing. Without a token, or until there are any, it is artists
+ *  from the library at random -- artists, so that a tap starts radio, as it
+ *  does on the rest of the list.
  *
  *  A library query costs a request when the list loads, and leaves out
  *  whatever an earlier section already shows. */
 constexpr BrowseSection kBrowseSections[] = {
     {"Recent here", "artist", "last_played_desc", 8,
      BrowseSource::kRoomArtists, "Recent artists"},
-    {"Recommended", "artist", "random", 8, BrowseSource::kRoomSimilar, nullptr,
-     true},
+    {"Recommended", "artist", "random", 8, BrowseSource::kRoomSimilar},
 };
 /** The Recent list setting on a remote that has never stored one: Music
  *  Assistant's recent artists, the same on every remote. */

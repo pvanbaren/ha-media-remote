@@ -221,7 +221,7 @@ the recommendations.
 The list reloads as soon as the history changes. With a Music Assistant
 token, opening it costs nothing: both sections come from memory.
 
-## Recommended: artists like this room's
+## Recommended: artists like the recent ones
 
 Home Assistant does not pass similarity through -- the Music Assistant
 integration's services are `search`, `get_library`, `play_media`,
@@ -229,13 +229,16 @@ integration's services are `search`, `get_library`, `play_media`,
 Music Assistant's own API (`POST <server>/api`), which is why it needs its
 own token. The server is plain HTTP on the LAN, so it costs no TLS session.
 
-For each of the room's **three most recent artists** it asks for **similar
-artists**. A library artist gets a good answer, merged from its providers,
+It is built from the list's **three most recent artists**: this room's while
+the Recent list setting is Room only and the room has any, and otherwise the
+server's recent artists as the list last loaded them. For each it asks for
+**similar artists**. A library artist gets a good answer, merged from its providers,
 with pictures. YouTube Music offers no similar artists of its own, so for one
 of its artists it asks instead for **tracks similar** to one of theirs that
 played here -- what artist radio would pick -- and takes their artists, each
 shown with that track's cover. After a restart, until one of theirs plays
-again, the artist's top track stands in as the seed.
+again, and for the server's artists, the artist's top track stands in as the
+seed.
 
 Those calls take seconds each, so they run on a task of their own
 (`services::recommend`, its stack in PSRAM). It builds a **pool of up to 48
@@ -243,11 +246,11 @@ artists** when the three change -- once they have held still for ten
 seconds, so artist radio working through a run of names is one rebuild -- and
 every six hours regardless. Each artist in the pool counts how many seeds
 pointed at it. A list load **draws eight at random, weighted by that count**,
-leaving out anyone already on Recent here: the section changes from one load
-to the next and leans toward the artists more than one seed agrees on. Until
-there is a pool, the library's favourite artists stand in, topped up with
-others at random (`favorites_first` in `kBrowseSections`); a library query
-asks for a list's worth and leaves out anyone an earlier section shows.
+leaving out anyone among the recent artists it was built from: the section
+changes from one load to the next and leans toward the artists more than one
+seed agrees on. Without a token, or until there is a pool, artists from the
+library at random stand in; a library query asks for a list's worth and
+leaves out anyone an earlier section shows.
 
 ## The list and the search
 
