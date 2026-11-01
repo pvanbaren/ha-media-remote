@@ -1782,6 +1782,7 @@ enum class Setting : uint8_t {
   kInput,
   kWakeVolume,
   kAutoOff,
+  kRecentHere,
   kTxPower,
   kKeyboard,
   kRotation,
@@ -1789,7 +1790,7 @@ enum class Setting : uint8_t {
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 11;
+constexpr int kMaxSettingRows = 12;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -1911,6 +1912,9 @@ void showSettingsPage(int focus) {
   if (linked) {
     addSettingRow(Setting::kAutoOff, "Auto-off",
                   services::ha::autoOffControl() ? "Enabled" : "Disabled");
+    addSettingRow(Setting::kRecentHere, "Recent list",
+                  services::browse::recentHere() ? "Room only"
+                                                 : "Music Assistant");
   }
   formatTxPower(value, sizeof(value), wifiTxPower());
   addSettingRow(Setting::kTxPower, "Wi-Fi transmit power", value);
@@ -2049,6 +2053,15 @@ void openSettingChoices(Setting setting, int row) {
       const bool on = services::ha::autoOffControl();
       addChoice("Enabled", 1, on);
       addChoice("Disabled", 0, !on);
+      break;
+    }
+
+    case Setting::kRecentHere: {
+      ui::settingsBegin("Recent list",
+                        "The artists played in this room, or on any player");
+      const bool room = services::browse::recentHere();
+      addChoice("Room only", 1, room);
+      addChoice("Music Assistant", 0, !room);
       break;
     }
 
@@ -2191,6 +2204,12 @@ bool applySettingChoice(int row) {
     case Setting::kRestart:
       if (value == 1) {
         restartNow("");
+      }
+      break;
+    case Setting::kRecentHere:
+      if ((value == 1) != services::browse::recentHere()) {
+        services::browse::saveRecentHere(value == 1);
+        changed = true;
       }
       break;
     case Setting::kWifi:

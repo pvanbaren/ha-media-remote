@@ -19,6 +19,7 @@
 #include "hardware/boot_button.h"
 #include "config.h"
 #include "log.h"
+#include "services/browse.h"
 #include "services/device_name.h"
 #include "services/display_settings.h"
 #include "services/ha_client.h"
@@ -295,6 +296,26 @@ void buildAutoOffSelect() {
            "<option value=\"0\"%s>Disabled</option></select",
            on ? " selected" : "", on ? "" : " selected");
   s_param_auto_off.setValue(on ? "1" : "0", 2);
+}
+
+/** Recent list: whether the list's top section is the artists played on this
+ *  remote's player -- Room only -- or Music Assistant's recent artists, which
+ *  every player shares. The same dropdown over a hidden input as Auto-off's. */
+char s_recent_here_attrs[320] = " type=\"hidden\"";
+WiFiManagerParameter s_param_recent_here(
+    "recent_here",
+    "Recent list: the artists played in this room, or on any player",
+    "1", 2, s_recent_here_attrs);
+
+void buildRecentHereSelect() {
+  const bool room = services::browse::recentHere();
+  snprintf(s_recent_here_attrs, sizeof(s_recent_here_attrs),
+           " type=\"hidden\"><select id=\"recent_here_sel\" "
+           "onchange='document.getElementById(\"recent_here\").value="
+           "this.value'><option value=\"1\"%s>Room only</option>"
+           "<option value=\"0\"%s>Music Assistant</option></select",
+           room ? " selected" : "", room ? "" : " selected");
+  s_param_recent_here.setValue(room ? "1" : "0", 2);
 }
 
 void buildKeyboardSelect() {
@@ -752,6 +773,7 @@ void refreshPortalParamDefaults() {
                             static_cast<int>(config::kMaUrlMaxLen));
   }
   refreshMaTokenField();
+  buildRecentHereSelect();
   buildRotationSelect();
   buildKeyboardSelect();
   buildAutoOffSelect();
@@ -985,6 +1007,16 @@ void onPortalParamsSaved() {
                              s_param_ma_token.getValue());
   refreshMaTokenField();
 
+  const char* recent_here =
+      submitted("recent_here") ? s_param_recent_here.getValue() : nullptr;
+  if (recent_here != nullptr &&
+      (recent_here[0] == '0' || recent_here[0] == '1') &&
+      recent_here[1] == '\0' &&
+      (recent_here[0] == '1') != services::browse::recentHere()) {
+    services::browse::saveRecentHere(recent_here[0] == '1');
+  }
+  buildRecentHereSelect();  // the choice just saved, marked
+
   const char* keyboard = s_param_keyboard.getValue();
   if (keyboard != nullptr && (keyboard[0] == '0' || keyboard[0] == '1') &&
       keyboard[1] == '\0') {
@@ -1079,6 +1111,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ma_url);
   wm.addParameter(&s_param_ma_token);
   wm.addParameter(&s_param_ma_forget);
+  wm.addParameter(&s_param_recent_here);
   wm.addParameter(&s_param_rotation);
   wm.addParameter(&s_param_keyboard);
   wm.addParameter(&s_param_auto_off);

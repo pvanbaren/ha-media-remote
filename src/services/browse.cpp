@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include <Preferences.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -80,9 +81,39 @@ uint32_t s_room_generation = 0;
 unsigned long s_failed_ms = 0;
 uint32_t s_failed_generation = 0;
 
+/** Recent list, read once in init() and kept: every task asks, so no lock.
+ *  Its own NVS namespace, so a BOOT reset of the Home Assistant settings
+ *  leaves it, as it leaves the room's history. */
+constexpr char kPrefsNamespace[] = "browse";
+constexpr char kPrefsRecentHereKey[] = "recent_here";
+std::atomic<bool> s_recent_here{config::kRecentHereByDefault};
+/** Counts saves of it, for roomGeneration(). */
+std::atomic<uint32_t> s_setting_generation{0};
+
 }  // namespace
 
-void init() { s_lock = xSemaphoreCreateRecursiveMutex(); }
+void init() {
+  s_lock = xSemaphoreCreateRecursiveMutex();
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, true)) {
+    s_recent_here =
+        prefs.getBool(kPrefsRecentHereKey, config::kRecentHereByDefault);
+    prefs.end();
+  }
+}
+
+bool recentHere() { return s_recent_here; }
+
+void saveRecentHere(bool on) {
+  s_recent_here = on;
+  ++s_setting_generation;
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, false)) {
+    prefs.putBool(kPrefsRecentHereKey, on);
+    prefs.end();
+  }
+  LOG_INFO("Browse: Recent list %s", on ? "Room only" : "Music Assistant");
+}
 
 Problem problem() {
   Guard guard;
@@ -138,29 +169,36 @@ int fetchUnique(const config::BrowseSection& section, bool favorites,
 }
 
 /** Where the room sections come from, as one number: a change in the
- *  history, the recommendations or the Music Assistant settings -- a token
- *  saved, which is what switches the room sections on -- means a reload. */
+ *  history, the recommendations, the Music Assistant settings -- a token
+ *  saved, which is what switches the similar artists on -- or Recent list
+ *  means a reload. */
 uint32_t roomGeneration() {
-  return (history::generation() * 2654435761u + recommend::generation()) *
+  return ((history::generation() * 2654435761u + recommend::generation()) *
+              2654435761u +
+          ma::generation()) *
              2654435761u +
-         ma::generation();
+         s_setting_generation;
 }
 
-/** The room's own sections are on only with a Music Assistant token: they
- *  are this device's history and the similar artists drawn from it, and
- *  without the token there are no similar artists to draw. Without one both
- *  sections are the server's -- its recent artists, and its favourite
- *  artists topped up with others at random. */
-bool roomSectionsOn() { return ma::configured(); }
-
-/** The load itself. The caller holds the lock. */
+/** The load itself. The caller holds the lock.
+ *
+ *  Recent here is this device's history while the setting is Room only, and
+ *  the server's recent artists while it is Music Assistant or the history is
+ *  empty.
+ *  Recommended is artists like this room's, drawn from services::recommend,
+ *  with a Music Assistant token -- without one there are no similar artists
+ *  to draw -- and the library's favourite artists, topped up with others at
+ *  random, without one or until there are any. */
 bool loadLocked() {
-  const bool room_sections = roomSectionsOn();
+  const bool recent_here = recentHere();
+  const bool similar = ma::configured();
   const uint32_t generation = roomGeneration();
-  if (ha::maConfigEntry()[0] == '\0' && !room_sections) {
+  if (ha::maConfigEntry()[0] == '\0' &&
+      !(recent_here && history::count() > 0) && !similar) {
     // Not an error, just not set up: get_library is addressed by config entry,
     // and there is no useful request to make without one. The room's own
-    // sections come from memory and need none. Said once, not every time.
+    // artists, and the ones like them, come from memory and need none. Said
+    // once, not every time.
     if (s_problem != Problem::kNoConfigEntry) {
       LOG_INFO(
           "Browse: no Music Assistant config entry id - set it in the portal");
@@ -192,22 +230,24 @@ bool loadLocked() {
       want = room;
     }
 
-    const config::BrowseSource source =
-        room_sections ? section.source : config::BrowseSource::kLibrary;
     int got = 0;
-    switch (source) {
+    switch (section.source) {
       case config::BrowseSource::kRoomArtists:
-        got = roomArtists(want, &s_fetching[total]);
+        if (recent_here) {
+          got = roomArtists(want, &s_fetching[total]);
+        }
         break;
       case config::BrowseSource::kRoomSimilar:
-        got = recommend::draw(&s_fetching[total], want);
+        if (similar) {
+          got = recommend::draw(&s_fetching[total], want);
+        }
         break;
       case config::BrowseSource::kLibrary:
         break;
     }
-    if (source == config::BrowseSource::kLibrary || got <= 0) {
-      // No token, or the room has nothing yet: the library stands in, and
-      // says so in the heading where one is given.
+    if (got <= 0) {
+      // Not the room's, or the room has nothing yet: the library stands in,
+      // and says so in the heading where one is given.
       if (section.source != config::BrowseSource::kLibrary &&
           section.fallback_title != nullptr) {
         titles[i] = section.fallback_title;

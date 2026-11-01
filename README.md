@@ -156,18 +156,20 @@ The row stays on screen with "Starting radio..." or "Starting..." under it
 while Music Assistant builds the queue -- four seconds and more for an
 artist.
 
-| Section | With a Music Assistant token | Without one |
-|---|---|---|
-| **Recent here** | The last artists heard *in this room*, most recent first | Music Assistant's recent artists, headed "Recent artists" |
-| **Recommended** | Artists similar to this room's recent ones, a fresh draw each load | Your favourite artists in Music Assistant, topped up with others from the library at random |
+| Section | Shows |
+|---|---|
+| **Recent here** or **Recent artists** | With the **Recent list** setting at *Music Assistant* (the default): Music Assistant's recent artists, headed "Recent artists". At *Room only*: the last artists heard *in this room*, most recent first, headed "Recent here" -- Music Assistant's, headed "Recent artists", until anything has played here |
+| **Recommended** | With a Music Assistant token: artists similar to this room's recent ones, a fresh draw each load. Without one: your favourite artists in Music Assistant, topped up with others from the library at random |
 
 "This room" is this remote's player: Music Assistant's own "recently played"
 is shared by every player on the server, so two remotes in two rooms would
-otherwise show the same list. How the room's list and the recommendations are
-kept is in [Recent here](docs/internals.md#recent-here-the-rooms-history) and
+show the same list. The setting is on the [settings page](#settings-on-the-device)
+and in [the portal](#the-portal). How the room's list and the
+recommendations are kept is in
+[Recent here](docs/internals.md#recent-here-the-rooms-history) and
 [Recommended](docs/internals.md#recommended-artists-like-this-rooms). Until
-the room has recommendations, Recommended lists the favourites, as it does
-without a token. An artist already under Recent here is not listed again
+there are recommendations, Recommended lists the favourites, as it does
+without a token. An artist already under the recent ones is not listed again
 under Recommended.
 
 The list follows your finger and glides on release. **Tap the title strip** or
@@ -281,6 +283,7 @@ row a setting's name over its value:
 | Player's input | The volume device's inputs, or the one named after the player |
 | Player volume at switch-on | Off, or 10% to 100% |
 | Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |
+| Recent list | Room only, or Music Assistant: whether the list's top section is the artists played in this room, or on any player |
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
@@ -441,8 +444,8 @@ The few settings that are typed are in [the portal](#the-portal):
 
 - **The remote's name.** Every remote starts as `media-remote`; give each its
   own -- `kitchen-remote`, `bedroom-remote` -- once there is more than one.
-- **A Music Assistant token**, for this room's own Recent here and Recommended
-  sections, and Music Assistant's URL when it is not the Home Assistant add-on.
+- **A Music Assistant token**, for Recommended's similar artists, and Music
+  Assistant's URL when it is not the Home Assistant add-on.
 - **Home Assistant's URL and a token**, on a network where the remote cannot
   find Home Assistant by itself.
 
@@ -610,12 +613,17 @@ and the placeholder shows the address that works out to.
 **Music Assistant token (for Recommended)** -- a long-lived token from Music
 Assistant's own web UI (your profile there). Home Assistant's token does not
 open Music Assistant's API, and the recommendations need that API. With a
-token the list's two sections are the room's own; without one they are the
-server's (see [the list](#the-swipe-up-list)).
+token Recommended is artists similar to this room's recent ones; without one
+it is your favourite artists (see [the list](#the-swipe-up-list)).
 
-**Forget the stored Music Assistant token** -- tick and save to remove it. The
-list goes back to the server's sections. Ticked together with a new token, the
-new one is kept.
+**Forget the stored Music Assistant token** -- tick and save to remove it.
+Recommended goes back to your favourite artists. Ticked together with a new
+token, the new one is kept.
+
+**Recent list** -- *Music Assistant*, the default, makes the list's top
+section Music Assistant's recent artists, which every player shares; *Room
+only* makes it the artists played on this remote's player. The same setting
+as on the settings page.
 
 **Screen rotation** *(restarts to apply)* -- upright, +90° (clockwise), 180°
 or −90°, for a panel mounted any way up. The touch turns with the picture.

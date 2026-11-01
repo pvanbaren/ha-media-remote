@@ -44,8 +44,18 @@ struct Row {
   int item = -1;
 };
 
-/** Create the lock. Call once in setup(), before the poll task exists. */
+/** Create the lock and read the Recent list setting. Call once in setup(),
+ *  before the poll task exists. */
 void init();
+
+/** Recent list: whether the top section is the artists played on this
+ *  remote's player (true, "Room only"), or Music Assistant's recent artists,
+ *  which every player shares (false, "Music Assistant"). Stored in NVS;
+ *  config::kRecentHereByDefault until it is. */
+bool recentHere();
+/** Store Recent list. The list and the recommendations follow it at their
+ *  next load; no restart. */
+void saveRecentHere(bool on);
 
 /** Load the list if it is missing or stale, and do nothing if it is not.
  *

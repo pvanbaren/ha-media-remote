@@ -107,18 +107,19 @@ constexpr size_t kMaConfigEntryIdMaxLen = 40;
 // =====================================================================
 // The swipe-up list
 // =====================================================================
-/** Where a section's items come from. The room's own sources are used only
- *  with a Music Assistant token (services::ma); without one every section is
- *  its library query. */
+/** Where a section's items come from. Each room source has the section's
+ *  library query to fall back on. */
 enum class BrowseSource : uint8_t {
   /** The Music Assistant library query in the section. */
   kLibrary,
-  /** The artists played in this room (services::history), most recent first.
-   *  The library query stands in, under `fallback_title`, while there are
-   *  none yet. */
+  /** The artists played in this room (services::history), most recent first,
+   *  while the Recent list setting is Room only
+   *  (services::browse::recentHere()). The library query stands in, under
+   *  `fallback_title`, while it is Music Assistant or there are none yet. */
   kRoomArtists,
-  /** Artists like this room's recent ones (services::recommend). The library
-   *  query stands in until there are any. */
+  /** Artists like this room's recent ones (services::recommend), with a
+   *  Music Assistant token (services::ma). The library query stands in
+   *  without one, or until there are any. */
   kRoomSimilar,
 };
 
@@ -171,10 +172,12 @@ constexpr size_t kMaResponseMaxBytes = 192 * 1024;
 
 /** What the swipe-up list shows, top to bottom.
  *
- *  Both sections are this room's, not the server's. Music Assistant's own
- *  "recently played" is one timestamp per library item shared by every
- *  player, so two remotes in two rooms would see the same list; what played on
- *  this remote's player is what played in this room (services::history).
+ *  The top section is this room's while the Recent list setting is Room
+ *  only, and the server's while it is Music Assistant. Music Assistant's own
+ *  "recently played" is
+ *  one timestamp per library item shared by every player, so two remotes in
+ *  two rooms see the same list; what played on this remote's player is what
+ *  played in this room (services::history).
  *
  *  "Recommended" is artists like the room's recent ones, from Music
  *  Assistant's own API (services::recommend), which needs its token in the
@@ -183,15 +186,17 @@ constexpr size_t kMaResponseMaxBytes = 192 * 1024;
  *  topped up with others at random -- artists, so that a tap starts radio,
  *  as it does on the rest of the list.
  *
- *  A library query costs a request when the list loads -- which, once the
- *  room has a history, is only a stand-in's -- and leaves out whatever an
- *  earlier section already shows. */
+ *  A library query costs a request when the list loads, and leaves out
+ *  whatever an earlier section already shows. */
 constexpr BrowseSection kBrowseSections[] = {
     {"Recent here", "artist", "last_played_desc", 8,
      BrowseSource::kRoomArtists, "Recent artists"},
     {"Recommended", "artist", "random", 8, BrowseSource::kRoomSimilar, nullptr,
      true},
 };
+/** The Recent list setting on a remote that has never stored one: Music
+ *  Assistant's recent artists, the same on every remote. */
+constexpr bool kRecentHereByDefault = false;
 constexpr int kBrowseSectionCount =
     static_cast<int>(sizeof(kBrowseSections) / sizeof(kBrowseSections[0]));
 

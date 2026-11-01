@@ -55,6 +55,7 @@ HA: stream closed soon after opening, polling; next try in 5 s
 | The list says **Music Assistant** and an error | Every section failed; the console has the body |
 | `no items in library response` | Check the config entry id |
 | Recommended is your favourite artists, or random ones | No Music Assistant token, or the pool is not built yet; watch for `Recommend:` lines |
+| The list's top section is "Recent artists", the same on every remote | Recent list is set to Music Assistant, or nothing has played on this remote's player yet |
 | `History: no artist found for "…"` | That name matched no artist exactly; it is not searched for again |
 | `Portal: … has no input "…", cleared` | The new volume device has no input by the old name; choose one |
 | `Cover art: … streaming instead` | The cover is larger than the board's buffer; it re-downloads on every repaint |
