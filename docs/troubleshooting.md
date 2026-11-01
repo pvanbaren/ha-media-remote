@@ -49,7 +49,7 @@ HA: stream closed soon after opening, polling; next try in 5 s
 | `token rejected` | Tap the card to link again, or re-paste the token -- Home Assistant's, or Music Assistant's for `MA:` lines |
 | `HTTP 404` | A trailing path on the base URL, or an entity that no longer exists |
 | `connection refused` / timeouts | The URL's host and port, or https against a plain-http server |
-| `transport failure (heap free …, largest …)` | A TLS handshake that could not allocate; something new is using internal RAM |
+| `transport failure (internal heap free …, largest …)` | A TLS handshake that could not allocate; something new is using internal RAM |
 | Player missing from the portal | `list hit the N entry cap` -- raise `kMaxPlayers` |
 | The list says **Not set up** | No Music Assistant config entry id, and no room history in use: Recent list is *Music Assistant*, or nothing has played here yet |
 | The list says **Music Assistant** and an error | Every section failed; the console has the body |
@@ -57,7 +57,7 @@ HA: stream closed soon after opening, polling; next try in 5 s
 | Recommended is random library artists | No Music Assistant token, or the pool is not built yet; watch for `Recommend:` lines |
 | The list's top section is "Recent artists", the same on every remote | Recent list is set to Music Assistant, or nothing has played on this remote's player yet |
 | `History: no artist found for "…"` | That name matched no artist exactly; it is not searched for again |
-| `Portal: … has no input "…", cleared` | The new volume device has no input by the old name; choose one |
+| `Settings: … has no input "…", cleared` | The new volume device has no input by the old name; choose one |
 | `Cover art: … streaming instead` | The cover is larger than the board's buffer; it re-downloads on every repaint |
 | `Cover art: decode failed` | Size, dimensions, format and scale follow; progressive JPEG is not supported |
 | `Art: … refused, retrying unresized` | That host rejected the thumbnail size; harmless |

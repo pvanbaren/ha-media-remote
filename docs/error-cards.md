@@ -47,5 +47,5 @@ a press on a card counts as a tap on it.
   the problem lasts, and on now playing once it is fixed.
 - Left alone for 60 s, the status page and settings go back by themselves the
   same way.
-- With Home Assistant not linked, settings leaves out Media player and Volume &
-  power, since both are chosen from Home Assistant's lists.
+- With Home Assistant not linked, settings leaves out Media player, Volume &
+  power, Auto-off and Recent list, since they need Home Assistant.

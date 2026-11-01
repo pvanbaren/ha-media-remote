@@ -3,8 +3,8 @@
 A touch remote for one Home Assistant `media_player`, on an ESP32-S3 (or an
 ESP32-P4) with a small display. It shows what is playing -- the cover art
 filling the screen, the title and artist over it, a volume control and the elapsed time -- and
-gives you previous / play-pause / next, a volume swipe, a list of this room's
-recent artists and recommendations, and a search for artists, albums,
+gives you previous / play-pause / next, a volume swipe, a list of recent
+artists -- this room's, or the whole server's -- and recommendations, and a search for artists, albums,
 tracks, playlists and radio stations. It talks to Home
 Assistant directly, over its WebSocket and REST APIs, with nothing to install
 on the server; Music Assistant adds the list and the search.
@@ -35,7 +35,7 @@ What you need:
   and a long-lived access token in the portal.
 - **Music Assistant** (optional, but it is what the swipe-up list and the
   search are made of), with its Home Assistant integration.
-- A **Music Assistant token** (optional) for the room's own recommendations.
+- A **Music Assistant token** (optional) for Recommended's similar artists.
 
 Install it from the browser at
 **[pvanbaren.github.io/ha-media-remote](https://pvanbaren.github.io/ha-media-remote/)**,
@@ -288,6 +288,7 @@ row a setting's name over its value:
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
 | Restart | Restart now, or cancel |
+| More at | The portal's address, `<name>.local`; not a choice |
 
 **Tap** a row for its choices, the one in use marked, and **tap** one to
 choose it: it is stored at once, as a portal save would store it, and the page
@@ -295,7 +296,9 @@ comes back showing it. The tapped row lights the moment the tap registers,
 since loading a list of players or inputs, or storing a choice, can take a
 second or two. **Swipe right**, or tap the **back button** at the top
 left, to back out without choosing, and again to go back to the status page.
-The status page and the Wi-Fi pages have the button too. Player's input and
+The status page and the Wi-Fi pages have the button too. Media player,
+Volume & power, Auto-off and Recent list are there once the remote is linked
+to Home Assistant, since the first two are chosen from its lists. Player's input and
 Player volume at switch-on are there only while Volume & power is a separate
 device, as in the portal, and
 a new Volume & power device keeps the player's input when it has one by the
@@ -437,8 +440,8 @@ and the search work straight away.
 The rest of what needs no typing is in [the settings](#settings-on-the-device),
 behind the gear on the status page (swipe down on now playing): a separate
 **Volume & power** device -- an amplifier or receiver -- and the player's input
-on it, the player volume at switch-on, Wi-Fi transmit power, the search
-keyboard and the screen rotation.
+on it, the player volume at switch-on, Auto-off, the Recent list, Wi-Fi
+transmit power, the search keyboard and the screen rotation.
 
 The few settings that are typed are in [the portal](#the-portal):
 
@@ -546,8 +549,8 @@ A few rules hold for every field:
 ### The fields
 
 In the order the page shows them. Wi-Fi transmit power, the screen rotation,
-the search keyboard, the media player, Volume & power, the player's input and
-the player volume at switch-on are on [the device's
+the search keyboard, the media player, Volume & power, the player's input,
+the player volume at switch-on, Auto-off and the Recent list are on [the device's
 settings](#settings-on-the-device) as well. After a save the confirmation page goes
 back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
 long enough for a setting that restarts the device to have taken effect. A
@@ -690,11 +693,11 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Setting | BOOT held | Erase WiFi config |
 |---|---|---|
 | Wi-Fi network | cleared | cleared |
-| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Music Assistant entry id | cleared | kept |
+| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Auto-off, Music Assistant entry id | cleared | kept |
 | Music Assistant URL and token | cleared | kept |
 | Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
-| The room's history | kept | kept |
+| Recent list, the room's history | kept | kept |
 
 Either way the device reboots into the setup access point.
 

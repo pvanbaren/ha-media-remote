@@ -219,7 +219,9 @@ artist. The last track heard by each artist is kept in RAM too, as a seed for
 the recommendations.
 
 The list reloads as soon as the history changes. With a Music Assistant
-token, opening it costs nothing: both sections come from memory.
+token and Recent list at *Room only*, opening it costs nothing: both sections
+come from memory. At *Music Assistant* the top section is a library request
+at each load.
 
 ## Recommended: artists like the recent ones
 
@@ -517,16 +519,20 @@ claimed by the first repaint that keeps one, and are likewise never freed. What 
 board is contiguity, not total free memory, and memory claimed once cannot
 fragment anything later.
 
-**Flash** (`partitions/media_remote.csv`, 16 MB on every board): the settings
-partition (NVS, 20 KB at 0x9000), OTA data, two 4 MB app slots, spiffs,
-unused, and 64 KB at the end for a core dump. Every panel board's env declares
-its 16 MB explicitly; the generic board definition they build on says 8.
+**Flash** (`partitions/media_remote.csv`, laid out for 16 MB on every
+board): the settings partition (NVS, 20 KB at 0x9000), OTA data, two 4 MB app
+slots, spiffs, unused, and 64 KB at the end for a core dump. An env built on a
+generic board definition declares its flash size, which the definition gets
+wrong; the P4 4B's is 32 MB, of which the table uses the first 16.
 
 **Settings** are in NVS, each group in its own namespace so a reset can clear
 one and keep another: `hamedia` (Home Assistant), `ma` (Music Assistant),
-`device` (the name), `display` (rotation, keyboard) and `history`. The Wi-Fi
-credentials are the Wi-Fi stack's own, beside a `wifi` namespace holding one
-flag: open the setup portal on the next boot.
+`device` (the name), `display` (rotation, keyboard), `history`, `browse`
+(the Recent list setting) and `ha_link` (the id of a token forgotten from the
+portal, for the next link to delete). A BOOT reset clears `hamedia`, `ma` and
+the Wi-Fi settings and keeps the rest. The Wi-Fi credentials are the Wi-Fi
+stack's own, beside a `wifi` namespace holding the transmit power and a flag
+to open the setup portal on the next boot.
 
 ## Adding a panel
 

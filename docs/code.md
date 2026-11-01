@@ -132,7 +132,8 @@ site/                        the install page and its board manifests
 
 | Task | Does |
 |---|---|
-| Arduino loop | Touch, drawing, the idle timer, service calls a button makes |
+| Arduino loop | Touch, drawing, the idle timer |
+| Commands (`commands`) | Service calls a button makes, from a queue |
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
@@ -151,6 +152,6 @@ They share three kinds of thing, each with its own discipline:
   about ordering or about the other core seeing the write, and the S3 is
   dual-core. Every flag here is lock-free on it.
 
-Service calls made from the loop (a button) are handed to the network task
+Service calls made by the command task (a button) are handed to the network task
 through a one-deep slot and go over the stream; if that task cannot take them
 within `kHaStreamPickupMs`, they go over REST instead rather than wait.
