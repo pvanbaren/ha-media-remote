@@ -58,4 +58,10 @@ const char* lastError();
 /** Forget the URL found, so the next discover() looks again. */
 void reset();
 
+/** Forget the stored token, keeping the URL: the remote is unlinked, and the
+ *  sign-in QR code can go up to link it again. The token's id is kept, so
+ *  the next link deletes it in Home Assistant rather than leaving it
+ *  working there under a name a new one cannot have. */
+void forgetToken();
+
 }  // namespace services::ha_link

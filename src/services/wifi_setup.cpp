@@ -23,6 +23,7 @@
 #include "services/device_name.h"
 #include "services/display_settings.h"
 #include "services/ha_client.h"
+#include "services/ha_link.h"
 #include "services/ma_api.h"
 #include "services/player_list.h"
 
@@ -147,6 +148,15 @@ WiFiManagerParameter s_param_ha_url("ha_url", "Home Assistant URL", "",
                                     kUrlParamLen, kUrlInputAttrs);
 WiFiManagerParameter s_param_ha_token("ha_token", "Long-lived access token", "",
                                       kTokenParamLen, s_token_attrs);
+/** The way to unlink, since a blank token field keeps the token: tick and
+ *  save, and the token is forgotten -- its id kept, for the next link to
+ *  delete it in Home Assistant -- and the remote restarts to the sign-in QR
+ *  code, to link again with a new one. The same checkbox pattern as
+ *  ma_forget. Ticked together with a new token, the new one is kept. */
+WiFiManagerParameter s_param_ha_forget(
+    "ha_forget",
+    "Forget the stored Home Assistant token, and restart to link again<br/>",
+    "1", 1, " type=\"checkbox\" style=\"width:auto\"", WFM_LABEL_AFTER);
 /** Which input on the volume/power entity carries the player, for a device
  *  whose inputs are not named after it -- a receiver's "AirPlay" or "HDMI4".
  *  Playing from the list or search switches the device to it, and while the
@@ -756,6 +766,7 @@ void refreshPortalParamDefaults() {
            services::ha::hasStoredToken() ? "stored - leave blank to keep"
                                           : "paste token here");
   s_param_ha_token.setValue("", kTokenParamLen);
+  s_param_ha_forget.setValue("1", 1);
   s_param_ma_entry.setValue(services::ha::maConfigEntry(), kMaEntryParamLen);
   s_param_ma_entry_forget.setValue("1", 1);
   {
@@ -897,6 +908,18 @@ void selectControlKeepingInput(const char* control, const char* input) {
 }
 
 void onPortalParamsSaved() {
+  // Before the token field is read, so a new token typed with the box ticked
+  // is the one kept. The restart waits for the answer page to go out.
+  const char* ha_forget = s_param_ha_forget.getValue();
+  if (ha_forget != nullptr && strcmp(ha_forget, "1") == 0 &&
+      services::ha::hasStoredToken()) {
+    services::ha_link::forgetToken();
+    LOG_INFO("Portal: Home Assistant token forgotten, restarting to link");
+    s_restart_pending = true;
+    s_restart_requested_ms = millis();
+  }
+  s_param_ha_forget.setValue("1", 1);
+
   char old_url[config::kHaBaseUrlMaxLen + 1];
   snprintf(old_url, sizeof(old_url), "%s", services::ha::storedBaseUrl());
   const char* token = s_param_ha_token.getValue();
@@ -1106,6 +1129,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_device_name);
   wm.addParameter(&s_param_ha_url);
   wm.addParameter(&s_param_ha_token);
+  wm.addParameter(&s_param_ha_forget);
   wm.addParameter(&s_param_ma_entry);
   wm.addParameter(&s_param_ma_entry_forget);
   wm.addParameter(&s_param_ma_url);

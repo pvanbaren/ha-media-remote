@@ -530,8 +530,9 @@ A few rules hold for every field:
 - **Secrets are never shown back.** The two token fields are always empty;
   their placeholder says whether one is stored. **Blank keeps the stored
   value.**
-- **Saving applies at once**, except the device name and rotation, which
-  restart the device a moment after the page answers.
+- **Saving applies at once**, except the device name, the rotation and
+  *Forget the stored Home Assistant token*, which restart the device a moment
+  after the page answers.
 - A dropdown that was not on the page you saved -- a page opened before the
   player list had loaded -- is left as it was, never blanked.
 - **The player dropdowns follow Home Assistant.** Opening a settings page
@@ -581,6 +582,13 @@ dates against.
 → **Long-lived access tokens** → **Create token**. Home Assistant shows it
 once. Not needed when the remote was linked by its QR code: it made one of
 its own.
+
+**Forget the stored Home Assistant token, and restart to link again** -- tick
+and save to unlink the remote. It keeps the URL, restarts, and puts the
+**Scan to link** code up, to make a new token. The forgotten token goes on
+working in Home Assistant until the next link deletes it, as linking again
+deletes the token it replaces; one pasted into the portal is left alone.
+Ticked together with a new token, the new one is kept.
 
 **Music Assistant config entry id** -- needed for the list and the search: the
 integration's services are addressed by config entry, not by entity. It looks

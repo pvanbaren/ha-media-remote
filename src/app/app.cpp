@@ -2344,7 +2344,7 @@ struct ControlNow {
  *  finishes the link when a phone comes back with a code. */
 [[gnu::noinline]] void relinkHa() {
   LOG_INFO("HA: token rejected, linking again");
-  services::ha::forgetToken();
+  services::ha_link::forgetToken();
   services::ha_link::reset();
   g_ha_discover_tried = true;
   g_ha_discover_ms = millis();

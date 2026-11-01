@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -289,6 +290,35 @@ __attribute__((noinline)) bool tokenIssuer(const char* jwt, char* out,
                     out_len);
 }
 
+/** The refresh token id of a token forgotten by forgetToken(), until a link
+ *  has deleted it: the id only, never the token. Its own NVS namespace, so a
+ *  BOOT reset of the Home Assistant settings leaves it for the next link. */
+constexpr char kPrefsNamespace[] = "ha_link";
+constexpr char kPrefsForgottenKey[] = "forgotten";
+
+void loadForgottenId(char* out, size_t out_len) {
+  out[0] = '\0';
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, true)) {
+    if (prefs.isKey(kPrefsForgottenKey)) {
+      prefs.getString(kPrefsForgottenKey, out, out_len);
+    }
+    prefs.end();
+  }
+}
+
+void saveForgottenId(const char* id) {
+  Preferences prefs;
+  if (prefs.begin(kPrefsNamespace, false)) {
+    if (id[0] != '\0') {
+      prefs.putString(kPrefsForgottenKey, id);
+    } else if (prefs.isKey(kPrefsForgottenKey)) {
+      prefs.remove(kPrefsForgottenKey);
+    }
+    prefs.end();
+  }
+}
+
 /** Whether a token in the reply to auth/refresh_tokens is called `name`.
  *  Home Assistant refuses a second long-lived token under a name, so one
  *  that is taken is passed over. */
@@ -408,13 +438,18 @@ __attribute__((noinline)) bool mintToken(const char* access, char* token,
     // this Home Assistant: replaced rather than left behind. Found by its
     // own id -- the "iss" inside it -- and never by name, since two remotes
     // can share a name, and deleting by it took the other one's token.
+    // Or, with none held, the one it forgot (forgetToken()).
     send("\"type\":\"auth/refresh_tokens\"");
     String tokens;
     const bool have_list = awaitMessage(ws, reply_id, tokens);
     char old_id[48];
-    if (have_list &&
-        tokenIssuer(services::ha::token(), old_id, sizeof(old_id)) &&
-        isRemoteToken(tokens, old_id)) {
+    const bool forgotten =
+        !tokenIssuer(services::ha::token(), old_id, sizeof(old_id));
+    if (forgotten) {
+      loadForgottenId(old_id, sizeof(old_id));
+    }
+    bool old_gone = have_list;
+    if (have_list && old_id[0] != '\0' && isRemoteToken(tokens, old_id)) {
       String del = "\"type\":\"auth/delete_refresh_token\",";
       del += "\"refresh_token_id\":\"";
       del += old_id;
@@ -429,7 +464,11 @@ __attribute__((noinline)) bool mintToken(const char* access, char* token,
         awaitMessage(ws, reply_id, tokens);
       } else {
         logReply("could not remove the earlier token", msg);
+        old_gone = false;
       }
+    }
+    if (forgotten && old_gone && old_id[0] != '\0') {
+      saveForgottenId("");  // deleted, or not there to delete
     }
 
     // Home Assistant keeps one long-lived token per name and refuses a
@@ -482,6 +521,14 @@ __attribute__((noinline)) bool mintToken(const char* access, char* token,
 }
 
 }  // namespace
+
+void forgetToken() {
+  char id[48];
+  if (tokenIssuer(services::ha::token(), id, sizeof(id))) {
+    saveForgottenId(id);
+  }
+  services::ha::forgetToken();
+}
 
 void init() {
   wifiAddWebPage("/ha", handleStart);
