@@ -220,6 +220,8 @@ void showUpdateFailed(const char* why);
 void showSearchResults();
 /** A frame before a blocking call, so the panel does not simply stop. */
 void showSearching();
+/** The Starting... card for something asked for by voice: the words heard. */
+void showVoiceStarting(const char* words);
 void showLoadingList();
 /** The boot card, naming whatever is being waited on. */
 void showLoading(const char* what);

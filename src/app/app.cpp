@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -98,6 +99,12 @@ std::atomic<bool> g_duck_for_voice{false};
 bool g_ducked = false;
 float g_duck_from = 0.0f;
 float g_duck_to = 0.0f;
+/** Volume steps asked for by voice and not yet made, up positive: from the
+ *  stream's owner (takeVoiceCommand()) to the poll task. */
+std::atomic<int> g_voice_volume_steps{0};
+/** "Stop" or "turn off" asked by voice and not yet done: from the stream's
+ *  owner to the poll task (turnOffForVoice()). */
+std::atomic<bool> g_voice_turn_off{false};
 
 unsigned long g_last_elapsed_ms = 0;
 /** When the browse list or search screen was last opened, for
@@ -655,6 +662,7 @@ enum class CommandKind : uint8_t {
   kPlayItem,   // a pick from the browse list or the search
   kIsolate,    // the other rooms on this input off
   kSeek,       // a drag along the progress line
+  kPlayQuery,  // "play <something>", asked by voice
 };
 
 struct CommandJob {
@@ -680,6 +688,8 @@ struct CommandJob {
   float position = 0.0f;
   /** kIsolate: the rooms, comma-separated, as PlayerState::peer_ids. */
   char ids[sizeof(PlayerState::peer_ids)] = {};
+  /** kPlayQuery: the something, as heard. */
+  char query[96] = {};
 };
 
 struct CommandResult {
@@ -758,6 +768,88 @@ uint32_t turnOffRooms(char* ids) {
   return failed;
 }
 
+/** Whether an artist's name is near enough the words: the same letters
+ *  and digits, case and a leading "The" aside, give or take one wrong in
+ *  three -- "Katya Bunyatishvili" is Khatia Buniatishvili, as speech to
+ *  text hears her. Only Music Assistant's first few artists for the
+ *  words are compared, so a loose match is still one of the right few. */
+bool nearName(const char* name, const char* words) {
+  // "The Beatles" is Beatles, said either way.
+  const auto skipThe = [](const char* s) {
+    return strncasecmp(s, "the ", 4) == 0 ? s + 4 : s;
+  };
+  name = skipThe(name);
+  words = skipThe(words);
+  char a[48];
+  char b[48];
+  size_t na = 0;
+  size_t nb = 0;
+  for (const char* p = name; *p != '\0' && na < sizeof(a); ++p) {
+    if (isalnum(static_cast<unsigned char>(*p))) {
+      a[na++] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+    }
+  }
+  for (const char* p = words; *p != '\0' && nb < sizeof(b); ++p) {
+    if (isalnum(static_cast<unsigned char>(*p))) {
+      b[nb++] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+    }
+  }
+  if (na == 0 || nb == 0) {
+    return false;
+  }
+  // Edit distance, a row at a time.
+  uint8_t prev[sizeof(b) + 1];
+  uint8_t row[sizeof(b) + 1];
+  for (size_t j = 0; j <= nb; ++j) {
+    prev[j] = static_cast<uint8_t>(j);
+  }
+  for (size_t i = 1; i <= na; ++i) {
+    row[0] = static_cast<uint8_t>(i);
+    for (size_t j = 1; j <= nb; ++j) {
+      const int sub = prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+      const int del = prev[j] + 1;
+      const int ins = row[j - 1] + 1;
+      row[j] = static_cast<uint8_t>(std::min(sub, std::min(del, ins)));
+    }
+    memcpy(prev, row, nb + 1);
+  }
+  const size_t longer = na > nb ? na : nb;
+  return prev[nb] <= std::max<size_t>(1, longer / 3);
+}
+
+/** "Play <query>" by voice, on this remote's player: an artist whose name
+ *  is near enough the words, played as a tap on it in the search plays it
+ *  (config::kArtistsPlayRadio), or else whatever Music Assistant makes of
+ *  the words -- a track, an album, a playlist. Worker only. */
+bool playVoiceQuery(const char* query) {
+  char player[config::kEntityIdMaxLen];
+  services::ha::copySelectedEntity(player, sizeof(player));
+  if (player[0] == '\0') {
+    return false;
+  }
+  constexpr int kArtists = 3;
+  static services::ha::LibraryItem* found = [] {
+    void* mem = heap_caps_malloc(kArtists * sizeof(services::ha::LibraryItem),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem != nullptr ? new (mem) services::ha::LibraryItem[kArtists]
+                          : new services::ha::LibraryItem[kArtists];
+  }();
+  const int n = services::ha::search(query, "artist", found, kArtists);
+  for (int i = 0; i < n; ++i) {
+    if (nearName(found[i].name, query)) {
+      LOG_INFO("VOICE: \"%s\" is the artist %s", query, found[i].name);
+      const bool ok = services::ha::playMedia(player, found[i].uri, "artist",
+                                              config::kArtistsPlayRadio);
+      if (ok) {
+        services::history::notePicked(found[i]);
+      }
+      return ok;
+    }
+  }
+  LOG_INFO("VOICE: \"%s\" is no artist; asking Music Assistant", query);
+  return services::ha::playMedia(player, query, nullptr, false);
+}
+
 void runCommand(CommandJob& job, CommandResult& r) {
   r = {job.kind, job.intent, true, job.starting, job.was, 0};
   switch (job.kind) {
@@ -819,6 +911,35 @@ void runCommand(CommandJob& job, CommandResult& r) {
       r.failed = turnOffRooms(job.ids);
       r.ok = r.failed == 0;
       break;
+    case CommandKind::kPlayQuery: {
+      if (job.generation != g_play_generation) {
+        LOG_INFO("VOICE: play dropped, cancelled before it was sent");
+        r.ok = false;
+        break;
+      }
+      // As a pick from the search does: the volume device on, and to the
+      // player's input, first. Then said at once, as Music Assistant can
+      // take ten seconds to start it.
+      if (job.power_first) {
+        powerOnControl();
+      }
+      {
+        char text[sizeof(job.query) + 16];
+        snprintf(text, sizeof(text), "Playing %s.", job.query);
+        if (!services::voice::say(text)) {
+          LOG_INFO("VOICE: cannot speak now");
+        }
+      }
+      r.ok = playVoiceQuery(job.query);
+      if (!r.ok) {
+        char text[sizeof(job.query) + 40];
+        snprintf(text, sizeof(text), "Sorry, I couldn't find %s.", job.query);
+        if (!services::voice::say(text)) {
+          LOG_INFO("VOICE: cannot speak now");
+        }
+      }
+      break;
+    }
   }
   g_poll_now = true;
 }
@@ -1432,7 +1553,12 @@ const char* serviceFor(Intent intent) {
   g_poll_now = true;
 }
 
-[[gnu::noinline]] void sendCommand(Intent intent) {
+/** What play-pause is to do: what the player's state calls for, as the
+ *  button does -- or play, or pause, whatever that is, as asked by voice. */
+enum class PlayWish : uint8_t { kToggle, kPlay, kPause };
+
+[[gnu::noinline]] void sendCommand(Intent intent,
+                                   PlayWish wish = PlayWish::kToggle) {
   const char* service = serviceFor(intent);
   if (service == nullptr) {
     return;
@@ -1472,7 +1598,9 @@ const char* serviceFor(Intent intent) {
   // whose state the snapshot did not have -- a player playing unheard behind
   // another input was paused by the press meant to start it.
   const bool starting =
-      !have_before || before.playback != PlaybackState::kPlaying;
+      wish == PlayWish::kPlay ||
+      (wish == PlayWish::kToggle &&
+       (!have_before || before.playback != PlaybackState::kPlaying));
   if (intent == Intent::kPlayPause) {
     service = starting ? "media_play" : "media_pause";
   }
@@ -1698,6 +1826,54 @@ void duckMusicForVoice() {
   g_state_dirty = true;
 }
 
+/** "Stop" and "turn off" by voice: the volume device off, as the power chip
+ *  switches it off -- the player, where there is no volume device. The
+ *  music put back to its level first, if it is down for the request, so the
+ *  device comes back on at that level rather than the lowered one; set here
+ *  rather than by the command worker, so it lands before the power-off.
+ *  Poll task. */
+void turnOffForVoice() {
+  if (!g_voice_turn_off.exchange(false)) {
+    return;
+  }
+  char control[config::kEntityIdMaxLen];
+  services::ha::copyControlEntity(control, sizeof(control));
+  if (g_ducked) {
+    g_ducked = false;
+    LOG_INFO("VOICE: music back to %.2f before turning off", g_duck_from);
+    services::ha::setVolume(control, g_duck_from);
+  }
+  LOG_INFO("VOICE: turning off %s", control);
+  powerOffControl();
+  g_state_dirty = true;
+}
+
+/** "Volume up" and "volume down" by voice, kVoiceVolumeStep each, on the
+ *  volume device. While the music is down for the request, the level it
+ *  comes back up to is what moves, or bringing it back would undo them.
+ *  Poll task. */
+void stepVolumeForVoice() {
+  const int steps = g_voice_volume_steps.exchange(0);
+  if (steps == 0) {
+    return;
+  }
+  PlayerState now;
+  if (!snapshotState(now) || !services::ha::volumeAvailable(now)) {
+    LOG_INFO("VOICE: no volume to change");
+    return;
+  }
+  const float delta = steps * config::kVoiceVolumeStep;
+  if (g_ducked) {
+    g_duck_from = std::min(1.0f, std::max(0.0f, g_duck_from + delta));
+    LOG_INFO("VOICE: volume to %.2f, once the request is over", g_duck_from);
+    return;
+  }
+  const float level = std::min(1.0f, std::max(0.0f, now.volume + delta));
+  LOG_INFO("VOICE: volume from %.2f to %.2f", now.volume, level);
+  commandVolume(services::ha::controlEntity(), level);
+  g_state_dirty = true;  // as for the ducking: the arc repaints
+}
+
 /** The music back up once the request and its reply are over -- unless the
  *  volume has moved since it was turned down, which is the request having
  *  set it, or someone turning it by hand. Poll task. */
@@ -1811,6 +1987,89 @@ unsigned long g_start_ms = 0;
   g_screen = Screen::kStarting;
   g_message_recheck_ms = millis();
   g_poll_now = true;
+}
+
+/** A Command asked by voice, for this room's player: from the stream's
+ *  owner, copied here for the loop, which carries it out -- but for the
+ *  volume, which is the poll task's (stepVolumeForVoice()). */
+char g_voice_query[sizeof(CommandJob::query)] = {};
+services::voice::Command g_voice_command = services::voice::Command::kPlay;
+portMUX_TYPE g_voice_command_lock = portMUX_INITIALIZER_UNLOCKED;
+std::atomic<bool> g_voice_command_waiting{false};
+
+bool takeVoiceCommand(services::voice::Command command, const char* query) {
+  using services::voice::Command;
+  char player[config::kEntityIdMaxLen];
+  services::ha::copySelectedEntity(player, sizeof(player));
+  if (player[0] == '\0') {
+    return false;  // no player to do it to: Assist's
+  }
+  if (command == Command::kVolumeUp || command == Command::kVolumeDown) {
+    g_voice_volume_steps += command == Command::kVolumeUp ? 1 : -1;
+    g_poll_now = true;
+    return true;
+  }
+  if (command == Command::kTurnOff) {
+    g_voice_turn_off = true;
+    g_poll_now = true;
+    return true;
+  }
+  taskENTER_CRITICAL(&g_voice_command_lock);
+  g_voice_command = command;
+  snprintf(g_voice_query, sizeof(g_voice_query), "%s", query);
+  taskEXIT_CRITICAL(&g_voice_command_lock);
+  g_voice_command_waiting = true;
+  return true;
+}
+
+/** The loop's half of takeVoiceCommand(): "play <something>" queued as a
+ *  pick from the search would be, with the Starting... card up -- the words
+ *  heard on it -- until it starts; play, pause, next and previous as the
+ *  buttons send them, whatever the player is doing: "play" is play and
+ *  "pause" pause, where the button decides which from the state, which can
+ *  be a moment behind. */
+[[gnu::noinline]] void handleVoiceCommand() {
+  using services::voice::Command;
+  if (!g_voice_command_waiting.exchange(false)) {
+    return;
+  }
+  Command command;
+  char query[sizeof(g_voice_query)];
+  taskENTER_CRITICAL(&g_voice_command_lock);
+  command = g_voice_command;
+  memcpy(query, g_voice_query, sizeof(query));
+  taskEXIT_CRITICAL(&g_voice_command_lock);
+  switch (command) {
+    case Command::kPlay: {
+      CommandJob& job = loopJob();
+      job.kind = CommandKind::kPlayQuery;
+      job.power_first = true;
+      job.generation = g_play_generation;
+      memcpy(job.query, query, sizeof(job.query));
+      const bool queued = queueCommand(job);
+      startPlaying(queued);
+      if (queued) {
+        ui::showVoiceStarting(query);
+      }
+      break;
+    }
+    case Command::kResume:
+      sendCommand(Intent::kPlayPause, PlayWish::kPlay);
+      break;
+    case Command::kPause:
+      sendCommand(Intent::kPlayPause, PlayWish::kPause);
+      break;
+    case Command::kNext:
+      sendCommand(Intent::kNext);
+      break;
+    case Command::kPrevious:
+      sendCommand(Intent::kPrevious);
+      break;
+    case Command::kVolumeUp:
+    case Command::kVolumeDown:
+    case Command::kTurnOff:
+      break;  // the poll task's
+  }
 }
 
 /** Whether the Starting... card has done its job: the player is playing,
@@ -3076,6 +3335,8 @@ void haPollTask(void*) {
       if (g_duck_for_voice.exchange(false)) {
         duckMusicForVoice();
       }
+      stepVolumeForVoice();
+      turnOffForVoice();
       restoreAfterVoice();
 
       // Load the browse list ahead of anyone asking for it, so a swipe up
@@ -3288,6 +3549,7 @@ void setup() {
   // the stream that voice requests run over. Before Wi-Fi, while PSRAM is
   // unfragmented; nothing on a board without them.
   services::voice::init();
+  services::voice::setCommandHandler(takeVoiceCommand);
   // Listening for the wake word from now on, on a board with a microphone
   // and the model; nothing elsewhere. Before Wi-Fi, for the same reason.
   if (services::wake_word::init()) {
@@ -3362,6 +3624,7 @@ void loop() {
   handleMessageRecheck();
   handleHaLink();
   handleWakeWord();
+  handleVoiceCommand();
   handleFirmwareRequest();
   handleFontsRequest();
 

@@ -670,10 +670,26 @@ listens until someone has picked a wake word on it. A request that fails says
 so: "Sorry, I didn't catch that" when nothing was heard, "Sorry, Home
 Assistant couldn't answer that" when anything else went wrong -- the
 conversation agent erred, say -- and two low falling notes when Home
-Assistant could not be reached to speak either. The microphone and the
-speaker stay set up either way, so turning it back on needs no restart. The
-default for a remote that has never stored one is
-`config::kVoiceEnabledByDefault`.
+Assistant could not be reached to speak either.
+
+A few requests are this remote's own, for its player, when they name no
+player: "play", "pause", "skip" (or "next"), "previous", "volume up" and
+"volume down" (or "louder", "quieter", "turn it up"...) do what the buttons
+and the volume arc do -- play and pause whatever the player is doing, the
+volume `config::kVoiceVolumeStep` at a time -- "stop" or "turn off" switches
+the volume device off, as the power chip does (the player, where there is no
+volume device), and "play" with an artist, album,
+track or playlist -- "Hey Jarvis, play Khatia Buniatishvili" -- plays it, with the
+volume device switched on and to the player's input first, as a pick from
+the search would. The remote says "Playing Khatia Buniatishvili" at once and shows
+the words on the Starting... card, as Music Assistant can take ten seconds
+to start; an artist is matched by name, allowing for speech to text's
+spelling, and played as radio (`config::kArtistsPlayRadio`), and anything
+else is whatever Music Assistant finds by that name. A request that names
+its player -- "play Khatia Buniatishvili on the stereo" -- goes to Assist like any
+other.
+The microphone and the speaker stay set up either way, so turning it back
+on, or changing the wake word, needs no restart.
 
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the

@@ -120,6 +120,7 @@ void showUpdating(const char* version, int percent) {
 void showUpdateFailed(const char* why) { say("not updated: %s", why); }
 void showSearchResults() { say("search results"); }
 void showSearching() { say("searching..."); }
+void showVoiceStarting(const char* words) { say("starting %s", words); }
 void showLoadingList() { say("loading library"); }
 void showLoading(const char* what) { say("loading %s", what); }
 

@@ -2,22 +2,30 @@
  * A voice request, end to end. The protocol, as much of it as is used:
  *
  *   client  {"id":9,"type":"assist_pipeline/run","start_stage":"stt",
- *            "end_stage":"tts","input":{"sample_rate":16000}}
+ *            "end_stage":"stt","input":{"sample_rate":16000}}
  *   server  {"id":9,"type":"result","success":true,"result":null}
- *   server  event run-start: runner_data.stt_binary_handler_id, and the
- *           reply's audio URL already, as tts_output.url
+ *   server  event run-start: runner_data.stt_binary_handler_id
  *   client  binary: the handler id, then 16-bit 16 kHz mono audio, again and
  *           again; the handler id alone for the end of the speech
  *   server  events stt-vad-start, stt-vad-end (it heard the speech stop),
- *           stt-end (stt_output.text), intent-end (the reply's text, at
- *           intent_output.response.speech.plain.speech), tts-end, run-end;
- *           or error, with a code and a message, and then run-end
+ *           stt-end (stt_output.text), run-end; or error, with a code and a
+ *           message, and then run-end
+ *
+ * The words are heard first and acted on second. "Play <something>",
+ * "pause", "skip", "volume up" and the like, with no player named, are
+ * this remote's to carry out (setCommandHandler()). Anything else is a
+ * second run, from the words:
+ *
+ *   client  {"id":10,"type":"assist_pipeline/run","start_stage":"intent",
+ *            "end_stage":"tts","input":{"text":"turn off the lights"}}
+ *   server  event run-start, with the reply's audio URL already, as
+ *           tts_output.url; then intent-end (the reply's text, at
+ *           intent_output.response.speech.plain.speech), tts-end, run-end
  *
  * Home Assistant holds a GET of the reply's URL until the speech has been
- * made, so the download is started once the words are recognised and is
- * connected and waiting by the time the reply exists. Not sooner: a request
- * whose speech was not understood never makes the reply, and its download
- * would wait out its whole timeout.
+ * made, so the download is started as that run starts and is connected and
+ * waiting by the time the reply exists. A run that fails before it makes
+ * the speech gives the download up.
  *
  * Three tasks take part. Any task calls start() and the rest. The stream's
  * owner runs hook() and listener(): the request, the audio and the events,
@@ -77,10 +85,16 @@ constexpr char kPrefsOldEnabledKey[] = "enabled";
 
 /** The Voice setting, read in init(). */
 std::atomic<uint8_t> s_setting{0};
+/** setCommandHandler()'s. */
+std::atomic<bool (*)(Command, const char*)> s_command_handler{nullptr};
 
 constexpr char kRunBody[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"stt\","
-    "\"end_stage\":\"tts\",\"input\":{\"sample_rate\":16000}";
+    "\"end_stage\":\"stt\",\"input\":{\"sample_rate\":16000}";
+/** The words heard, to Assist: the text appended as JSON and closed. */
+constexpr char kTextBodyStart[] =
+    "\"type\":\"assist_pipeline/run\",\"start_stage\":\"intent\","
+    "\"end_stage\":\"tts\",\"input\":{\"text\":";
 /** say()'s: text to speech alone, the text appended as JSON and closed. */
 constexpr char kSayBodyStart[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"tts\","
@@ -109,8 +123,11 @@ std::atomic<bool> s_want_run{false};
 /** The request start() or say() wants sent: written before s_want_run is
  *  set, read by the owner after it sees it. */
 String s_run_body;
-/** That it is say()'s: no microphone, and the reply fetched at once. */
-bool s_say_only = false;
+/** What the run is: listening, the words heard going to Assist, or say()'s
+ *  text alone. The last two have no microphone, and fetch the reply as
+ *  they start; say()'s failures are a tone, never an apology. */
+enum class RunKind : uint8_t { kListen, kText, kSay };
+RunKind s_kind = RunKind::kListen;
 std::atomic<bool> s_want_cancel{false};
 /** A request cancelled before Home Assistant had answered it: there was no
  *  audio channel yet to end it on, so it is kept until run-start brings
@@ -135,6 +152,8 @@ portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t s_jobs = nullptr;
 /** The reply's URL, written by the owner before it queues kFetch. */
 char s_reply_url[256] = {};
+/** The words a listening run heard, for what follows it. The owner's. */
+char s_heard[sizeof(Status::heard)] = {};
 
 // The owner's alone.
 int s_run_id = 0;
@@ -171,7 +190,7 @@ void fail(const char* why, const char* sorry) {
   setText(&Status::error, why);
   s_phase = Phase::kFailed;
   LOG_WARN("VOICE: %s", why);
-  if (sorry != nullptr && !s_say_only) {
+  if (sorry != nullptr && s_kind != RunKind::kSay) {
     s_sorry = sorry;
   } else {
     hw::audio::cue(hw::audio::Cue::kFailed);
@@ -179,9 +198,11 @@ void fail(const char* why, const char* sorry) {
 }
 
 /** The microphone, as much as there is, out in whole messages; the last,
- *  short one and the end marker once it has stopped. */
+ *  short one and the end marker once it has stopped. A listening run's
+ *  only: a text run, after one, has no audio. */
 void pumpAudio() {
-  if (s_handler < 0 || s_audio_done || !s_capture_began) {
+  if (s_kind != RunKind::kListen || s_handler < 0 || s_audio_done ||
+      !s_capture_began) {
     return;
   }
   size_t this_pass = 0;
@@ -237,13 +258,270 @@ void queueFetch() {
   xQueueSend(s_jobs, &job, 0);
 }
 
+/** The sayings of each Command but kPlay, whole: lower case, without the
+ *  full stop Whisper ends a sentence with, and without "please" or another
+ *  of kLeadIns. */
+struct Saying {
+  const char* words;
+  Command command;
+};
+/** What can come before a command and change nothing: "let's play Khatia
+ *  Buniatishvili", "can you please pause". Any number, in any order.
+ *  "Press", "Jarvis" and the like are the end of a wake word heard again:
+ *  "Hey Jarvis, pause" can come back as "Press pause." */
+const char* const kLeadIns[] = {"let's ",       "lets ",      "can you ",
+                                "could you ",   "would you ", "will you ",
+                                "go ahead and ", "okay ",     "ok ",
+                                "now ",         "please ",    "press ",
+                                "jarvis ",      "nabu ",      "mycroft ",
+                                "alexa ",       nullptr};
+
+const Saying kSayings[] = {
+    {"pause", Command::kPause},
+    {"pause it", Command::kPause},
+    {"pause the music", Command::kPause},
+    {"pause music", Command::kPause},
+    {"play", Command::kResume},
+    {"play music", Command::kResume},
+    {"play the music", Command::kResume},
+    {"resume", Command::kResume},
+    {"resume the music", Command::kResume},
+    {"resume music", Command::kResume},
+    {"unpause", Command::kResume},
+    {"continue", Command::kResume},
+    {"continue playing", Command::kResume},
+    {"start the music", Command::kResume},
+    {"skip", Command::kNext},
+    {"skipped", Command::kNext},  // Whisper's way with "skip it"
+    {"skip ahead", Command::kNext},
+    {"skip it", Command::kNext},
+    {"skip this", Command::kNext},
+    {"skip this song", Command::kNext},
+    {"skip this track", Command::kNext},
+    {"skip song", Command::kNext},
+    {"skip track", Command::kNext},
+    {"skip the song", Command::kNext},
+    {"next", Command::kNext},
+    {"next song", Command::kNext},
+    {"next track", Command::kNext},
+    {"next one", Command::kNext},
+    {"play the next song", Command::kNext},
+    {"previous", Command::kPrevious},
+    {"previous song", Command::kPrevious},
+    {"previous track", Command::kPrevious},
+    {"play the previous song", Command::kPrevious},
+    {"go back", Command::kPrevious},
+    {"increase volume", Command::kVolumeUp},
+    {"increase the volume", Command::kVolumeUp},
+    {"volume up", Command::kVolumeUp},
+    {"raise the volume", Command::kVolumeUp},
+    {"raise volume", Command::kVolumeUp},
+    {"turn it up", Command::kVolumeUp},
+    {"turn up the volume", Command::kVolumeUp},
+    {"turn the volume up", Command::kVolumeUp},
+    {"turn up the music", Command::kVolumeUp},
+    {"turn the music up", Command::kVolumeUp},
+    {"louder", Command::kVolumeUp},
+    {"make it louder", Command::kVolumeUp},
+    {"decrease volume", Command::kVolumeDown},
+    {"decrease the volume", Command::kVolumeDown},
+    {"volume down", Command::kVolumeDown},
+    {"lower the volume", Command::kVolumeDown},
+    {"lower volume", Command::kVolumeDown},
+    {"turn it down", Command::kVolumeDown},
+    {"turn down the volume", Command::kVolumeDown},
+    {"turn the volume down", Command::kVolumeDown},
+    {"turn down the music", Command::kVolumeDown},
+    {"turn the music down", Command::kVolumeDown},
+    {"quieter", Command::kVolumeDown},
+    {"softer", Command::kVolumeDown},
+    {"make it quieter", Command::kVolumeDown},
+    {"stop", Command::kTurnOff},
+    {"stop it", Command::kTurnOff},
+    {"stop the music", Command::kTurnOff},
+    {"stop music", Command::kTurnOff},
+    {"turn off", Command::kTurnOff},
+    {"turn it off", Command::kTurnOff},
+    {"turn off the music", Command::kTurnOff},
+    {"turn the music off", Command::kTurnOff},
+    {"turn off music", Command::kTurnOff},
+    {"switch off", Command::kTurnOff},
+    {"switch it off", Command::kTurnOff},
+};
+
+/** What the words heard ask of this remote's player, if anything: one of
+ *  kSayings, or "play <something>" with the something, as heard, in
+ *  `out`. False for anything else, "play Khatia Buniatishvili on the
+ *  stereo" among them, which names its player and is Assist's. All of
+ *  `heard`: see parseCommand(). */
+bool parseWhole(const char* heard, Command& command, char* out,
+                size_t out_len) {
+  out[0] = '\0';
+  char text[sizeof(Status::heard)];
+  size_t n = 0;
+  // Without commas, which Whisper puts in: "Jarvis, pause".
+  for (const char* h = heard; *h != '\0' && n + 1 < sizeof(text); ++h) {
+    if (*h != ',') {
+      text[n++] = static_cast<char>(tolower(static_cast<unsigned char>(*h)));
+    }
+  }
+  text[n] = '\0';
+  // Whisper ends a sentence with a full stop.
+  while (n > 0 && (ispunct(static_cast<unsigned char>(text[n - 1])) ||
+                   isspace(static_cast<unsigned char>(text[n - 1])))) {
+    text[--n] = '\0';
+  }
+  if (n >= 7 && strcmp(text + n - 7, " please") == 0) {
+    n -= 7;
+    text[n] = '\0';
+    while (n > 0 && (text[n - 1] == ',' || text[n - 1] == ' ')) {
+      text[--n] = '\0';
+    }
+  }
+  const char* q = text;
+  while (isspace(static_cast<unsigned char>(*q))) {
+    ++q;
+  }
+  for (bool more = true; more;) {
+    more = false;
+    for (const char* const* lead = kLeadIns; *lead != nullptr; ++lead) {
+      if (strncmp(q, *lead, strlen(*lead)) == 0) {
+        q += strlen(*lead);
+        more = true;
+      }
+    }
+  }
+  for (const Saying& s : kSayings) {
+    if (strcmp(q, s.words) == 0) {
+      command = s.command;
+      return true;
+    }
+  }
+  if (strncmp(q, "play ", 5) != 0) {
+    return false;
+  }
+  command = Command::kPlay;
+  q += 5;
+  static const char* const kLeadIns[] = {"some music by ", "music by ",
+                                         "songs by ",      "something by ",
+                                         "some ",          nullptr};
+  for (const char* const* lead = kLeadIns; *lead != nullptr; ++lead) {
+    if (strncmp(q, *lead, strlen(*lead)) == 0) {
+      q += strlen(*lead);
+      break;
+    }
+  }
+  // A player or a room named, or nothing to look for: Assist's.
+  if (strstr(q, " on ") != nullptr || strstr(q, " in the ") != nullptr ||
+      *q == '\0' || strcmp(q, "music") == 0 || strcmp(q, "something") == 0) {
+    return false;
+  }
+  // Out as it was heard, capitals and all: the same span of `heard`.
+  snprintf(out, out_len, "%.*s", static_cast<int>(text + n - q),
+           heard + (q - text));
+  return true;
+}
+
+/** What a Command is called on the status page and in the log. */
+const char* commandName(Command command) {
+  switch (command) {
+    case Command::kPlay:
+      return "Playing";
+    case Command::kResume:
+      return "Play";
+    case Command::kPause:
+      return "Pause";
+    case Command::kNext:
+      return "Next";
+    case Command::kPrevious:
+      return "Previous";
+    case Command::kVolumeUp:
+      return "Volume up";
+    case Command::kVolumeDown:
+      return "Volume down";
+    case Command::kTurnOff:
+      return "Turn off";
+  }
+  return "";
+}
+
+/** Words a command can come after, as a clause of their own, and still be
+ *  this remote's: the end of the wake word, heard again as words. With
+ *  "Alexa", Whisper makes something of the "-xa" that the request's first
+ *  moments hold -- "Turn it off. Play.", "Stop, play John Williams.", "Up,
+ *  increase volume." -- often one of the phrases its prompt is given. */
+constexpr int kMaxLeadInWords = 4;
+
+/** parseWhole(), and failing that the same with a short clause before it
+ *  left out: up to kMaxLeadInWords words ended by a full stop, a comma, a
+ *  question mark or an exclamation mark, as Whisper ends one. */
+bool parseCommand(const char* heard, Command& command, char* out,
+                  size_t out_len) {
+  if (parseWhole(heard, command, out, out_len)) {
+    return true;
+  }
+  const char* at = heard;
+  for (int words = 0; *at != '\0' && words < kMaxLeadInWords;) {
+    while (*at == ' ') {
+      ++at;
+    }
+    if (*at == '\0') {
+      break;
+    }
+    while (*at != '\0' && *at != ' ' && strchr(".,?!", *at) == nullptr) {
+      ++at;
+    }
+    ++words;
+    if (*at != '\0' && strchr(".,?!", *at) != nullptr) {
+      ++at;
+      if (parseWhole(at, command, out, out_len)) {
+        LOG_INFO("VOICE: \"%.*s\" before the command left out",
+                 static_cast<int>(at - heard), heard);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** A listening run over, with the words heard: a Command to the command
+ *  handler, if it takes it, and anything else to Assist as text, on the
+ *  next pass. Owner only. */
+void actOnHeard() {
+  s_run_id = 0;
+  if (s_heard[0] == '\0') {
+    fail("nothing was heard", kSorryNotHeard);
+    return;
+  }
+  char query[sizeof(s_heard)];
+  Command command = Command::kPlay;
+  auto* handler = s_command_handler.load();
+  if (handler != nullptr &&
+      parseCommand(s_heard, command, query, sizeof(query)) &&
+      handler(command, query)) {
+    char reply[sizeof(Status::reply)];
+    snprintf(reply, sizeof(reply), "%s%s%s", commandName(command),
+             query[0] != '\0' ? " " : "", query);
+    setText(&Status::reply, reply);
+    s_phase = Phase::kIdle;
+    LOG_INFO("VOICE: \"%s\" done here, %lu ms after the speech ended", reply,
+             static_cast<unsigned long>(millis() - s_speech_end_ms));
+    return;
+  }
+  s_run_body = kTextBodyStart;
+  ha::detail::appendJson(s_run_body, s_heard);
+  s_run_body += "}";
+  s_kind = RunKind::kText;
+  s_want_run = true;
+}
+
 /** On the owner, every pass while the stream is open. */
 void hook() {
   if (s_want_cancel.exchange(false)) {
     // The end of the speech, if any audio was owed: Home Assistant stops
     // listening now rather than waiting out its own timeout. Owed before
     // there is a channel to send it on, it waits for run-start.
-    if (s_run_id != 0 && !s_audio_done && !s_say_only) {
+    if (s_run_id != 0 && !s_audio_done && s_kind == RunKind::kListen) {
       if (s_handler >= 0) {
         ha::streamSendBinary(s_frame, 1);
         s_audio_done = true;
@@ -279,7 +557,9 @@ void hook() {
     s_fetch_queued = false;
     s_pcm_fill = 0;
     s_lag_logged = false;
-    s_speech_end_ms = 0;
+    if (s_kind != RunKind::kText) {
+      s_speech_end_ms = 0;  // a text run's speech is its listening run's
+    }
     s_reply_url[0] = '\0';
     s_run_started = false;
     s_run_sent_ms = millis();
@@ -305,6 +585,10 @@ void hook() {
     hw::audio::captureStop(kMic);
   }
   if (s_run_ended && !s_fetching && !hw::audio::playing()) {
+    if (s_kind == RunKind::kListen && s_phase != Phase::kFailed) {
+      actOnHeard();
+      return;
+    }
     s_run_id = 0;
     if (s_phase != Phase::kFailed) {
       s_phase = Phase::kIdle;
@@ -428,7 +712,7 @@ void listener(const char* message) {
     static const char* const kUrl[] = {"tts_output", "url", nullptr};
     readPath(data, kUrl, s_reply_url, sizeof(s_reply_url));
     s_run_started = true;
-    if (s_say_only) {
+    if (s_kind != RunKind::kListen) {
       // Nothing to hear, so the speech is asked for now; Home Assistant
       // answers the moment it is made.
       queueFetch();
@@ -446,9 +730,9 @@ void listener(const char* message) {
     static const char* const kText[] = {"stt_output", "text", nullptr};
     readPath(data, kText, heard, sizeof(heard));
     setText(&Status::heard, heard);
+    snprintf(s_heard, sizeof(s_heard), "%s", heard);
     LOG_INFO("VOICE: heard \"%s\"", heard);
     hw::audio::captureStop(kMic);
-    queueFetch();
   } else if (strcmp(etype, "intent-end") == 0) {
     char reply[sizeof(Status::reply)];
     static const char* const kSpeech[] = {"intent_output", "response",
@@ -458,7 +742,7 @@ void listener(const char* message) {
     setText(&Status::reply, reply);
     LOG_INFO("VOICE: reply \"%s\"", reply);
   } else if (strcmp(etype, "tts-end") == 0) {
-    queueFetch();  // in case stt-end did not get to it
+    queueFetch();  // in case run-start did not get to it
   } else if (strcmp(etype, "error") == 0) {
     char code[48];
     char why[96];
@@ -867,6 +1151,10 @@ bool saveSetting(int value) {
   return true;
 }
 
+void setCommandHandler(bool (*handler)(Command command, const char* query)) {
+  s_command_handler = handler;
+}
+
 bool available() {
   return s_setting != 0 && s_jobs != nullptr && hw::audio::ready() &&
          ha::streamIsOpen();
@@ -902,7 +1190,8 @@ bool begin(const String& body, bool say_only, const Job* job) {
   s_sorry = nullptr;  // asked again: the new request is the answer
   s_capture_began = false;
   s_run_body = body;
-  s_say_only = say_only;
+  s_kind = say_only ? RunKind::kSay : RunKind::kListen;
+  s_heard[0] = '\0';
   s_phase = say_only ? Phase::kThinking : Phase::kStarting;
   s_want_run = true;
   if (job != nullptr) {
@@ -979,6 +1268,7 @@ void init() {}
 int setting() { return 0; }
 bool enabled() { return false; }
 bool saveSetting(int) { return false; }
+void setCommandHandler(bool (*)(Command, const char*)) {}
 bool available() { return false; }
 bool start() { return false; }
 bool startAt(uint32_t) { return false; }

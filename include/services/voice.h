@@ -76,6 +76,27 @@ bool enabled();
  *  chosen, it listens for that one. False for a value it cannot take. */
 bool saveSetting(int value);
 
+/** What a voice request can ask of this remote's own player, with no
+ *  player named, instead of asking Assist. */
+enum class Command : uint8_t {
+  kPlay,        // "play Khatia Buniatishvili": the something comes with it
+  kResume,      // "play", "resume", "continue"
+  kPause,       // "pause"
+  kNext,        // "skip", "next"
+  kPrevious,    // "previous", "go back"
+  kVolumeUp,    // "volume up", "louder", "turn it up"
+  kVolumeDown,  // "volume down", "quieter", "turn it down"
+  kTurnOff,     // "stop", "turn off": the volume device off
+};
+
+/** What carries out a Command: called on the stream's owner with it, and
+ *  for kPlay the something as heard ("" otherwise), to copy and act on from
+ *  another task. It returns whether it takes the request; one it does not
+ *  goes to Assist as any other -- as does "play Khatia Buniatishvili on
+ *  the stereo", which names its player. Without one, every request goes
+ *  to Assist. */
+void setCommandHandler(bool (*handler)(Command command, const char* query));
+
 /** True when a request can be started now: there is a microphone, the
  *  Voice setting is on, and the stream is open. */
 bool available();
