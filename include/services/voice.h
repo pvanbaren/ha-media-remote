@@ -81,7 +81,9 @@ bool saveSetting(int value);
 bool available();
 
 /** Start a request: a beep, then listening. False when one is already
- *  under way or none is available. Cuts off a reply still playing. */
+ *  under way or none is available. Cuts off a reply still playing. One
+ *  that fails says so: "Sorry, ..." in the pipeline's voice, or a falling
+ *  tone when Home Assistant cannot be reached to speak it. */
 bool start();
 
 /** Start a request after a wake word: listening from `position` in the
@@ -101,8 +103,9 @@ void finish();
 /** Drop the request, and any reply playing. */
 void cancel();
 
-/** True from start() until the reply has finished: the stream's owner keeps
- *  other work back meanwhile, so the audio is not held up behind it. */
+/** True from start() until the reply has finished -- or, for a request
+ *  that failed, until the apology for it has begun: the stream's owner
+ *  keeps other work back meanwhile, so the audio is not held up behind it. */
 bool busy();
 
 /** The microphone's loudest recent sample, 0..32767, while listening. */

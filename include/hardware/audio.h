@@ -85,6 +85,8 @@ enum class Cue : uint8_t {
   kPrevious,  // three notes stepping down: the one before
   kTick,   // one quiet click: the volume moved a step
   kLimit,  // two quick clicks: the volume is at an end
+  kFailed,  // two low notes falling: a voice request failed, and Home
+            // Assistant could not be asked to say so
   kWarm,   // no sound: the amplifier on, so a sound soon after is not
            // held up by its warm-up -- for a finger that has just landed
 };

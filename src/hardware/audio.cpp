@@ -216,6 +216,12 @@ void playCue(Cue c) {
       writeSilence(kSampleRate * 40 / 1000);
       tone(1500, 12, kCueAmplitude);
       break;
+    case Cue::kFailed:
+      // Louder than the others: it answers a request, not a touch, and is
+      // heard from across the room.
+      tone(440, 120, kCueAmplitude * 4);
+      tone(330, 200, kCueAmplitude * 4);
+      break;
     case Cue::kWarm:
       break;  // speakerOn() has done it
   }

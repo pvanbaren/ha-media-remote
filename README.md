@@ -666,7 +666,11 @@ no voice requests and listens for nothing; choosing a wake word -- *Hey
 Jarvis*, *Okay Nabu*, *Hey Mycroft* or *Alexa*, microWakeWord's four, each
 with the threshold its model's manifest gives -- listens for that one and
 answers voice requests through Home Assistant's Assist. A remote never
-listens until someone has picked a wake word on it. The microphone and the
+listens until someone has picked a wake word on it. A request that fails says
+so: "Sorry, I didn't catch that" when nothing was heard, "Sorry, Home
+Assistant couldn't answer that" when anything else went wrong -- the
+conversation agent erred, say -- and two low falling notes when Home
+Assistant could not be reached to speak either. The microphone and the
 speaker stay set up either way, so turning it back on needs no restart. The
 default for a remote that has never stored one is
 `config::kVoiceEnabledByDefault`.
