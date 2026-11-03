@@ -673,7 +673,8 @@ conversation agent erred, say -- and two low falling notes when Home
 Assistant could not be reached to speak either.
 
 "Hey Jarvis" lights a dark screen, as a tap does, so what a request does
-can be seen. A few requests are this remote's own, for its player, when they name no
+can be seen, and the words it heard show over now playing for a
+few seconds -- in the middle of a round screen, on up to two lines, and at the top of a square one (`config::kVoiceToastMs`). A few requests are this remote's own, for its player, when they name no
 player: "play", "pause", "skip" (or "next"), "previous", "volume up" and
 "volume down" (or "louder", "quieter", "turn it up"...) do what the buttons
 and the volume arc do -- play and pause whatever the player is doing, the

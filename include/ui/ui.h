@@ -222,6 +222,12 @@ void showSearchResults();
 void showSearching();
 /** The Starting... card for something asked for by voice: the words heard. */
 void showVoiceStarting(const char* words);
+/** A line over now playing for `ms` -- the words a voice request heard. It
+ *  is in now playing's next compose, which the caller asks for; and
+ *  toastExpired() is true once, when it has had its time, for the caller to
+ *  compose now playing again without it. */
+void showToast(const char* text, uint32_t ms);
+bool toastExpired();
 void showLoadingList();
 /** The boot card, naming whatever is being waited on. */
 void showLoading(const char* what);

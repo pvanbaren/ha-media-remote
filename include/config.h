@@ -569,6 +569,8 @@ constexpr uint16_t kVoiceReplyTimeoutMs = 15000;
 constexpr unsigned long kVoiceFetchMemoryWaitMs = 1000;
 /** How loud the speaker is, 0..100. */
 constexpr int kVoiceVolume = 70;
+/** How long the words a voice request heard stay over now playing. */
+constexpr uint32_t kVoiceToastMs = 4000;
 /** How far "volume up" and "volume down", said to the remote, move the
  *  volume device, as a share of its whole range. */
 constexpr float kVoiceVolumeStep = 0.1f;

@@ -35,6 +35,7 @@
 #include "ui/canvas.h"
 #include "ui/peers_chip.h"
 #include "ui/text.h"
+#include "ui/toast.h"
 #include "ui/text_glow.h"
 #include "ui/theme.h"
 
@@ -582,6 +583,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
                         enabledFor(action, state));
   }
   ui::peers_chip::draw(gfx, state);
+  ui::toast::draw(gfx);
 }
 
 }  // namespace

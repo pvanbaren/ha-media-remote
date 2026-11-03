@@ -1826,6 +1826,33 @@ void duckMusicForVoice() {
   g_state_dirty = true;
 }
 
+/** The words a voice request heard, in quotes over now playing for
+ *  config::kVoiceToastMs, so what it understood can be read; and now
+ *  playing composed again without them once they have had their time.
+ *  Loop only. */
+[[gnu::noinline]] void handleVoiceToast() {
+  static char shown[sizeof(services::voice::Status::heard)] = {};
+  static services::voice::Status* status = [] {
+    void* mem = heap_caps_malloc(sizeof(services::voice::Status),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem != nullptr ? new (mem) services::voice::Status()
+                          : new services::voice::Status();
+  }();
+  services::voice::status(*status);
+  if (status->heard[0] == '\0') {
+    shown[0] = '\0';  // a new request: the same words again are news
+  } else if (strcmp(status->heard, shown) != 0) {
+    snprintf(shown, sizeof(shown), "%s", status->heard);
+    char text[sizeof(shown) + 4];
+    snprintf(text, sizeof(text), "\"%s\"", shown);
+    ui::showToast(text, config::kVoiceToastMs);
+    g_state_dirty = true;
+  }
+  if (ui::toastExpired()) {
+    g_state_dirty = true;
+  }
+}
+
 /** "Stop" and "turn off" by voice: the volume device off, as the power chip
  *  switches it off -- the player, where there is no volume device. The
  *  music put back to its level first, if it is down for the request, so the
@@ -3630,6 +3657,7 @@ void loop() {
   handleHaLink();
   handleWakeWord();
   handleVoiceCommand();
+  handleVoiceToast();
   handleFirmwareRequest();
   handleFontsRequest();
 
