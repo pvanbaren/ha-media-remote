@@ -672,7 +672,8 @@ Assistant couldn't answer that" when anything else went wrong -- the
 conversation agent erred, say -- and two low falling notes when Home
 Assistant could not be reached to speak either.
 
-A few requests are this remote's own, for its player, when they name no
+"Hey Jarvis" lights a dark screen, as a tap does, so what a request does
+can be seen. A few requests are this remote's own, for its player, when they name no
 player: "play", "pause", "skip" (or "next"), "previous", "volume up" and
 "volume down" (or "louder", "quieter", "turn it up"...) do what the buttons
 and the volume arc do -- play and pause whatever the player is doing, the
