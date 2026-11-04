@@ -115,6 +115,9 @@ constexpr unsigned long kStartTimeoutMs = 5000;
 /** The beep that says it is listening. */
 constexpr uint16_t kBeepHz = 880;
 constexpr uint16_t kBeepMs = 120;
+/** After the beep has left the speaker, how long its echo is heard: not
+ *  speech. A tiled room rings. */
+constexpr uint32_t kBeepEchoMs = 200;
 /** Said after a request that failed: nothing was heard in it, or anything
  *  else went wrong -- the conversation agent erred, say. An answer that is
  *  itself an apology, an intent not matched, is Home Assistant's own. */
@@ -186,6 +189,21 @@ float s_level_min_db = 0.0f;
 float s_level_max_db = -96.0f;
 bool s_vad_start = false;
 bool s_vad_end = false;
+/** The remote's own end of speech (noteLevel()): the room's level before
+ *  the wake word -- 0 when there was none, a request begun by a tap -- the
+ *  request's quietest since, how far into it the messages sent have come,
+ *  how many were speech and how long it has been quiet after them. */
+float s_wake_floor_db = 0.0f;
+float s_floor_db = 0.0f;
+uint32_t s_sent_samples = 0;
+int s_speech_messages = 0;
+uint32_t s_quiet_ms = 0;
+bool s_ended_here = false;
+/** Where the beep is in the request's audio, in samples from its start:
+ *  never speech, nor is anything before it. Everything until the job has
+ *  played it, which is when its end is known. */
+std::atomic<uint32_t> s_beep_from{0};
+std::atomic<uint32_t> s_beep_to{0};
 /** One message of audio being gathered, and the message itself: in PSRAM,
  *  taken by init() on a board with a microphone and nowhere else. */
 int16_t* s_pcm = nullptr;
@@ -215,6 +233,36 @@ void fail(const char* why, const char* sorry) {
     s_sorry = sorry;
   } else {
     hw::audio::cue(hw::audio::Cue::kFailed);
+  }
+}
+
+/** One message of audio's level, `db`, for the remote's own end of speech:
+ *  speech is config::kVoiceSpeechOverFloorDb above the quietest the room has
+ *  been, and once there has been config::kVoiceSpeechMessages of it,
+ *  config::kVoiceEndQuietMs without any ends the listening -- unless Home
+ *  Assistant has already. The beep is not speech. */
+void noteLevel(float db, size_t samples) {
+  const uint32_t from = s_sent_samples;
+  s_sent_samples += samples;
+  const bool before = from < s_beep_to.load();
+  if (!before || s_sent_samples <= s_beep_from) {
+    s_floor_db = std::min(s_floor_db, db);
+  }
+  if (before || s_ended_here) {
+    return;
+  }
+  if (db >= s_floor_db + config::kVoiceSpeechOverFloorDb) {
+    ++s_speech_messages;
+    s_quiet_ms = 0;
+    return;
+  }
+  if (s_speech_messages < config::kVoiceSpeechMessages) {
+    return;
+  }
+  s_quiet_ms += samples * 1000 / hw::audio::kSampleRate;
+  if (s_quiet_ms >= config::kVoiceEndQuietMs && hw::audio::capturing(kMic)) {
+    s_ended_here = true;
+    hw::audio::captureStop(kMic);
   }
 }
 
@@ -255,6 +303,7 @@ void pumpAudio() {
           rms < 1.0 ? -96.0f : static_cast<float>(20.0 * log10(rms / 32768.0));
       s_level_min_db = std::min(s_level_min_db, db);
       s_level_max_db = std::max(s_level_max_db, db);
+      noteLevel(db, s_pcm_fill);
       memcpy(s_frame + 1, s_pcm, s_pcm_fill * 2);
       if (!ha::streamSendBinary(s_frame, 1 + s_pcm_fill * 2)) {
         return;  // the stream closed; the listener has heard
@@ -266,13 +315,14 @@ void pumpAudio() {
       ha::streamSendBinary(s_frame, 1);  // the handler alone: the end
       s_audio_done = true;
       s_speech_end_ms = millis();
-      LOG_INFO("VOICE: %lu ms of audio, microphone %.0f to %.0f dBFS; Home "
-               "Assistant heard %s",
+      LOG_INFO("VOICE: %lu ms of audio, microphone %.0f to %.0f dBFS "
+               "(room %.0f); ended by %s%s",
                static_cast<unsigned long>(s_speech_end_ms - s_run_sent_ms),
-               s_level_min_db, s_level_max_db,
-               s_vad_end     ? "the speech end"
-               : s_vad_start ? "speech, but not its end"
-                             : "no speech");
+               s_level_min_db, s_level_max_db, s_floor_db,
+               s_vad_end      ? "Home Assistant"
+               : s_ended_here ? "the remote"
+                              : "the time limit",
+               s_vad_end || s_vad_start ? "" : "; Home Assistant heard no speech");
       if (hw::audio::captureDropped(kMic) > 0) {
         LOG_WARN("VOICE: %lu samples of speech lost",
                  static_cast<unsigned long>(hw::audio::captureDropped(kMic)));
@@ -595,6 +645,11 @@ void hook() {
     s_level_max_db = -96.0f;
     s_vad_start = false;
     s_vad_end = false;
+    s_floor_db = s_wake_floor_db;
+    s_sent_samples = 0;
+    s_speech_messages = 0;
+    s_quiet_ms = 0;
+    s_ended_here = false;
     s_audio_done = false;
     s_run_ended = false;
     s_fetch_queued = false;
@@ -1093,11 +1148,19 @@ void voiceTask(void*) {
       Phase starting = Phase::kStarting;
       if (s_phase.compare_exchange_strong(starting, Phase::kListening)) {
         hw::audio::captureStartAt(kMic, job.position);
+        s_beep_from = 0;
+        s_beep_to = UINT32_MAX;  // until it is known
         s_capture_began = true;
         LOG_INFO("VOICE: listening, from the wake word");
         // After the microphone, which is already being said to.
         ha::detail::dropRestConnection();
+        // And where in what is sent the beep goes: from now until beep()
+        // returns, the beep out of the speaker after any warm-up of the
+        // amplifier, and its echo.
+        s_beep_from = hw::audio::captureNow() - job.position;
         hw::audio::beep(kBeepHz, kBeepMs);
+        s_beep_to = hw::audio::captureNow() - job.position +
+                    hw::audio::kSampleRate * kBeepEchoMs / 1000;
       }
     } else if (job.kind == Job::kListen) {
       hw::audio::stop();
@@ -1106,6 +1169,8 @@ void voiceTask(void*) {
       // Cancelled during the beep, or already failed: no listening.
       Phase starting = Phase::kStarting;
       if (s_phase.compare_exchange_strong(starting, Phase::kListening)) {
+        s_beep_from = 0;  // over before it listens
+        s_beep_to = 0;
         hw::audio::captureStart(kMic);
         s_capture_began = true;
         LOG_INFO("VOICE: listening");
@@ -1260,6 +1325,7 @@ bool begin(const String& body, bool say_only, const Job* job,
 
 bool start() {
   const Job job = {Job::kListen, false, 0};
+  s_wake_floor_db = 0.0f;  // no wake word: the request's own quietest
   return begin(kRunBody, false, &job);
 }
 
@@ -1271,7 +1337,22 @@ bool startAt(uint32_t position) {
       static_cast<float>(config::kVoiceWakeHoldMaxMs),
       std::max(0.0f, (config::kVoiceWakeLoudDbfs - db) *
                          config::kVoiceWakeHoldMsPerDb));
-  LOG_INFO("VOICE: wake word at %.0f dBFS, request held %.0f ms", db, hold);
+  // The room before the wake word, taken as a second long: its quietest
+  // 64 ms in what the ring still holds before that. -96 is a stretch the
+  // ring no longer holds, not a silent room.
+  float floor = 0.0f;
+  const uint32_t second = hw::audio::kSampleRate;
+  for (uint32_t end = position - second; position - end < 2 * second - 2048;
+       end -= config::kVoiceFrameSamples) {
+    const float level =
+        hw::audio::levelBefore(end, config::kVoiceFrameSamples);
+    if (level > -96.0f) {
+      floor = std::min(floor, level);
+    }
+  }
+  s_wake_floor_db = floor;
+  LOG_INFO("VOICE: wake word at %.0f dBFS (room %.0f), request held %.0f ms",
+           db, floor, hold);
   String body(kWakeRunBodyStart);
   ha::detail::appendJson(body, wake_word::phrase());
   body += "}";

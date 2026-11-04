@@ -59,6 +59,9 @@ bool capturing(Reader reader);
  *  there are none. */
 size_t captureRead(Reader reader, int16_t* out, size_t max);
 
+/** Where the microphone's stream is now: the next sample it will write. */
+uint32_t captureNow();
+
 /** Where in the microphone's stream `reader` will read next. */
 uint32_t capturePosition(Reader reader);
 

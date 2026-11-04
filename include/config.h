@@ -566,6 +566,15 @@ constexpr float kVoiceWakeLoudDbfs = -20.0f;
 constexpr float kVoiceWakeHoldMsPerDb = 10.0f;
 constexpr uint32_t kVoiceWakeHoldMaxMs = 400;
 constexpr uint32_t kVoiceWakeLevelMs = 1000;
+/** The remote's own end of a request, for when Home Assistant does not
+ *  hear the speech stop -- its detector wants 0.3 s of speech, and "stop"
+ *  can be shorter: once kVoiceSpeechMessages messages of audio have been
+ *  kVoiceSpeechOverFloorDb above the quietest the room has been, before
+ *  the wake word or since, kVoiceEndQuietMs without another ends it. The
+ *  beep is never taken for speech. */
+constexpr float kVoiceSpeechOverFloorDb = 10.0f;
+constexpr int kVoiceSpeechMessages = 2;
+constexpr uint32_t kVoiceEndQuietMs = 800;
 /** Samples per binary message of audio: 64 ms. In testing this kept up with
  *  the microphone with at most one message waiting. */
 constexpr size_t kVoiceFrameSamples = 1024;

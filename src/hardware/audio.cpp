@@ -623,6 +623,10 @@ size_t captureRead(Reader reader, int16_t* out, size_t max) {
   return n;
 }
 
+uint32_t captureNow() {
+  return s_head.load(std::memory_order_acquire);
+}
+
 uint32_t capturePosition(Reader reader) {
   return readerState(reader).tail.load(std::memory_order_acquire);
 }
@@ -719,6 +723,7 @@ float levelBefore(uint32_t, uint32_t) { return -96.0f; }
 void captureStop(Reader) {}
 bool capturing(Reader) { return false; }
 size_t captureRead(Reader, int16_t*, size_t) { return 0; }
+uint32_t captureNow() { return 0; }
 uint32_t capturePosition(Reader) { return 0; }
 uint32_t captureDropped(Reader) { return 0; }
 uint16_t inputPeak() { return 0; }
