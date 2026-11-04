@@ -102,6 +102,7 @@ src/hardware/
   touch_gestures.cpp       press tracking, tap / swipe, the touch queue
   encoder.cpp              the knob, on a board with one
   display_font.cpp         picks the embedded face for a height
+  korean_font.cpp          Korean behind each face, from an outline font
   <board>/display.cpp      panel bring-up, backlight, sleep, rotation
   <board>/touch_raw.cpp    reads the touch controller
   <board>/font_table.cpp   the faces this board embeds
@@ -115,9 +116,11 @@ src/hardware/
   lcd4b/panel.cpp          the P4 4B's DSI bus, LDOs and ST7703 init
 scripts/
   build_ui_font.py         the VLW font generator
+  build_korean_font.py     the Korean outline font, data/korean.ttf
   board_header_stamp.py    rebuilds everything when the board header changes
   merge_firmware.py        pio run -t merge
   pin_components.py        holds a source build's IDF components
+include/third_party/stb_truetype.h  draws the Korean outlines (public domain)
 partitions/media_remote.csv  the flash layout, shared by every board
 .github/workflows/build.yml  CI: builds every board on each push
 .github/workflows/pages.yml  the install page, on each published release

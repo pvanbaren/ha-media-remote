@@ -190,6 +190,24 @@ more Latin-script languages need: Azerbaijani's ə, Welsh's ẁ ẃ ẅ ỳ, Sam
 with their capitals. And the symbols that turn up in names: € £ ¥ © ® µ ×
 ½ • ‚ ‹ ›. A missing glyph renders as a space.
 
+**Korean** is not in the faces: 2,350 syllables pre-rendered at every size
+would not fit in an app slot. A character a face lacks is drawn instead from
+`data/korean.ttf`, an outline font, by `src/hardware/korean_font.cpp` with
+stb_truetype, at the face's own em size, the first time it is wanted; 128
+rendered glyphs are kept per face, in PSRAM. The font is Noto Sans KR at the
+Regular weight -- the Latin faces' family -- cut down to the 2,350 KS X 1001
+syllables and the 94 jamo, about 420 KB in every board's image. Regenerate it
+from Google Fonts' variable `NotoSansKR[wght].ttf`
+([google/fonts](https://github.com/google/fonts/tree/main/ofl/notosanskr),
+SIL Open Font License, `assets/fonts/NotoSansKR-OFL.txt`):
+
+```bash
+python scripts/build_korean_font.py "NotoSansKR[wght].ttf" data/korean.ttf
+```
+
+An env without `data/korean.ttf` in its `board_build.embed_files` still
+builds, and draws Korean as blanks.
+
 Most of Latin Extended-A's capitals -- Č, Ś, Ž, Ă, Ÿ -- carry a mark above
 the cap height, and LovyanGFX sets a face's line height from its tallest
 glyph, sparing only U+00A0..U+00FF. Left to that, they would make every face
