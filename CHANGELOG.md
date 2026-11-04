@@ -22,6 +22,10 @@ GitHub release from that version's section, with
 
 - **Recommended without a Music Assistant token** is eight artists from the library at random, rather than your favourite artists topped up at random. With a token it is artists like the first three of the list's top section -- the server's recent artists when Recent list is set to Music Assistant.
 
+### Fixed
+
+- **A swipe down from the very top of a round panel** no longer switches the volume device on: a finger coming on from the bezel is read sliding along the rim at first, and the volume took that for a sideways drag. A press that lands at the rim now has to go plainly sideways before it moves the volume.
+
 ## [1.4.0] - 2026-10-30
 
 This release adds three boards -- the Guition ESP32-4848S040, the Waveshare AMOLED 1.75 and the Waveshare ESP32-P4 4B, the first on an ESP32-P4 -- and shows how far through the track it is, in the album art's colour, with a drag along the line to seek. The search finds albums, tracks, playlists and radio as well as artists, an artist on the swipe-up list starts their radio, and the screen no longer stops while Home Assistant answers a button.

@@ -136,6 +136,20 @@ constexpr ScrollableList kSettingsList{settings_list::scrollByPx,
 constexpr int kDragSlopPx =
     static_cast<int>(board::kTouchTapSlopPx * board::kUiScale + 0.5f);
 
+/** How near the edge of the circle a press lands to be at the rim. There a
+ *  finger coming on from the bezel -- a swipe down begun at the very top --
+ *  is read crooked at first: on the DFRobot, 21 px along the rim and 1 px
+ *  down before it went down at all. */
+constexpr int kRimPx = theme::px(10);
+
+/** Whether (x, y) is at the rim of the circle. */
+bool atRim(int x, int y) {
+  const int dx = x - theme::kCenterX;
+  const int dy = y - theme::kCenterY;
+  const int inner = theme::kRadius - kRimPx;
+  return dx * dx + dy * dy >= inner * inner;
+}
+
 /** A sideways swipe in the volume's half that lifts this soon after it was
  *  claimed, having gone at least kFlickMinPx, is a flick: the swipe to the
  *  search or the inputs, as lower down, not a volume change. A drag meant
@@ -224,6 +238,13 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
     // Where the finger landed, not where it is now: a swipe that began in the
     // top half stays a volume swipe even once it has wandered below centre.
     if (!now_playing::volumeSwipeRegion(x - travel_x, y - travel_y)) {
+      return false;
+    }
+    // One that landed at the rim may be a swipe down read crooked: it has to
+    // go plainly sideways, twice the slop and twice as far as down.
+    if (atRim(x - travel_x, y - travel_y) &&
+        (abs(travel_x) < 2 * kDragSlopPx ||
+         abs(travel_x) < 2 * abs(travel_y))) {
       return false;
     }
     // A device that is off: the swipe switches it on, as a turn of the knob
