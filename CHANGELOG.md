@@ -14,7 +14,7 @@ GitHub release from that version's section, with
 
 ### Added
 
-- **Waveshare ESP32-S3-Touch-AMOLED-1.75C**, built as `amoled466c-s3`: the 1.75's build with the 1.75C's display and touch resets, on GPIO 1 and 2. Not yet tried on a board, and not on the install page.
+- **Waveshare ESP32-S3-Touch-AMOLED-1.75C**, built as `amoled466c-s3`: the 1.75's build with the 1.75C's display and touch resets, on GPIO 1 and 2. Not yet tried on a board; on the install page.
 - **Recent list, a setting:** on the settings page and in the portal. *Music Assistant*, the default, makes the list's top section Music Assistant's recent artists, which every player shares -- and no longer only for want of a token; *Room only* makes it the artists played on this remote's player, as it was before.
 - **Forget the Home Assistant token from the portal:** a checkbox under the token field. Saved ticked, the remote forgets the token, keeping the URL, and restarts to the sign-in QR code to link again. The next link deletes the forgotten token in Home Assistant, as it does the one a link replaces -- and so, now, does the link after a refused token is tapped away.
 - **Korean:** artist names, track titles and anything else in Hangul show in Korean, where they were blanks -- the 2,350 common syllables, drawn from an outline font (Noto Sans KR, as the Latin text is Noto Sans) at the size of the text around them. About 420 KB in every board's image.
