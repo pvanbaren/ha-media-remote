@@ -49,8 +49,10 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -91,6 +93,15 @@ std::atomic<bool (*)(Command, const char*)> s_command_handler{nullptr};
 constexpr char kRunBody[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"stt\","
     "\"end_stage\":\"stt\",\"input\":{\"sample_rate\":16000}";
+/** kRunBody from the wake word, which it names, the phrase appended as JSON
+ *  and closed: Home Assistant gives one wake word to one request, the
+ *  first, and turns away the rest within two seconds -- another remote's,
+ *  that heard the same wake word -- with the error
+ *  duplicate_wake_up_detected. */
+constexpr char kWakeRunBodyStart[] =
+    "\"type\":\"assist_pipeline/run\",\"start_stage\":\"stt\","
+    "\"end_stage\":\"stt\",\"input\":{\"sample_rate\":16000,"
+    "\"wake_word_phrase\":";
 /** The words heard, to Assist: the text appended as JSON and closed. */
 constexpr char kTextBodyStart[] =
     "\"type\":\"assist_pipeline/run\",\"start_stage\":\"intent\","
@@ -165,6 +176,16 @@ bool s_fetch_queued = false;
 bool s_run_started = false;
 unsigned long s_run_sent_ms = 0;
 unsigned long s_speech_end_ms = 0;
+/** Not sent before this: a wake word's request held back by how quietly it
+ *  was heard (config::kVoiceWakeHoldMsPerDb). Written before s_want_run. */
+std::atomic<unsigned long> s_run_not_before{0};
+/** For the log: the microphone over a request, its quietest and loudest
+ *  message in dBFS, and whether Home Assistant heard speech in it begin
+ *  and end. */
+float s_level_min_db = 0.0f;
+float s_level_max_db = -96.0f;
+bool s_vad_start = false;
+bool s_vad_end = false;
 /** One message of audio being gathered, and the message itself: in PSRAM,
  *  taken by init() on a board with a microphone and nowhere else. */
 int16_t* s_pcm = nullptr;
@@ -225,6 +246,15 @@ void pumpAudio() {
     const bool drained = !capturing && n == 0;
     if (s_pcm_fill == config::kVoiceFrameSamples ||
         (drained && s_pcm_fill > 0)) {
+      double sum = 0.0;
+      for (size_t i = 0; i < s_pcm_fill; ++i) {
+        sum += static_cast<double>(s_pcm[i]) * s_pcm[i];
+      }
+      const double rms = sqrt(sum / s_pcm_fill);
+      const float db =
+          rms < 1.0 ? -96.0f : static_cast<float>(20.0 * log10(rms / 32768.0));
+      s_level_min_db = std::min(s_level_min_db, db);
+      s_level_max_db = std::max(s_level_max_db, db);
       memcpy(s_frame + 1, s_pcm, s_pcm_fill * 2);
       if (!ha::streamSendBinary(s_frame, 1 + s_pcm_fill * 2)) {
         return;  // the stream closed; the listener has heard
@@ -236,6 +266,13 @@ void pumpAudio() {
       ha::streamSendBinary(s_frame, 1);  // the handler alone: the end
       s_audio_done = true;
       s_speech_end_ms = millis();
+      LOG_INFO("VOICE: %lu ms of audio, microphone %.0f to %.0f dBFS; Home "
+               "Assistant heard %s",
+               static_cast<unsigned long>(s_speech_end_ms - s_run_sent_ms),
+               s_level_min_db, s_level_max_db,
+               s_vad_end     ? "the speech end"
+               : s_vad_start ? "speech, but not its end"
+                             : "no speech");
       if (hw::audio::captureDropped(kMic) > 0) {
         LOG_WARN("VOICE: %lu samples of speech lost",
                  static_cast<unsigned long>(hw::audio::captureDropped(kMic)));
@@ -550,8 +587,14 @@ void hook() {
       hw::audio::cue(hw::audio::Cue::kFailed);
     }
   }
-  if (s_want_run.exchange(false)) {
+  if (s_want_run &&
+      static_cast<long>(millis() - s_run_not_before.load()) >= 0 &&
+      s_want_run.exchange(false)) {
     s_handler = -1;
+    s_level_min_db = 0.0f;
+    s_level_max_db = -96.0f;
+    s_vad_start = false;
+    s_vad_end = false;
     s_audio_done = false;
     s_run_ended = false;
     s_fetch_queued = false;
@@ -723,7 +766,10 @@ void listener(const char* message) {
       s_run_id = 0;
       fail("Home Assistant gave no audio channel", kSorryFailed);
     }
+  } else if (strcmp(etype, "stt-vad-start") == 0) {
+    s_vad_start = true;
   } else if (strcmp(etype, "stt-vad-end") == 0) {
+    s_vad_end = true;
     hw::audio::captureStop(kMic);  // it has stopped listening
   } else if (strcmp(etype, "stt-end") == 0) {
     char heard[sizeof(Status::heard)];
@@ -750,6 +796,14 @@ void listener(const char* message) {
     static const char* const kMessage[] = {"message", nullptr};
     readPath(data, kCode, code, sizeof(code));
     readPath(data, kMessage, why, sizeof(why));
+    if (strcmp(code, "duplicate_wake_up_detected") == 0) {
+      // Another remote heard the same wake word and asked first: the
+      // request is its. Over, without an apology or a tone.
+      LOG_INFO("VOICE: another remote has this wake word; standing down");
+      hw::audio::captureStop(kMic);
+      s_phase = Phase::kFailed;
+      return;
+    }
     LOG_WARN("VOICE: Home Assistant said %s", code);
     fail(why[0] != '\0' ? why : code,
          strcmp(code, "stt-no-text-recognized") == 0 ? kSorryNotHeard
@@ -1164,7 +1218,8 @@ namespace {
 
 /** Start a run: `body` is what to send, and `job` what this module's task
  *  does about it, if anything. */
-bool begin(const String& body, bool say_only, const Job* job) {
+bool begin(const String& body, bool say_only, const Job* job,
+           uint32_t hold_ms = 0) {
   if (!available() || s_end_on_start) {
     return false;
   }
@@ -1193,6 +1248,7 @@ bool begin(const String& body, bool say_only, const Job* job) {
   s_kind = say_only ? RunKind::kSay : RunKind::kListen;
   s_heard[0] = '\0';
   s_phase = say_only ? Phase::kThinking : Phase::kStarting;
+  s_run_not_before = millis() + hold_ms;
   s_want_run = true;
   if (job != nullptr) {
     xQueueSend(s_jobs, job, 0);
@@ -1209,7 +1265,17 @@ bool start() {
 
 bool startAt(uint32_t position) {
   const Job job = {Job::kListen, true, position};
-  return begin(kRunBody, false, &job);
+  const float db = hw::audio::levelBefore(
+      position, hw::audio::kSampleRate * config::kVoiceWakeLevelMs / 1000);
+  const float hold = std::min(
+      static_cast<float>(config::kVoiceWakeHoldMaxMs),
+      std::max(0.0f, (config::kVoiceWakeLoudDbfs - db) *
+                         config::kVoiceWakeHoldMsPerDb));
+  LOG_INFO("VOICE: wake word at %.0f dBFS, request held %.0f ms", db, hold);
+  String body(kWakeRunBodyStart);
+  ha::detail::appendJson(body, wake_word::phrase());
+  body += "}";
+  return begin(body, false, &job, static_cast<uint32_t>(hold));
 }
 
 bool say(const char* text) {

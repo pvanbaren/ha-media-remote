@@ -555,6 +555,32 @@ bool captureStartAt(Reader reader, uint32_t position) {
   return true;
 }
 
+float levelBefore(uint32_t position, uint32_t samples) {
+  if (!s_ready) {
+    return -96.0f;
+  }
+  // Only what the ring still holds, short of the block being written.
+  const uint32_t held = kRingSamples - kReadFrames;
+  const uint32_t ago = s_head.load(std::memory_order_acquire) - position;
+  if (ago > held) {
+    return -96.0f;
+  }
+  if (samples > held - ago) {
+    samples = held - ago;
+  }
+  if (samples == 0) {
+    return -96.0f;
+  }
+  double sum = 0.0;
+  for (uint32_t i = 0; i < samples; ++i) {
+    const double v = s_ring[(position - samples + i) & (kRingSamples - 1)];
+    sum += v * v;
+  }
+  const double rms = sqrt(sum / samples);
+  return rms < 1.0 ? -96.0f
+                   : static_cast<float>(20.0 * log10(rms / 32768.0));
+}
+
 void captureStop(Reader reader) {
   ReaderState& r = readerState(reader);
   if (r.on) {
@@ -689,6 +715,7 @@ bool begin() { return false; }
 bool ready() { return false; }
 bool captureStart(Reader) { return false; }
 bool captureStartAt(Reader, uint32_t) { return false; }
+float levelBefore(uint32_t, uint32_t) { return -96.0f; }
 void captureStop(Reader) {}
 bool capturing(Reader) { return false; }
 size_t captureRead(Reader, int16_t*, size_t) { return 0; }

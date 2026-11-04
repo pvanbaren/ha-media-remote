@@ -62,6 +62,12 @@ size_t captureRead(Reader reader, int16_t* out, size_t max);
 /** Where in the microphone's stream `reader` will read next. */
 uint32_t capturePosition(Reader reader);
 
+/** The microphone's level over the `samples` before `position`, RMS in
+ *  dBFS -- 0 the loudest, -96 silence -- as far back as the ring still
+ *  holds: how loud the wake word was, for which of two remotes heard it
+ *  nearer. */
+float levelBefore(uint32_t position, uint32_t samples);
+
 /** Samples `reader` lost since it started, by falling too far behind. */
 uint32_t captureDropped(Reader reader);
 

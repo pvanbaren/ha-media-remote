@@ -556,6 +556,16 @@ constexpr bool kCoverArtRequestPanelSize = true;
 /** Longest a request listens for. Home Assistant normally ends it sooner,
  *  when it hears the speech stop; this is for a room too noisy for that. */
 constexpr unsigned long kVoiceMaxListenMs = 8000;
+/** One wake word heard by two remotes: Home Assistant gives it to the
+ *  request that starts first and turns the other away. So the remote that
+ *  heard it louder -- the nearer one -- starts sooner: a request from the
+ *  wake word waits kVoiceWakeHoldMsPerDb for each dB its last
+ *  kVoiceWakeLevelMs was quieter than kVoiceWakeLoudDbfs, up to
+ *  kVoiceWakeHoldMaxMs. The microphone keeps the speech meanwhile. */
+constexpr float kVoiceWakeLoudDbfs = -20.0f;
+constexpr float kVoiceWakeHoldMsPerDb = 10.0f;
+constexpr uint32_t kVoiceWakeHoldMaxMs = 400;
+constexpr uint32_t kVoiceWakeLevelMs = 1000;
 /** Samples per binary message of audio: 64 ms. In testing this kept up with
  *  the microphone with at most one message waiting. */
 constexpr size_t kVoiceFrameSamples = 1024;
