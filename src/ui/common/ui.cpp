@@ -1201,6 +1201,9 @@ void showCommandPending(Intent intent, bool pending) {
     case Intent::kNext:
       now_playing::showButtonPressed(Action::kNext, pending);
       break;
+    case Intent::kTogglePower:
+      now_playing::showPowerPending(pending);
+      break;
     default:
       break;
   }

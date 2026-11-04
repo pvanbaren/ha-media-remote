@@ -210,6 +210,9 @@ bool g_untitled_repaint_owed = false;
 /** A frame went up with "Off in this room" held back; one more is owed when
  *  the hold runs out, in case the device is off still. Loop task only. */
 bool g_off_here_repaint_owed = false;
+/** A power tap not yet answered by the state: when it was made, or 0. Now
+ *  playing draws the volume in the pending grey meanwhile. Loop task only. */
+unsigned long g_power_pending_ms = 0;
 
 /** True while the volume device was asked to come on by this remote less
  *  than config::kOffHereHoldMs ago. */
@@ -383,6 +386,7 @@ void showNowPlaying() {
     snapshot.hold_off_here = true;
     g_off_here_repaint_owed = true;
   }
+  snapshot.power_pending = g_power_pending_ms != 0;
 
   LOG_DEBUG("UI: now playing \"%s\"", snapshot.title);
   ui::showNowPlaying(snapshot);
@@ -1163,6 +1167,21 @@ bool g_toggle_was_known = false;
   snprintf(job.entity, sizeof(job.entity), "%s", control);
   g_toggle_sent_ms = 0;
   queueCommand(job);
+
+  // The answer to the touch, now: the volume in the pending grey until a
+  // state shows what the toggle did (handleToggleSettled()).
+  g_power_pending_ms = millis();
+  ui::showCommandPending(Intent::kTogglePower, true);
+}
+
+/** The pending grey is done with: the next frame draws the volume as the
+ *  state has it. */
+void endPowerPending() {
+  if (g_power_pending_ms == 0) {
+    return;
+  }
+  g_power_pending_ms = 0;
+  g_state_dirty = true;
 }
 
 /** A power tap's toggle, once a state sampled after it shows it took: if the
@@ -1177,6 +1196,12 @@ bool g_toggle_was_known = false;
  *  still showing the old power is one rendered before the toggle landed, and
  *  is waited past. */
 [[gnu::noinline]] void handleToggleSettled() {
+  // Never grey for longer than the wait: whatever the state says by then is
+  // what is drawn.
+  if (g_power_pending_ms != 0 &&
+      millis() - g_power_pending_ms >= kToggleSettleMs) {
+    endPowerPending();
+  }
   if (g_toggle_sent_ms == 0) {
     return;
   }
@@ -1193,6 +1218,7 @@ bool g_toggle_was_known = false;
     return;
   }
   g_toggle_sent_ms = 0;
+  endPowerPending();
   LOG_INFO("UI: %s is now %s", services::ha::controlEntity(),
            now.control_off ? "off" : "on");
   if (!now.control_off) {
@@ -1492,6 +1518,7 @@ const char* serviceFor(Intent intent) {
         } else {
           LOG_WARN("UI: toggle of %s refused", services::ha::controlEntity());
           g_toggle_sent_ms = 0;
+          endPowerPending();
         }
         break;
       case CommandKind::kIsolate:

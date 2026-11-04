@@ -300,8 +300,10 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
   const float filled_end =
       theme::kVolumeArcStartDeg + theme::kVolumeArcSweepDeg * level;
   // Grey when nothing will be heard at that level: muted, or the volume
-  // device switched off.
-  const uint16_t fill = state.muted || state.control_off
+  // device switched off. Darker grey while a power tap waits on Home
+  // Assistant.
+  const uint16_t fill = state.power_pending ? theme::kVolumePendingFill
+                        : state.muted || state.control_off
                             ? theme::kVolumeMutedFill
                             : theme::kVolumeFill;
   if (filled_end > theme::kVolumeArcStartDeg + 0.5f) {
@@ -311,6 +313,10 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
   }
 
   // The knob is what makes it read as draggable rather than as a readout.
+  // Not while a power tap is pending: just the grey fill, then.
+  if (state.power_pending) {
+    return;
+  }
   int knob_x = 0;
   int knob_y = 0;
   volumePoint(level, knob_x, knob_y);
@@ -822,6 +828,22 @@ void showButtonPressed(Action action, bool pressed) {
     ui::canvasPresentRegion(button.cx - button.radius,
                             button.cy - button.radius, edge, edge);
   }
+}
+
+void showPowerPending(bool pending) {
+  if (s_last_drawn.power_pending == pending) {
+    return;
+  }
+  s_last_drawn.power_pending = pending;
+  if (!volumeAvailable(s_last_drawn)) {
+    return;
+  }
+  // The whole fill changes colour, not just the stretch by the knob that a
+  // drag repaints: from the start of the ring.
+  if (s_arc_drawn_level >= 0.0f) {
+    s_arc_drawn_level = 0.0f;
+  }
+  refreshVolume(s_last_drawn, s_last_drawn.volume);
 }
 
 }  // namespace ui::now_playing

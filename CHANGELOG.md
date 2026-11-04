@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Changed
+
+- **A power tap shows at once:** tapping now playing to switch the room's volume device on or off turns the volume ring or bar a darker grey, without its knob, straight away, until Home Assistant's state shows what the tap did -- before, nothing changed on screen for the second or so that takes, and a tap could be taken for missed.
+
 ### Fixed
 
 - **Korean scrolls as fast as Latin text:** the Korean glyphs a face keeps were placed by code point, and Hangul's layout put most syllables in a quarter of the places, so a list of Korean names drew most of its letters again on every frame -- on the round 360, a page took twice as long as the same page in Latin. They are now spread over the whole cache, a few to a place, and a page shown once draws again at about the speed of Latin text.

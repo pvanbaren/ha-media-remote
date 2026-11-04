@@ -81,4 +81,8 @@ Action hitTest(int x, int y);
  *  so a press acknowledges before the HA round trip returns. */
 void showButtonPressed(Action action, bool pressed);
 
+/** Repaint the volume in the pending grey, or out of it, straight to the
+ *  panel: a power tap's answer to the touch, before Home Assistant's. */
+void showPowerPending(bool pending);
+
 }  // namespace ui::now_playing
