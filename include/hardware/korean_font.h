@@ -43,7 +43,7 @@ class KoreanFont : public lgfx::IFont {
 
   const lgfx::VLWfont* face_ = nullptr;
   float scale_ = 0.0f;
-  /** Rendered glyphs, by code point modulo the count: one kept per slot. */
+  /** Rendered glyphs, in sets of a few, most recently used first. */
   mutable Glyph** kept_ = nullptr;
 };
 

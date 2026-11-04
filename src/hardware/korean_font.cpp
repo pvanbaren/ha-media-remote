@@ -24,10 +24,21 @@ extern const uint8_t kKoreanTtf[] asm("_binary_data_korean_ttf_start")
 
 namespace {
 
-/** Rendered glyphs kept per face. A name is a few syllables and a screen a
- *  few names, so a slot is rarely contested; one that is renders again, in
- *  a few milliseconds. At the largest face, 54 px, a glyph is under 3 KB. */
-constexpr size_t kSlots = 128;
+/** Rendered glyphs kept per face, in sets of kWays: a glyph can sit in any
+ *  way of its set, and a full set gives up its least recently used. At the
+ *  largest face, 54 px, a glyph is under 3 KB. */
+constexpr size_t kWays = 8;
+constexpr size_t kSetBits = 4;
+constexpr size_t kSlots = kWays << kSetBits;
+
+/** The set for `c`. Not c modulo the set count: a Hangul syllable is
+ *  0xAC00 + (initial x 21 + vowel) x 28 + final, so every syllable without a
+ *  final consonant -- many of a name's -- is a multiple of 28 from the
+ *  next, and modulo a power of two those share a quarter of the sets. A
+ *  multiplicative hash spreads them over all of them. */
+size_t setOf(uint16_t c) {
+  return (static_cast<uint32_t>(c) * 0x9E3779B1u) >> (32 - kSetBits);
+}
 
 /** Where the glyph's VLW record keeps its 24-byte header and its bitmap:
  *  VLWfont::drawChar() reads the header at 28 + 28 x its index, here 0. */
@@ -132,9 +143,15 @@ const KoreanFont::Glyph* KoreanFont::korean(uint16_t c) const {
     }
     memset(kept_, 0, sizeof(Glyph*) * kSlots);
   }
-  Glyph*& slot = kept_[c % kSlots];
-  if (slot != nullptr && slot->code == c) {
-    return slot;
+  // Most recently used first.
+  Glyph** set = kept_ + setOf(c) * kWays;
+  for (size_t way = 0; way < kWays; ++way) {
+    Glyph* kept = set[way];
+    if (kept != nullptr && kept->code == c) {
+      memmove(set + 1, set, way * sizeof(Glyph*));
+      set[0] = kept;
+      return kept;
+    }
   }
 
   const int glyph = stbtt_FindGlyphIndex(&s_info, c);
@@ -173,9 +190,10 @@ const KoreanFont::Glyph* KoreanFont::korean(uint16_t c) const {
                           scale_, glyph);
   }
 
-  heap_caps_free(slot);
-  slot = fresh;
-  return slot;
+  heap_caps_free(set[kWays - 1]);
+  memmove(set + 1, set, (kWays - 1) * sizeof(Glyph*));
+  set[0] = fresh;
+  return fresh;
 }
 
 void KoreanFont::getDefaultMetric(lgfx::FontMetrics* metrics) const {

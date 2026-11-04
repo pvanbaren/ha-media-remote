@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Fixed
+
+- **Korean scrolls as fast as Latin text:** the Korean glyphs a face keeps were placed by code point, and Hangul's layout put most syllables in a quarter of the places, so a list of Korean names drew most of its letters again on every frame -- on the round 360, a page took twice as long as the same page in Latin. They are now spread over the whole cache, a few to a place, and a page shown once draws again at about the speed of Latin text.
+
 ## [1.5.0] - 2026-11-03
 
 This release shows Korean -- artist names and track titles in Hangul, drawn from an outline font at the size of the text around them -- and the letters and symbols a dozen more Latin-script languages need, and adds the Waveshare AMOLED 1.75C, built and on the install page though not yet tried on a board. The list's top section can be Music Assistant's recent artists, which every player shares, the portal can forget the Home Assistant token, and a swipe down from the top edge of a round panel no longer switches the volume device on.
