@@ -79,6 +79,8 @@ src/services/
   ma_api.cpp               Music Assistant's own API, and its settings
   display_settings.cpp     rotation and keyboard layout
   device_name.cpp          hostname and mDNS
+  firmware_update.cpp      the latest release on GitHub, and installing it;
+                           the portal's /firmware page
 src/ui/round/, src/ui/square/
   theme.cpp                chordHalfWidth(): the panel's shape
   now_playing.cpp          the main screen: volume arc or bar, transport

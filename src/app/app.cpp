@@ -34,6 +34,7 @@
 #include "services/browse.h"
 #include "services/device_name.h"
 #include "services/display_settings.h"
+#include "services/firmware_update.h"
 #include "services/ha_link.h"
 #include "services/history.h"
 #include "services/ma_api.h"
@@ -1813,11 +1814,12 @@ enum class Setting : uint8_t {
   kTxPower,
   kKeyboard,
   kRotation,
+  kFirmware,
   kRestart,
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 12;
+constexpr int kMaxSettingRows = 13;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -1828,6 +1830,8 @@ Setting g_setting_open = Setting::kWifi;
 int g_setting_open_row = -1;
 /** The network list was opened from the settings page, and goes back to it. */
 bool g_wifi_from_settings = false;
+/** The release the Firmware row's check found newer, to install. */
+char g_firmware_tag[sizeof(services::update::CheckResult::tag)] = {};
 
 /** The values behind a short list of choices, by row. The player and input
  *  lists are read by row from services::players and g_sources instead. */
@@ -1952,6 +1956,8 @@ void showSettingsPage(int focus) {
                     : "Alphabetical");
   addSettingRow(Setting::kRotation, "Screen rotation",
                 kRotationNames[services::display::rotation() & 3]);
+  addSettingRow(Setting::kFirmware, "Firmware",
+                services::update::currentVersion());
   addSettingRow(Setting::kRestart, "Restart", "");
   // The name, the Home Assistant link and Music Assistant stay in the
   // portal: typed text, which the portal does better.
@@ -1990,6 +1996,105 @@ int loadSources() {
                     : -1;
   g_source_count = n > 0 ? n : 0;
   return n;
+}
+
+// --- Firmware from GitHub --------------------------------------------------------
+
+void restartNow(const char* why);
+
+/** What the check found, as a row of its own over the choices -- a heading
+ *  over a line, where the list's note would be one line at the top, which a
+ *  round panel cuts short. A tap on it does nothing (value 3). */
+void addFirmwareFinding(const char* heading, const char* line) {
+  if (g_choice_count >= kMaxChoiceValues) {
+    return;
+  }
+  g_choice_values[g_choice_count++] = 3;
+  ui::settingsAdd(heading, line, ui::SettingStyle::kNormal);
+}
+
+/** Ask GitHub whether there is newer firmware, behind a loading card, and
+ *  list what can be done about it: install it, or not. The choices' values:
+ *  1 installs g_firmware_tag, 2 asks again, 0 goes back. */
+[[gnu::noinline]] void openFirmwareChoices() {
+  ui::showLoading("the latest release");
+  services::update::CheckResult result;
+  services::update::check(result);
+  char line[64];
+  g_firmware_tag[0] = '\0';
+  ui::settingsBegin("Firmware", "");
+  switch (result.result) {
+    case services::update::Check::kNewer: {
+      snprintf(g_firmware_tag, sizeof(g_firmware_tag), "%s", result.tag);
+      snprintf(line, sizeof(line), "%s is out", result.tag);
+      addFirmwareFinding("Newer firmware", line);
+      char text[48];
+      snprintf(text, sizeof(text), "Install %s", result.tag);
+      addChoice(text, 1, false);
+      addChoice("Not now", 0, false);
+      return;
+    }
+    case services::update::Check::kUpToDate:
+      snprintf(line, sizeof(line), "%s is the latest", result.tag);
+      addFirmwareFinding("Up to date", line);
+      break;
+    case services::update::Check::kNoImage:
+      snprintf(line, sizeof(line), "%s is out", result.tag);
+      addFirmwareFinding("No image for this board", line);
+      break;
+    case services::update::Check::kFailed:
+      addFirmwareFinding("Could not ask GitHub", result.error);
+      addChoice("Try again", 2, false);
+      break;
+  }
+  addChoice("OK", 0, false);
+}
+
+/** The progress card, redrawn as the download grows: every 2%, which is
+ *  plenty to see it move without drawing the card a hundred times. */
+const char* g_firmware_installing = "";
+void showFirmwareProgress(int percent) {
+  static int s_shown = -1;
+  if (percent == 0 || percent >= 100 || percent - s_shown >= 2 ||
+      percent < s_shown) {
+    s_shown = percent;
+    ui::showUpdating(g_firmware_installing, percent);
+  }
+}
+
+/** Download and install release `tag`, with its progress on screen, and
+ *  restart into it. Returns only when it failed, with `error` saying why. */
+[[gnu::noinline]] void installFirmware(const char* tag, char* error,
+                                       size_t error_len) {
+  wakeDisplay();
+  g_firmware_installing = tag;
+  showFirmwareProgress(0);
+  if (services::update::install(tag, showFirmwareProgress, error,
+                                error_len)) {
+    char why[48];
+    snprintf(why, sizeof(why), "Updated to %s", tag);
+    restartNow(why);
+  }
+}
+
+/** An install asked for on the portal's Firmware page. It runs here, where
+ *  the screen can show it; a failure is said on the screen for a moment and
+ *  on the page, and the remote carries on as it was. */
+[[gnu::noinline]] void handleFirmwareRequest() {
+  char tag[sizeof(services::update::CheckResult::tag)];
+  if (!services::update::takeInstallRequest(tag, sizeof(tag))) {
+    return;
+  }
+  char error[64] = {};
+  installFirmware(tag, error, sizeof(error));
+  ui::showUpdateFailed(error);
+  delay(3000);
+  // Back to what was up: the card took the screen from it.
+  if (g_screen == Screen::kSettings) {
+    showSettingsPage(-1);
+  } else {
+    showNowPlaying();
+  }
 }
 
 /** The list of choices behind one row of the page. */
@@ -2128,6 +2233,10 @@ void openSettingChoices(Setting setting, int row) {
       addChoice("Cancel", 0, false);
       break;
 
+    case Setting::kFirmware:
+      openFirmwareChoices();
+      break;
+
     case Setting::kPortal:
       return;
   }
@@ -2231,6 +2340,26 @@ bool applySettingChoice(int row) {
     case Setting::kRestart:
       if (value == 1) {
         restartNow("");
+      }
+      break;
+    case Setting::kFirmware:
+      if (value == 3) {
+        return false;  // what the check found: nothing to do
+      }
+      if (value == 2) {
+        openSettingChoices(Setting::kFirmware, g_setting_open_row);
+        return true;
+      }
+      if (value == 1 && g_firmware_tag[0] != '\0') {
+        char error[64] = {};
+        installFirmware(g_firmware_tag, error, sizeof(error));
+        // Still here: it failed, and the running firmware is untouched.
+        ui::settingsBegin("Firmware", "");
+        g_choice_count = 0;
+        addFirmwareFinding("Not installed", error);
+        addChoice("OK", 0, false);
+        ui::showSettings();
+        return true;
       }
       break;
     case Setting::kRecentHere:
@@ -2959,6 +3088,7 @@ void setup() {
   services::ha::init();
   // Before Wi-Fi, so its pages are there when the portal's server starts.
   services::ha_link::init();
+  services::update::init();
   // After ha::init(): an unset Music Assistant address is derived from Home
   // Assistant's. The recommendations wait for Wi-Fi on their own task.
   services::ma::init();
@@ -3023,6 +3153,7 @@ void loop() {
 
   handleMessageRecheck();
   handleHaLink();
+  handleFirmwareRequest();
 
   // Before the artwork, and that ordering is the whole point. What is playing
   // is why the device exists; browse thumbnails are a preload for a list

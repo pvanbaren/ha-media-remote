@@ -150,6 +150,16 @@ curl -F "update=@.pio/build/round360-s3/firmware.bin" http://bedroom-remote.loca
 A device flashed before the table had a second slot answers "Partition Could
 Not be Found" and carries on unharmed; one USB flash gives it the new table.
 
+**From GitHub.** A remote can fetch a release itself: the **Firmware** row of
+its settings, or **Firmware from GitHub** in its portal (`/firmware`), asks
+GitHub for the latest release of `config::kFirmwareRepo` and, when it is newer
+than the build running, installs that release's `firmware-<env>.bin` into the
+same spare slot, checking GitHub's certificate against the root certificates
+ESP-IDF builds in. A build knows its version and env from
+`scripts/firmware_version.py`: the tag on a tag's build in CI, `git describe`
+elsewhere -- `v1.5.0-23-gc83026a` for a build 23 commits after v1.5.0, which
+counts as v1.5.0, so it is offered v1.6.0 but not v1.5.0 again.
+
 ## Fonts
 
 Text is anti-aliased VLW, one embedded face per pixel height the UI uses on

@@ -109,6 +109,15 @@ void showIsolate(const IsolateCard& card) {
   say("isolate: %s (%d rooms)", card.title, card.room_count);
 }
 void showRestarting(const char* why) { say("restarting: %s", why); }
+// A line per tenth, not per percent.
+void showUpdating(const char* version, int percent) {
+  static int s_said = -1;
+  if (percent == 0 || percent / 10 != s_said) {
+    s_said = percent / 10;
+    say("updating to %s: %d%%", version, percent);
+  }
+}
+void showUpdateFailed(const char* why) { say("not updated: %s", why); }
 void showSearchResults() { say("search results"); }
 void showSearching() { say("searching..."); }
 void showLoadingList() { say("loading library"); }

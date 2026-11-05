@@ -210,6 +210,11 @@ struct IsolateCard {
 void showIsolate(const IsolateCard& card);
 /** A card while the device restarts, saying `why`. */
 void showRestarting(const char* why);
+/** A card while firmware `version` comes down from GitHub, `percent` of it
+ *  so far. Called again as it grows. */
+void showUpdating(const char* version, int percent);
+/** The firmware did not install, for `why`; what runs is as it was. */
+void showUpdateFailed(const char* why);
 
 /** Results for whatever services::search now holds. */
 void showSearchResults();

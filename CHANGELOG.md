@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Added
+
+- **Firmware from GitHub:** the settings page has a Firmware row showing the version running, and a tap on it asks GitHub for the latest release -- when it is newer, install it there and then, its download's progress on screen, and the remote restarts into it with its settings kept. The portal has the same, as **Firmware from GitHub** on its menu. Only that board's image is fetched, and GitHub's certificate is checked.
+
 ### Changed
 
 - **A power tap shows at once:** tapping now playing to switch the room's volume device on or off turns the volume ring or bar a darker grey, without its knob, straight away, until Home Assistant's state shows what the tap did -- before, nothing changed on screen for the second or so that takes, and a tap could be taken for missed.

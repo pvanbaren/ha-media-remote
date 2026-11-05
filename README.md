@@ -288,6 +288,7 @@ row a setting's name over its value:
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
+| Firmware | The version running. A tap asks GitHub for the latest release: install it when it is newer, with the download's progress on screen, and the remote restarts into it |
 | Restart | Restart now, or cancel |
 | More at | The portal's address, `<name>.local`; not a choice |
 
@@ -518,7 +519,10 @@ it -- or at the device's IP address, which the status page shows. The last
 row of the device's settings page gives the name too. **Configure WiFi**
 holds the settings below, under the network name and password (leave those
 blank to keep the current network; `/param` shows the settings alone).
-**Update** installs firmware and **Info** shows the device's details.
+**Firmware from GitHub** shows the version running, checks for a newer
+release and installs it, as the Firmware row of the device's settings does;
+**Update** installs a firmware file you upload, and **Info** shows the
+device's details.
 
 **Before Wi-Fi.** With no Wi-Fi saved, or when the saved network does not
 answer at boot, the remote also raises an access point,

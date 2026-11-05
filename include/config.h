@@ -24,6 +24,14 @@ constexpr char kPortalHostname[] = "media-remote";
  *  its name -- to be answering again when the form reloads. */
 constexpr unsigned long kPortalSavedReturnMs = 15000;
 
+// --- Firmware update ---
+/** The GitHub repository whose releases the firmware update takes: owner and
+ *  name. Each release carries every board's image as firmware-<env>.bin. */
+constexpr char kFirmwareRepo[] = "pvanbaren/ha-media-remote";
+/** How long a request to GitHub, or a pause in an image coming down, may
+ *  take before the check or the install gives up. */
+constexpr uint32_t kFirmwareTimeoutMs = 15000;
+
 /** Per-attempt STA connect wait (ms); retried kWifiConnectAttempts times. */
 constexpr unsigned long kWifiConnectAttemptMs = 15000;
 constexpr uint8_t kWifiConnectAttempts = 3;

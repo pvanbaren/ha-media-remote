@@ -33,6 +33,7 @@ a press on a card counts as a tap on it.
 | 15 | Volume device (the amplifier) off | **Now playing**, the volume grey. A sideways swipe across the top half, or a turn of the knob, switches it on as play does, with its input and the player volume at switch-on; the next swipe or turn sets the level. | A tap on the top half toggles its power | Status page | From the status page | Home Assistant reports it on |
 | 16 | BOOT held for 3 s (Qualia: DOWN) | **Reset**, yellow: "Settings cleared, Rebooting" | Nothing | No | No | Restarts into 1 |
 | 17 | Rotation changed, or Restart chosen, in settings | **Restarting**, black | Nothing | No | No | Restarts |
+| 18 | A firmware install, from the settings' Firmware row or the portal | **Updating**, black, with the release and how much of it has come down | Nothing | No | No | It is written: **Restarting**, "Updated to" the release, and the remote restarts into it. It fails: from the settings, the Firmware list says why, under **Not installed**; from the portal, **Not updated**, amber, says why for 3 s, then the screen that was up comes back |
 
 ## Getting back to a card
 

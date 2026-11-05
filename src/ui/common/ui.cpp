@@ -1169,6 +1169,19 @@ void showRestarting(const char* why) {
                       theme::kStatusPlainText);
 }
 
+void showUpdating(const char* version, int percent) {
+  hw::touchCancel();
+  char line[16];
+  snprintf(line, sizeof(line), "%d%%", percent);
+  statusScreenMessage("Updating", version, line, theme::kStatusPlain,
+                      theme::kStatusPlainText);
+}
+
+void showUpdateFailed(const char* why) {
+  statusScreenMessage("Not updated", why, "", theme::kStatusPlain,
+                      theme::kWarning);
+}
+
 const char* wifiChosenSsid() { return wifi_join::chosenSsid(); }
 
 const char* wifiPassword() { return wifi_join::password(); }
