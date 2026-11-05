@@ -317,6 +317,14 @@ constexpr bool kHaKeepAlive = true;
 constexpr size_t kHaTlsRoomBytes = 56 * 1024;
 constexpr unsigned long kHaTlsRoomWaitMs = 1000;
 
+/** Every TLS handshake (services::tls) waits first for any other to finish
+ *  -- up to kTlsQueueWaitMs, longer than a handshake should take -- and then
+ *  up to kTlsRoomWaitMs for kTlsRoomBytes of internal RAM, the room the Home
+ *  Assistant retry above wants; then it goes ahead either way. */
+constexpr size_t kTlsRoomBytes = kHaTlsRoomBytes;
+constexpr unsigned long kTlsRoomWaitMs = 3000;
+constexpr unsigned long kTlsQueueWaitMs = 15000;
+
 /** Plain mallocs at least this big go to PSRAM first, internal RAM only
  *  when PSRAM is out. The SDK's own rule keeps everything under 4 KB
  *  internal (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL) -- every String, every

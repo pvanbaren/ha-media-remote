@@ -68,6 +68,7 @@ src/services/
                            Home Assistant settings in NVS
   ha_stream.cpp            the WebSocket state stream, and calls over it
   websocket.cpp            an RFC 6455 client over a Yielding socket
+  tls_gate.cpp             one TLS handshake at a time, with room for it
   ha_internal.h            what ha_client and ha_stream share
   player_list.cpp          cached media_player list, for the portal and the
                            device's lists
