@@ -93,6 +93,10 @@ constexpr int kVolumeKnobRadius = px(6);
 // to the panel, without recomposing the cover art underneath it.
 constexpr int kElapsedY = px(222);
 constexpr int kElapsedTextPx = textPx(15);
+/** The clock face's time. Its own face where a board has one -- digits and a
+ *  colon only, clock_font_101.vlw on the AMOLED -- and nothing else asks for
+ *  a size anywhere near it. */
+constexpr int kClockTextPx = textPx(52);
 constexpr int kElapsedPillPadX = px(7);
 constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);

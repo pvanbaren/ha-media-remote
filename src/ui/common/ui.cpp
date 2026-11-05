@@ -14,6 +14,7 @@
 #include "services/browse.h"
 #include "services/search.h"
 #include "ui/artwork.h"
+#include "ui/clock_face.h"
 #include "ui/back_button.h"
 #include "ui/browse_list.h"
 #include "ui/canvas.h"
@@ -911,6 +912,11 @@ bool init(uint8_t rotation) {
   return true;
 }
 
+namespace {
+/** The clock face is up in place of now playing: see dim(). */
+bool s_dimmed = false;
+}  // namespace
+
 Input poll(Screen screen, const PlayerState* state) {
   Input out;
 
@@ -922,9 +928,10 @@ Input poll(Screen screen, const PlayerState* state) {
     statusScreenForgetCard();
   }
 
-  // A touch on a blanked panel only wakes it. Handled before anything else
-  // reads the touch state, so the same press cannot also press a button.
-  if (displayIsBlanked()) {
+  // A touch on a blanked panel, or on the clock face, only wakes it. Handled
+  // before anything else reads the touch state, so the same press cannot
+  // also press a button.
+  if (displayIsBlanked() || s_dimmed) {
     // A whole tap can now arrive in one poll -- down and up queued behind a
     // slow pass -- so a completed gesture wakes the panel too, not only a
     // finger seen resting on it.
@@ -933,7 +940,12 @@ Input poll(Screen screen, const PlayerState* state) {
     const bool turned = hw::encoderTakeDetents() != 0;
     const bool pressed = hw::encoderTakePress();
     if (turned || pressed || hw::touchIsDown() || hw::touchPoll(discard)) {
-      wake();
+      if (s_dimmed) {
+        s_dimmed = false;
+        hw::touchCancel();
+      } else {
+        wake();
+      }
       out.intent = Intent::kWokeFromTouch;
     }
     return out;
@@ -1253,7 +1265,10 @@ void refreshElapsed(const PlayerState& state) {
 
 bool isBlanked() { return displayIsBlanked(); }
 
-void blank() { displayBlank(); }
+void blank() {
+  s_dimmed = false;
+  displayBlank();
+}
 
 void wake() {
   if (!displayIsBlanked()) {
@@ -1263,6 +1278,20 @@ void wake() {
   // The touch that woke the screen must not also land on a control.
   hw::touchCancel();
 }
+
+bool dim(const PlayerState* state) {
+  struct tm local;
+  if (!clock_face::now(local)) {
+    return false;
+  }
+  clock_face::draw(state, local);
+  s_dimmed = true;
+  return true;
+}
+
+bool isDimmed() { return s_dimmed; }
+
+void undim() { s_dimmed = false; }
 
 // --- Artwork ---------------------------------------------------------------
 

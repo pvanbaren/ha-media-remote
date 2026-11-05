@@ -255,9 +255,20 @@ void refreshElapsed(const services::ha::PlayerState& state);
 // --- Panel power -----------------------------------------------------------
 
 bool isBlanked();
+/** Also ends the clock face: a blanked panel wakes to now playing. */
 void blank();
 /** Bring the panel back and force a fresh frame. */
 void wake();
+
+/** Rest now playing as the dimmed clock face, or draw it again: the time and
+ *  `state`'s title and artist. False, drawing nothing, until the clock has
+ *  been set. A touch then only brings now playing back, returning
+ *  Intent::kWokeFromTouch from poll(), as on a blanked panel. */
+bool dim(const services::ha::PlayerState* state);
+bool isDimmed();
+/** Forget the clock face without drawing, for when another screen has
+ *  taken its place. */
+void undim();
 
 // --- Artwork ---------------------------------------------------------------
 

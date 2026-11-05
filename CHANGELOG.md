@@ -12,6 +12,11 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Added
+
+- **A dimmed clock face**: after 15 seconds untouched (`kDimAfterMs`), now playing rests as the time, large and dim, with the title and artist under it, on black -- mostly unlit pixels on an AMOLED. A touch only brings now playing back. The time comes from SNTP (`pool.ntp.org`) once Wi-Fi is up, in the zone `kTimeZone` names; until it answers, nothing dims. The face wanders a few pixels a minute so the same pixels are not lit all day. On the AMOLED boards it has digits of its own, `clock_font_101.vlw`, and the loop task a 16 KB stack to draw them; elsewhere the largest face is scaled. Blanking after `kIdleTimeoutMs` is unchanged.
+- **`build_ui_font.py --chars` and `--prefix`**: a face of only the characters given, under its own file name, as the clock's digits are.
+
 ## [1.5.0] - 2026-11-03
 
 This release shows Korean -- artist names and track titles in Hangul, drawn from an outline font at the size of the text around them -- and the letters and symbols a dozen more Latin-script languages need, and adds the Waveshare AMOLED 1.75C, built and on the install page though not yet tried on a board. The list's top section can be Music Assistant's recent artists, which every player shares, the portal can forget the Home Assistant token, and a swipe down from the top edge of a round panel no longer switches the volume device on.
