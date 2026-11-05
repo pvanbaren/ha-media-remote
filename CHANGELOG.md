@@ -19,6 +19,7 @@ GitHub release from that version's section, with
 ### Changed
 
 - **A power tap shows at once:** tapping now playing to switch the room's volume device on or off turns the volume ring or bar a darker grey, without its knob, straight away, until Home Assistant's state shows what the tap did -- before, nothing changed on screen for the second or so that takes, and a tap could be taken for missed.
+- **Short lists sit in the middle of a round panel:** a setting's choices, Restart? and the firmware's answer started up under the title, where the circle narrows the rows, and a one-row answer was cut to a sliver; a list short enough now sits in the middle, where they are widest.
 
 ### Fixed
 
