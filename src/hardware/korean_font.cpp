@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "hardware/inflate.h"
+
 // stb_truetype, private to this file. Its working memory -- the edges of the
 // glyph being rendered -- from PSRAM where there is some: internal RAM is
 // what the TLS sessions run short of.
@@ -21,6 +23,12 @@
 // so a board without it links and goes without Korean.
 extern const uint8_t kKoreanTtf[] asm("_binary_data_korean_ttf_start")
     __attribute__((weak));
+// Or compressed (scripts/deflate_embeds.py), where an env embeds it so, and
+// inflated into PSRAM the first time a Korean glyph is wanted.
+extern const uint8_t kKoreanTtfPacked[] asm(
+    "_binary_data_deflated_korean_ttf_z_start") __attribute__((weak));
+extern const uint8_t kKoreanTtfPackedEnd[] asm(
+    "_binary_data_deflated_korean_ttf_z_end") __attribute__((weak));
 
 namespace {
 
@@ -52,9 +60,13 @@ bool s_ready = false;
 bool ready() {
   if (!s_tried) {
     s_tried = true;
-    if (kKoreanTtf != nullptr) {
-      const int offset = stbtt_GetFontOffsetForIndex(kKoreanTtf, 0);
-      s_ready = offset >= 0 && stbtt_InitFont(&s_info, kKoreanTtf, offset) != 0;
+    const uint8_t* ttf = kKoreanTtf;
+    if (ttf == nullptr && kKoreanTtfPacked != nullptr) {
+      ttf = hw::inflateEmbedded(kKoreanTtfPacked, kKoreanTtfPackedEnd);
+    }
+    if (ttf != nullptr) {
+      const int offset = stbtt_GetFontOffsetForIndex(ttf, 0);
+      s_ready = offset >= 0 && stbtt_InitFont(&s_info, ttf, offset) != 0;
     }
   }
   return s_ready;

@@ -17,6 +17,9 @@ managed_components/
 src/idf_component.yml
 src/idf_component.yml.orig
 
+# Compressed copies of data/ files, written by scripts/deflate_embeds.py
+data/deflated/
+
 # Python bytecode from scripts/
 __pycache__/
 *.pyc

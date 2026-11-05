@@ -108,6 +108,8 @@ src/hardware/
   <board>/display.cpp      panel bring-up, backlight, sleep, rotation
   <board>/touch_raw.cpp    reads the touch controller
   <board>/font_table.cpp   the faces this board embeds
+  inflate.cpp              an embedded file compressed at build time, back
+                           in PSRAM
   <board>/boot_button.cpp  the reset button (the Qualia's is on its expander)
   rgb/framebuffer.cpp      the framebuffer: copy, scroll and flush
   rgb/rgb_panel.cpp        the S3's RGB peripheral, opened for it
@@ -119,6 +121,7 @@ src/hardware/
 scripts/
   build_ui_font.py         the VLW font generator
   build_korean_font.py     the Korean outline font, data/korean.ttf
+  deflate_embeds.py        compresses what an env embeds as data/deflated/
   board_header_stamp.py    rebuilds everything when the board header changes
   merge_firmware.py        pio run -t merge
   pin_components.py        holds a source build's IDF components

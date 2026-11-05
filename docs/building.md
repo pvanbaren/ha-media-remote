@@ -180,6 +180,14 @@ natively.
 Three lists must agree for a board: `--heights`, `board_build.embed_files` in
 its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 
+An env can embed a file compressed instead: list `data/deflated/<name>.z` for
+`data/<name>`, and `scripts/deflate_embeds.py` (a `pre:` script of that env)
+writes it before the build. At run time `hw::inflateEmbedded()` puts the
+original back in PSRAM. The P4 4B does this for its faces and the Korean
+font -- 1.78 MB as they are, 0.49 MB compressed -- which keeps its image well
+inside a 4 MB app slot; the faces are inflated at boot, in a few tens of
+milliseconds, and the Korean font the first time a Korean glyph is drawn.
+
 | Board | Faces |
 |---|---|
 | Waveshare | 15, 17, 20, 24 |

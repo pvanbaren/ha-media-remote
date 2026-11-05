@@ -20,6 +20,7 @@ GitHub release from that version's section, with
 
 - **A power tap shows at once:** tapping now playing to switch the room's volume device on or off turns the volume ring or bar a darker grey, without its knob, straight away, until Home Assistant's state shows what the tap did -- before, nothing changed on screen for the second or so that takes, and a tap could be taken for missed.
 - **Short lists sit in the middle of a round panel:** a setting's choices, Restart? and the firmware's answer started up under the title, where the circle narrows the rows, and a one-row answer was cut to a sliver; a list short enough now sits in the middle, where they are widest.
+- **The P4 4B's image is 1.3 MB smaller,** 2.5 MB of its 4 MB app slot where it was 3.8: its fonts and the Korean outline font are stored compressed and unpacked into PSRAM, the fonts as it starts and the Korean font when it is first needed.
 
 ### Fixed
 
