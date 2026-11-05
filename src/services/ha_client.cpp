@@ -989,6 +989,19 @@ services::YieldingClientSecure s_secure;
 HTTPClient s_http;
 SemaphoreHandle_t s_http_mutex = nullptr;
 
+/** A connection kept for reuse, closed after all if the stream opened while
+ *  its request ran. Whether to keep it is decided as the request starts, and
+ *  the stream drops the REST connection only as it opens -- so a request
+ *  begun just before, which then waits out the stream's TLS handshake, came
+ *  back to keep its connection for good: a second session's ~40 KB of
+ *  internal RAM held beside the stream's, which on the MaTouch left a
+ *  thumbnail's handshake a few hundred bytes. */
+void dropIfStreaming(bool kept, NetworkClient& client) {
+  if (kept && streamIsOpen()) {
+    client.stop();
+  }
+}
+
 /** Serialises access to the shared connection above.
  *
  *  The mutex is made in init(), on the Arduino task before the poll task
@@ -1259,6 +1272,7 @@ bool httpPost(const char* path, const String& body, String& response,
       LOG_WARN("HA: response body: %s", detail.c_str());
     }
     http.end();
+    dropIfStreaming(keep_alive, *client);
 
     if (code == 401 || code == 403) {
       setError("token rejected (%d)", code);
@@ -1275,6 +1289,7 @@ bool httpPost(const char* path, const String& body, String& response,
   logHttpRequest("POST", url.c_str(), code, body.length(), response.length(),
                  millis() - started_ms);
   http.end();
+  dropIfStreaming(keep_alive, *client);
   s_last_error[0] = '\0';
   s_token_rejected = false;
   return true;

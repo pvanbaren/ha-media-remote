@@ -25,6 +25,7 @@ GitHub release from that version's section, with
 
 ### Fixed
 
+- **A second Home Assistant connection no longer outlives the stream's:** a request begun just as the state stream opened kept its own TLS connection for good, about 40 KB of internal RAM beside the stream's. On a MaTouch whose list loads its pictures over HTTPS, that left a picture's connection so little that internal RAM ran down to a few hundred bytes as it started, and Wi-Fi dropped packets. A connection kept that way is now closed once its request is done.
 - **Korean scrolls as fast as Latin text:** the Korean glyphs a face keeps were placed by code point, and Hangul's layout put most syllables in a quarter of the places, so a list of Korean names drew most of its letters again on every frame -- on the round 360, a page took twice as long as the same page in Latin. They are now spread over the whole cache, a few to a place, and a page shown once draws again at about the speed of Latin text.
 
 ## [1.5.0] - 2026-11-03
