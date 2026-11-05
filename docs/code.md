@@ -101,6 +101,7 @@ src/ui/common/
 src/hardware/
   touch_gestures.cpp       press tracking, tap / swipe, the touch queue
   encoder.cpp              the knob, on a board with one
+  battery.cpp              the battery, on a board with an AXP2101
   display_font.cpp         picks the embedded face for a height
   korean_font.cpp          Korean behind each face, from an outline font
   <board>/display.cpp      panel bring-up, backlight, sleep, rotation

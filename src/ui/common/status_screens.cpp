@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "hardware/battery.h"
 #include "hardware/display_font.h"
 #include "services/device_name.h"
 #include "ui/back_button.h"
@@ -260,7 +261,7 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
     const char* label;
     const char* value;
   };
-  Pair pairs[8];
+  Pair pairs[9];
   int n = 0;
   // What it controls first, then the device and its link. With a separate
   // volume device and an input chosen for the player, the input is what the
@@ -279,14 +280,24 @@ void statusScreenDevice(const ui::DeviceStatus& status) {
   if (status.ha[0] != '\0') {
     pairs[n++] = {"HA", status.ha};
   }
+  // The battery is the device's, so it sits with the address and the uptime,
+  // mid-page where the panel is widest -- on a board with a power manager.
+  char battery[24];
+  const int pct = hw::batteryPercent();
   if (status.connected) {
     pairs[n++] = {"", status.ip};
-    pairs[n++] = {"Up", up};
+  }
+  if (pct >= 0) {
+    snprintf(battery, sizeof(battery),
+             hw::batteryCharging() ? "%d%% charging" : "%d%%", pct);
+    pairs[n++] = {"Battery", battery};
+  }
+  pairs[n++] = {"Up", up};
+  if (status.connected) {
     pairs[n++] = {"", wifi};
     pairs[n++] = {"Rx", rx};
     pairs[n++] = {"Tx", tx};
   } else {
-    pairs[n++] = {"Up", up};
     pairs[n++] = {"", "No Wi-Fi"};
   }
 

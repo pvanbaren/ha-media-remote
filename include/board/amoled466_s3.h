@@ -54,6 +54,8 @@
 /** A CO5300 on quad SPI. Not BOARD_PANEL_QSPI, which is the ST77916 and its
  *  backlight and CST816S; this one gets its own branch in lgfx_config.hpp. */
 #define BOARD_PANEL_AMOLED 1
+/** An AXP2101 power manager on the touch bus, for hardware/battery.h. */
+#define BOARD_HAS_AXP2101 1
 
 namespace board {
 
@@ -143,6 +145,8 @@ constexpr gpio_num_t kTouchPinRst = GPIO_NUM_40;
 #endif
 constexpr uint8_t kTouchI2cAddress = 0x5A;
 constexpr uint32_t kTouchI2cHz = 400000;
+/** The AXP2101, on the touch bus; read for the battery only. */
+constexpr uint8_t kPmuI2cAddress = 0x34;
 
 /** Raster the controller reports against. Waveshare sets it to the panel's
  *  466; touch_raw.cpp reads the controller's own figure at boot and scales
@@ -184,7 +188,7 @@ constexpr int kComposeSlabRows = 0;
 
 // --- Not used here ---------------------------------------------------------
 // I2S audio on 8/9/10/45 with its MCLK on 42 (16 on the 1.75C) and the
-// amplifier enable on 46, the AXP2101 and QMI8658 on the touch bus, and on
+// amplifier enable on 46, the QMI8658 on the touch bus, and on
 // the 1.75 the SD card, on GPIO 1 and 2 among others. Listed so that nobody
 // reaches for one of those pins thinking it is spare.
 

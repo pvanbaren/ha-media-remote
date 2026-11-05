@@ -8,6 +8,7 @@
 #include "board/board.h"
 #include "config.h"
 #include "log.h"
+#include "hardware/battery.h"
 #include "hardware/display.h"
 #include "hardware/encoder.h"
 #include "hardware/touch.h"
@@ -908,6 +909,7 @@ bool init(uint8_t rotation) {
   artwork::init();
   hw::touchInit();
   hw::encoderInit();
+  hw::batteryInit();
   return true;
 }
 

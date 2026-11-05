@@ -12,6 +12,10 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+### Added
+
+- **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
+
 ## [1.5.0] - 2026-11-03
 
 This release shows Korean -- artist names and track titles in Hangul, drawn from an outline font at the size of the text around them -- and the letters and symbols a dozen more Latin-script languages need, and adds the Waveshare AMOLED 1.75C, built and on the install page though not yet tried on a board. The list's top section can be Music Assistant's recent artists, which every player shares, the portal can forget the Home Assistant token, and a swipe down from the top edge of a round panel no longer switches the volume device on.

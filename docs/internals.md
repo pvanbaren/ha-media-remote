@@ -395,7 +395,9 @@ Waveshare's examples do instead, with the 120 ms the controller needs to wake.
 
 The CST9217 touch controller is read by hand (`touch_raw.cpp`): LovyanGFX's
 `Touch_CST226` speaks the same protocol but accepts only the CST226's chip id.
-The AXP2101 power manager, QMI8658 IMU and audio are left alone.
+The AXP2101 power manager is read for the battery's charge
+(`hardware/battery.cpp`), its fuel gauge turned on if it is off; it is
+otherwise left alone, as are the QMI8658 IMU and audio.
 
 `amoled466-s3` is the 1.75 (Rev 1.1, with an SD card slot). The 1.75C has
 the same pins but for its resets -- the display's on GPIO 1 and the touch's
