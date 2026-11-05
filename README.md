@@ -333,6 +333,13 @@ itself within a couple of seconds.
 
 ### Blanking, and the amplifier
 
+After **15 seconds** untouched (`kDimAfterMs`), now playing rests as a
+**dimmed clock**: the time, large and dim, with the title and artist under
+it, on black. A touch brings now playing back and does nothing else. The
+time comes from SNTP once Wi-Fi is up, in the zone `kTimeZone` names; until
+it has answered, the screen does not dim. The blanking below follows the
+same timer as before, from the clock as from now playing.
+
 After **five minutes** with the player paused, idle, off or unavailable
 (`kIdleTimeoutMs`, `kBlankWhenPaused`), the screen blanks -- backlight off,
 panel asleep -- and the **volume device is switched off** with it. Any touch

@@ -89,6 +89,13 @@ unsigned long g_last_elapsed_ms = 0;
 /** When the browse list or search screen was last opened, for
  *  kListIdleReturnMs. Loop only. */
 unsigned long g_list_opened_ms = 0;
+/** When now playing last came up -- from another screen, or the panel
+ *  waking -- for kDimAfterMs, which counts from this or the last touch,
+ *  whichever is later. Loop only. */
+unsigned long g_np_since_ms = 0;
+/** The minute the clock face last drew, so the next one draws again. Loop
+ *  only. */
+long g_dim_minute = -1;
 
 /** A volume gesture is in progress somewhere on the panel, so a poll must not
  *  contradict it. The display owns the gesture; this is a copy of
@@ -384,6 +391,15 @@ void showNowPlaying() {
     g_off_here_repaint_owed = true;
   }
 
+  // Resting on the clock: what changed shows there, under the time.
+  if (ui::isDimmed()) {
+    ui::dim(&snapshot);
+    g_screen = Screen::kNowPlaying;
+    return;
+  }
+  if (g_screen != Screen::kNowPlaying) {
+    g_np_since_ms = millis();
+  }
   LOG_DEBUG("UI: now playing \"%s\"", snapshot.title);
   ui::showNowPlaying(snapshot);
   g_screen = Screen::kNowPlaying;
@@ -440,6 +456,7 @@ void wakeDisplay() {
   ui::wake();
   g_control_off_sent = false;
   g_state_dirty = true;
+  g_np_since_ms = millis();
 }
 
 /** A tap landed on a dark panel: the idle clock starts again. It powers
@@ -449,6 +466,7 @@ void wakeDisplay() {
  *  task has not yet sent is called off, since someone is here after all. */
 void noteTouchWake() {
   g_idle_since = 0;
+  g_np_since_ms = millis();
   g_control_off_sent = false;
   g_turn_off_control = false;
   g_state_dirty = true;
@@ -2870,9 +2888,69 @@ void haPollTask(void*) {
   }
 }
 
+/** Ask SNTP for the time the first time Wi-Fi is up -- the board has no RTC
+ *  -- and say when it has answered. SNTP keeps the clock in step by itself
+ *  from then on, across reconnects. Loop only. */
+[[gnu::noinline]] void handleClock() {
+  static bool s_asked = false;
+  static bool s_set = false;
+  if (!s_asked) {
+    if (WiFi.status() != WL_CONNECTED) {
+      return;
+    }
+    s_asked = true;
+    configTzTime(config::kTimeZone, config::kNtpServer);
+    LOG_INFO("Clock: asking %s for the time", config::kNtpServer);
+    return;
+  }
+  const time_t t = time(nullptr);
+  if (!s_set && t >= config::kClockSetAfter) {
+    s_set = true;
+    struct tm local;
+    localtime_r(&t, &local);
+    LOG_INFO("Clock: set, %02d:%02d local", local.tm_hour, local.tm_min);
+  }
+}
+
+/** Rest now playing as the clock face once nobody has touched it for
+ *  kDimAfterMs, and keep the face's minute current while it is up. Blanking
+ *  is handleIdleBlanking()'s, from the clock as from now playing. Loop only. */
+[[gnu::noinline]] void handleDimming() {
+  if (ui::isDimmed()) {
+    // A card or a list has the screen now.
+    if (g_screen != Screen::kNowPlaying || ui::isBlanked()) {
+      ui::undim();
+      return;
+    }
+    const long minute = static_cast<long>(time(nullptr) / 60);
+    if (minute != g_dim_minute) {
+      g_dim_minute = minute;
+      g_state_dirty = true;  // drawn again by showNowPlaying()
+    }
+    return;
+  }
+  if (config::kDimAfterMs == 0 || g_screen != Screen::kNowPlaying ||
+      ui::isBlanked() || g_volume_dragging ||
+      time(nullptr) < config::kClockSetAfter) {
+    return;
+  }
+  unsigned long since = ui::lastInteractionMs();
+  if (static_cast<long>(g_np_since_ms - since) > 0) {
+    since = g_np_since_ms;  // the later of the two, wrap-safe
+  }
+  if (millis() - since < config::kDimAfterMs) {
+    return;
+  }
+  PlayerState snapshot;
+  if (snapshotState(snapshot) && ui::dim(&snapshot)) {
+    g_dim_minute = static_cast<long>(time(nullptr) / 60);
+    LOG_INFO("UI: resting on the clock");
+  }
+}
+
 /** The elapsed chip, once a second while something plays. */
 [[gnu::noinline]] void handleElapsedTick() {
-  if (ui::isBlanked() || g_screen != Screen::kNowPlaying ||
+  if (ui::isBlanked() || ui::isDimmed() || g_screen != Screen::kNowPlaying ||
       g_volume_dragging || millis() - g_last_elapsed_ms < 1000) {
     return;
   }
@@ -3036,6 +3114,8 @@ void loop() {
   ui::idleWork(g_screen);
   handleStatusRefresh();
 
+  handleClock();
+  handleDimming();
   handleElapsedTick();
 
   delay(5);

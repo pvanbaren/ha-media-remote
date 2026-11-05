@@ -229,11 +229,15 @@ def build(ttf_path: str, em_px: int) -> tuple[bytes, int]:
 def solve_em_for_height(ttf_path: str, target_h: int) -> tuple[int, bytes, int]:
     """Find the EM_PX whose rendered font-height is closest to target_h.
 
-    Height grows monotonically with EM_PX (~1.03x), so scan a small window and
-    prefer the smallest EM_PX whose height is >= target."""
+    Height grows monotonically with EM_PX -- ~1.03x for CHARSET, ~0.73x for
+    digits alone -- so one render at target_h estimates the ratio, and a small
+    window around that estimate is scanned, preferring the smallest EM_PX
+    whose height is >= target."""
     best = None
-    lo = max(6, target_h - 8)
-    for em in range(lo, target_h + 9):
+    _, h0 = build(ttf_path, target_h)
+    guess = round(target_h * target_h / max(h0, 1))
+    lo = max(6, guess - 8)
+    for em in range(lo, guess + 9):
         data, h = build(ttf_path, em)
         key = (abs(h - target_h), 0 if h >= target_h else 1)
         if best is None or key < best[0]:
@@ -250,13 +254,23 @@ def main():
     ap.add_argument("--out-dir", default="data", help="output directory")
     ap.add_argument("--heights", required=True,
                     help="comma-separated on-screen heights, e.g. 14,17,19,28")
+    ap.add_argument("--chars",
+                    help="only these characters instead of CHARSET, e.g. "
+                         "'0123456789:' for the clock face's digits")
+    ap.add_argument("--prefix", default="ui_font",
+                    help="file name before the height, e.g. clock_font")
     args = ap.parse_args()
+    if args.chars:
+        # The height is then measured over these alone, as the firmware
+        # measures a face over the glyphs it has.
+        global CHARSET
+        CHARSET = sorted({ord(c) for c in args.chars})
 
     os.makedirs(args.out_dir, exist_ok=True)
     total = 0
     for target in [int(x) for x in args.heights.split(",") if x.strip()]:
         em, data, h = solve_em_for_height(args.ttf, target)
-        path = os.path.join(args.out_dir, f"ui_font_{target}.vlw")
+        path = os.path.join(args.out_dir, f"{args.prefix}_{target}.vlw")
         with open(path, "wb") as f:
             f.write(data)
         total += len(data)

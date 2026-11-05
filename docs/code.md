@@ -88,6 +88,7 @@ src/ui/common/
   browse_list.cpp          the list, with section headings
   search.cpp               keyboard and results
   status_screens.cpp       the cards, the sign-in QR code, the status page
+  clock_face.cpp           the dimmed clock face now playing rests as
   settings_list.cpp        the settings page and each setting's choices
   player_pick.cpp          the player list, while none is chosen
   wifi_join.cpp            the Wi-Fi networks and the password keyboard
