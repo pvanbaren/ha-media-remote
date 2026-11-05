@@ -817,23 +817,33 @@ bool submitted(const char* id) {
  * parameters page -- it goes back to the form it came from after
  * config::kPortalSavedReturnMs, long enough for a device that restarts to
  * apply the save to be back, replacing the saved page in the browser's
- * history rather than adding to it. Every other page ignores it. /0wifi
- * rather than /wifi for the same reason as redirectToForm().
+ * history rather than adding to it. /0wifi rather than /wifi for the same
+ * reason as redirectToForm().
+ *
+ * On /info it adds the memory rows /mem gives after WiFiManager's "Free
+ * heap", whose list of rows is its own and fixed.
  */
-char s_portal_head[224] = {};
+char s_portal_head[768] = {};
 
 void buildPortalHeadScript() {
   const int written =
       snprintf(s_portal_head, sizeof(s_portal_head),
                "<script>(function(){var p=location.pathname;"
                "var to=p=='/wifisave'?'/0wifi':p=='/paramsave'?'/param':'';"
-               "if(to)setTimeout(function(){location.replace(to);},%lu);})();"
-               "</script>",
+               "if(to)setTimeout(function(){location.replace(to);},%lu);"
+               "if(p=='/info')addEventListener('DOMContentLoaded',function(){"
+               "fetch('/mem').then(function(r){return r.text();})"
+               ".then(function(h){var t=[].filter.call("
+               "document.querySelectorAll('dt'),function(e){"
+               "return /heap/i.test(e.textContent);})[0];"
+               "var a=t&&t.nextElementSibling||document.querySelector('dl');"
+               "if(a)a.insertAdjacentHTML(t?'afterend':'beforeend',h);});});"
+               "})();</script>",
                config::kPortalSavedReturnMs);
   if (written < 0 || static_cast<size_t>(written) >= sizeof(s_portal_head)) {
     s_portal_head[0] = '\0';
     LOG_WARN("Portal: head script does not fit s_portal_head; saved page will "
-             "not return on its own");
+             "not return on its own, nor Info show the memory");
   }
 }
 
@@ -1254,6 +1264,47 @@ bool wifiLinkUp() {
  * The scan is on request only: it takes a few seconds, and the screen waits
  * for it.
  */
+/** One memory row for /mem: used, free and total of the heap with `caps`,
+ *  with its largest free block -- what one allocation, a TLS session's
+ *  buffers say, can have at once -- and, with `lowest`, the least it has had
+ *  free since boot. */
+void appendMemoryRow(String& page, const char* name, uint32_t caps,
+                     bool lowest) {
+  const size_t total = heap_caps_get_total_size(caps);
+  if (total == 0) {
+    return;
+  }
+  const size_t free_bytes = heap_caps_get_free_size(caps);
+  char row[256];
+  int n = snprintf(row, sizeof(row),
+                   "<dt>%s</dt><dd>%u KB used, %u KB free of %u KB; largest "
+                   "free block %u KB",
+                   name, static_cast<unsigned>((total - free_bytes) / 1024),
+                   static_cast<unsigned>(free_bytes / 1024),
+                   static_cast<unsigned>(total / 1024),
+                   static_cast<unsigned>(heap_caps_get_largest_free_block(caps) /
+                                         1024));
+  if (lowest && n > 0 && static_cast<size_t>(n) < sizeof(row)) {
+    n += snprintf(row + n, sizeof(row) - n, "; lowest free since boot %u KB",
+                  static_cast<unsigned>(
+                      heap_caps_get_minimum_free_size(caps) / 1024));
+  }
+  page += row;
+  page += "</dd>";
+}
+
+/** /mem: the memory rows the Info page adds to its own (see
+ *  buildPortalHeadScript()). Internal RAM, which TLS and the network stack
+ *  run short of, and PSRAM, which holds the frames, the covers and, on some
+ *  boards, the fonts. */
+void handleMemoryRows() {
+  String page;
+  page.reserve(512);
+  appendMemoryRow(page, "Memory - Internal RAM", MALLOC_CAP_INTERNAL, true);
+  appendMemoryRow(page, "Memory - PSRAM", MALLOC_CAP_SPIRAM, false);
+  s_wm.server->send(200, "text/html", page);
+}
+
 void handleLinkPage() {
   auto& server = *s_wm.server;
   const bool scan = server.hasArg("scan");
@@ -1342,6 +1393,7 @@ void ensureWifiManager() {
   s_wm.setWebServerCallback([] {
     claimSaveRoutes();
     s_wm.server->on("/link", handleLinkPage);
+    s_wm.server->on("/mem", handleMemoryRows);
     for (const WebPage& page : s_web_pages) {
       if (page.path != nullptr) {
         auto* handler = page.handler;

@@ -522,7 +522,7 @@ blank to keep the current network; `/param` shows the settings alone).
 **Firmware from GitHub** shows the version running, checks for a newer
 release and installs it, as the Firmware row of the device's settings does;
 **Update** installs a firmware file you upload, and **Info** shows the
-device's details.
+device's details, its memory among them.
 
 **Before Wi-Fi.** With no Wi-Fi saved, or when the saved network does not
 answer at boot, the remote also raises an access point,

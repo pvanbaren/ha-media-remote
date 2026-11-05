@@ -15,6 +15,7 @@ GitHub release from that version's section, with
 ### Added
 
 - **Firmware from GitHub:** the settings page has a Firmware row showing the version running, and a tap on it asks GitHub for the latest release -- when it is newer, install it there and then, its download's progress on screen, and the remote restarts into it with its settings kept. The portal has the same, as **Firmware from GitHub** on its menu. Only that board's image is fetched, and GitHub's certificate is checked.
+- **Memory on the portal's Info page:** internal RAM and PSRAM, used, free and total, with the largest free block -- the most one allocation can have -- and for internal RAM the least that has been free since boot.
 
 ### Changed
 
