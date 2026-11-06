@@ -608,13 +608,24 @@ constexpr int kWakeWordWindow = 5;
 /** After it fires, or starts listening afresh, this long before it may fire:
  *  the model's memory of the last few seconds settles first. */
 constexpr unsigned long kWakeWordSettleMs = 1000;
-/** A request after the wake word starts this far back from where it was
+/** A request after "Hey Jarvis" starts this far back from where it was
  *  heard. It is heard a little after it ends -- the five runs averaged are
  *  150 ms of sound -- and a command said in the same breath lost its first
  *  word ("off the master bedroom lights") without it. At 200 ms the end of
  *  the wake word came through now and then, heard as "Let's"; at 150 ms a
  *  first word was still lost now and then. */
 constexpr unsigned long kWakeWordPreRollMs = 175;
+/** A request after any other wake word starts at the quietest
+ *  kWakeWordGapSpanMs between these two, in ms from where the word was
+ *  heard -- the earliest within kWakeWordGapSlackDb of the quietest, so a
+ *  hush inside the command's first word ("st-op") loses to the pause before
+ *  it. A fixed start, as Hey Jarvis's, let the end of "Alexa" through,
+ *  which speech to text made words of: "Turn it off. Play." */
+constexpr int16_t kWakeWordGapFromMs = -100;
+constexpr int16_t kWakeWordGapToMs = 300;
+constexpr uint32_t kWakeWordGapSpanMs = 30;
+constexpr uint32_t kWakeWordGapStepMs = 10;
+constexpr float kWakeWordGapSlackDb = 3.0f;
 
 // --- UI colours (RGB565) ---
 constexpr uint16_t kColorBlack = 0x0000;

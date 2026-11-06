@@ -107,9 +107,11 @@ bool available();
  *  tone when Home Assistant cannot be reached to speak it. */
 bool start();
 
-/** Start a request after a wake word: listening from `position` in the
- *  microphone's stream (services::wake_word::takeDetection()), so what was
- *  said straight after the wake word is heard, and a beep meanwhile. */
+/** Start a request after a wake word heard at `position` in the
+ *  microphone's stream (services::wake_word::takeDetection()): listening
+ *  from where the word ends (services::wake_word::startWindow()), so what
+ *  was said straight after it is heard and the word itself is not, and a
+ *  beep meanwhile. */
 bool startAt(uint32_t position);
 
 /** Speak `text` in the pipeline's voice: Home Assistant's text to speech

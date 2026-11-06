@@ -126,7 +126,8 @@ constexpr char kSorryFailed[] = "Sorry, Home Assistant couldn't answer that.";
 
 struct Job {
   enum Kind : uint8_t { kListen, kFetch } kind;
-  /** kListen from a wake word: the microphone from `position` on. */
+  /** kListen from a wake word, heard at `position`: the microphone from
+   *  where the word ends, startAfterWake(). */
   bool from_position;
   uint32_t position;
 };
@@ -1129,6 +1130,57 @@ void fetchReply() {
   c->stop();
 }
 
+/** Where a request after the wake word heard at `heard` starts, as
+ *  wake_word::startWindow() says: for a window, once all of it has been
+ *  heard, the earliest config::kWakeWordGapSpanMs in it within
+ *  config::kWakeWordGapSlackDb of its quietest. On this module's task: it
+ *  waits for the window's end, a few hundred ms, which the microphone's
+ *  ring keeps. */
+uint32_t startAfterWake(uint32_t heard) {
+  const wake_word::StartWindow window = wake_word::startWindow();
+  constexpr int32_t kPerMs = hw::audio::kSampleRate / 1000;
+  const uint32_t from = heard + window.from_ms * kPerMs;
+  if (window.to_ms <= window.from_ms) {
+    return from;
+  }
+  const uint32_t span = config::kWakeWordGapSpanMs * kPerMs;
+  const uint32_t step = config::kWakeWordGapStepMs * kPerMs;
+  const uint32_t to = heard + window.to_ms * kPerMs;
+  const unsigned long waited_from = millis();
+  while (static_cast<int32_t>(hw::audio::captureNow() - (to + span)) < 0 &&
+         millis() - waited_from < 1000) {
+    delay(10);
+  }
+  constexpr int kMaxSteps = 64;
+  float level[kMaxSteps];
+  int n = 0;
+  float quietest = 0.0f;
+  for (uint32_t at = from;
+       static_cast<int32_t>(at - to) <= 0 && n < kMaxSteps; at += step) {
+    level[n] = hw::audio::levelBefore(at + span, span);
+    quietest = n == 0 ? level[n] : std::min(quietest, level[n]);
+    ++n;
+  }
+  int pick = 0;
+  while (pick < n && level[pick] > quietest + config::kWakeWordGapSlackDb) {
+    ++pick;
+  }
+  // The levels, for tuning the window from a log.
+  char levels[kMaxSteps * 4 + 1];
+  size_t at = 0;
+  for (int i = 0; i < n && at + 5 < sizeof(levels); ++i) {
+    at += snprintf(levels + at, sizeof(levels) - at, "%s%.0f", i ? " " : "",
+                   level[i]);
+  }
+  const int32_t offset_ms = window.from_ms + pick * config::kWakeWordGapStepMs;
+  LOG_INFO("VOICE: request from %+ld ms of the wake word (%.0f dBFS, "
+           "quietest %.0f); every %lu ms from %+d: %s",
+           static_cast<long>(offset_ms), pick < n ? level[pick] : 0.0f,
+           quietest, static_cast<unsigned long>(config::kWakeWordGapStepMs),
+           window.from_ms, levels);
+  return from + pick * step;
+}
+
 void voiceTask(void*) {
   for (;;) {
     Job job;
@@ -1145,9 +1197,10 @@ void voiceTask(void*) {
       // microphone from where the wake word ended, then the beep, which
       // goes up with it.
       hw::audio::stop();
+      const uint32_t start = startAfterWake(job.position);
       Phase starting = Phase::kStarting;
       if (s_phase.compare_exchange_strong(starting, Phase::kListening)) {
-        hw::audio::captureStartAt(kMic, job.position);
+        hw::audio::captureStartAt(kMic, start);
         s_beep_from = 0;
         s_beep_to = UINT32_MAX;  // until it is known
         s_capture_began = true;
@@ -1157,9 +1210,9 @@ void voiceTask(void*) {
         // And where in what is sent the beep goes: from now until beep()
         // returns, the beep out of the speaker after any warm-up of the
         // amplifier, and its echo.
-        s_beep_from = hw::audio::captureNow() - job.position;
+        s_beep_from = hw::audio::captureNow() - start;
         hw::audio::beep(kBeepHz, kBeepMs);
-        s_beep_to = hw::audio::captureNow() - job.position +
+        s_beep_to = hw::audio::captureNow() - start +
                     hw::audio::kSampleRate * kBeepEchoMs / 1000;
       }
     } else if (job.kind == Job::kListen) {

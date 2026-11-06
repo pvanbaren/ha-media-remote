@@ -43,10 +43,21 @@ bool listening();
 const char* phrase();
 
 /** True once per time the wake word was heard. `position` is where in the
- *  microphone's stream it ended -- a little before where it was heard, by
- *  config::kWakeWordPreRollMs -- for hw::audio::captureStartAt(), so the
- *  request hears what was said straight after it. */
+ *  microphone's stream it was heard: the model's smoothed confidence
+ *  reached its cutoff there, a little after the word ended or near its end,
+ *  as the word goes. startWindow() says where a request starts from it. */
 bool takeDetection(uint32_t& position);
+
+/** Where a request after the wake word listened for starts, in ms from
+ *  where it was heard: at the quietest moment from `from_ms` to `to_ms` --
+ *  the pause between the wake word and the command, or the hush before the
+ *  command's first sound -- so that none of the wake word goes with it; or
+ *  at `from_ms` itself where the two are the same. */
+struct StartWindow {
+  int16_t from_ms;
+  int16_t to_ms;
+};
+StartWindow startWindow();
 
 /** How the detector has been doing since the last call, for the log. */
 struct Stats {

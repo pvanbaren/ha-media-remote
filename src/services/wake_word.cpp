@@ -70,13 +70,21 @@ struct Model {
   const uint8_t* data;
   /** The manifest's probability_cutoff, of 255. */
   uint8_t cutoff;
+  StartWindow start;
 };
+/** Hey Jarvis's fixed start, found by ear (config::kWakeWordPreRollMs);
+ *  the rest find the pause after the word for themselves. */
+constexpr StartWindow kJarvisStart = {
+    -static_cast<int16_t>(config::kWakeWordPreRollMs),
+    -static_cast<int16_t>(config::kWakeWordPreRollMs)};
+constexpr StartWindow kFindTheGap = {config::kWakeWordGapFromMs,
+                                     config::kWakeWordGapToMs};
 /** In Word's order. */
 const Model kModels[kWordCount] = {
-    {"Hey Jarvis", kHeyJarvisModel, 247},    // 0.97
-    {"Okay Nabu", kOkayNabuModel, 247},      // 0.97
-    {"Hey Mycroft", kHeyMycroftModel, 242},  // 0.95
-    {"Alexa", kAlexaModel, 230},             // 0.90
+    {"Hey Jarvis", kHeyJarvisModel, 247, kJarvisStart},    // 0.97
+    {"Okay Nabu", kOkayNabuModel, 247, kFindTheGap},       // 0.97
+    {"Hey Mycroft", kHeyMycroftModel, 242, kFindTheGap},   // 0.95
+    {"Alexa", kAlexaModel, 230, kFindTheGap},              // 0.90
 };
 
 const Model& model(Word word) {
@@ -274,8 +282,7 @@ void run() {
     --s_settle;
   } else if (score >= s_cutoff) {
     fired = true;
-    s_position = hw::audio::capturePosition(kMic) -
-                 hw::audio::kSampleRate * config::kWakeWordPreRollMs / 1000;
+    s_position = hw::audio::capturePosition(kMic);
     s_detected = true;
     memset(s_window, 0, sizeof(s_window));
     s_settle = kSettleRuns;
@@ -442,6 +449,10 @@ const char* phrase() {
   return model(word()).phrase;
 }
 
+StartWindow startWindow() {
+  return model(word()).start;
+}
+
 bool takeDetection(uint32_t& position) {
   if (!s_detected.exchange(false)) {
     return false;
@@ -478,6 +489,7 @@ void setListening(bool) {}
 bool listening() { return false; }
 const char* phrase() { return ""; }
 bool takeDetection(uint32_t&) { return false; }
+StartWindow startWindow() { return {0, 0}; }
 void takeStats(Stats& out) { out = Stats{}; }
 
 }  // namespace services::wake_word
