@@ -6,7 +6,7 @@
 #include "log.h"
 
 // Embedded compressed (scripts/deflate_embeds.py), and inflated into PSRAM
-// on first use: the seven faces are 1.36 MB as they are and 0.29 MB
+// on first use: the seven faces are 1.10 MB as they are and 0.23 MB
 // compressed, and in a 4 MB app slot that is the difference between an image
 // that fits comfortably and one that barely does.
 extern "C" {

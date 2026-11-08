@@ -32,6 +32,20 @@ constexpr char kFirmwareRepo[] = "pvanbaren/ha-media-remote";
  *  take before the check or the install gives up. */
 constexpr uint32_t kFirmwareTimeoutMs = 15000;
 
+// --- Fonts ---
+/** The release on kFirmwareRepo that carries the font pack the remote
+ *  downloads (services::fonts), as kFontPackAsset: a pre-release, so that it
+ *  is never the latest release the firmware update looks for. A new pack goes
+ *  up under a new tag, and the firmware that reads it names it here. */
+constexpr char kFontPackTag[] = "fonts-1";
+constexpr char kFontPackAsset[] = "fonts.bin";
+/** What the pack holds and weighs, for the remote and the portal to say
+ *  before it is downloaded. */
+constexpr char kFontPackScripts[] =
+    "Chinese, Japanese, Korean, Thai, Cyrillic, Greek, Vietnamese and "
+    "symbols";
+constexpr char kFontPackSize[] = "5.1 MB";
+
 /** Per-attempt STA connect wait (ms); retried kWifiConnectAttempts times. */
 constexpr unsigned long kWifiConnectAttemptMs = 15000;
 constexpr uint8_t kWifiConnectAttempts = 3;

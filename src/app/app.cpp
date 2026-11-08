@@ -35,6 +35,7 @@
 #include "services/device_name.h"
 #include "services/display_settings.h"
 #include "services/firmware_update.h"
+#include "services/fonts.h"
 #include "services/ha_link.h"
 #include "services/history.h"
 #include "services/ma_api.h"
@@ -1815,11 +1816,12 @@ enum class Setting : uint8_t {
   kKeyboard,
   kRotation,
   kFirmware,
+  kFonts,
   kRestart,
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 13;
+constexpr int kMaxSettingRows = 14;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -1958,6 +1960,12 @@ void showSettingsPage(int focus) {
                 kRotationNames[services::display::rotation() & 3]);
   addSettingRow(Setting::kFirmware, "Firmware",
                 services::update::currentVersion());
+  {
+    char scripts[192];
+    services::fonts::describe(scripts, sizeof(scripts));
+    addSettingRow(Setting::kFonts, "Fonts",
+                  scripts[0] != '\0' ? "Downloaded" : "Not downloaded");
+  }
   addSettingRow(Setting::kRestart, "Restart", "");
   // The name, the Home Assistant link and Music Assistant stay in the
   // portal: typed text, which the portal does better.
@@ -2074,6 +2082,57 @@ void showFirmwareProgress(int percent) {
     char why[48];
     snprintf(why, sizeof(why), "Updated to %s", tag);
     restartNow(why);
+  }
+}
+
+// --- Fonts from GitHub ----------------------------------------------------------
+
+/** The fonts on this remote, or what downloading them brings, and the
+ *  choices: 1 downloads, 0 goes back. */
+[[gnu::noinline]] void openFontsChoices() {
+  char pack[48];
+  services::fonts::summary(pack, sizeof(pack));
+  ui::settingsBegin("Fonts", "");
+  if (pack[0] != '\0') {
+    const bool current = services::fonts::current();
+    addFirmwareFinding(current ? "Downloaded" : "Newer fonts are out",
+                       pack);
+    addChoice(current ? "Download again" : "Download fonts", 1, false);
+  } else {
+    char line[64];
+    snprintf(line, sizeof(line), "%s from GitHub", config::kFontPackSize);
+    addFirmwareFinding("Not downloaded", line);
+    addChoice("Download fonts", 1, false);
+  }
+  addChoice("Cancel", 0, false);
+}
+
+/** Download the fonts, with the progress on screen. False with `error`
+ *  saying why. */
+[[gnu::noinline]] bool downloadFonts(char* error, size_t error_len) {
+  wakeDisplay();
+  g_firmware_installing = "fonts";
+  showFirmwareProgress(0);
+  return services::fonts::download(showFirmwareProgress, error, error_len);
+}
+
+/** A download asked for on the portal's Fonts page, run here where the
+ *  screen can show it. A failure is said on the screen for a moment and on
+ *  the page. */
+[[gnu::noinline]] void handleFontsRequest() {
+  if (!services::fonts::takeDownloadRequest()) {
+    return;
+  }
+  char error[64] = {};
+  if (!downloadFonts(error, sizeof(error))) {
+    ui::showUpdateFailed(error);
+    delay(3000);
+  }
+  // Back to what was up: the card took the screen from it.
+  if (g_screen == Screen::kSettings) {
+    showSettingsPage(-1);
+  } else {
+    showNowPlaying();
   }
 }
 
@@ -2237,6 +2296,10 @@ void openSettingChoices(Setting setting, int row) {
       openFirmwareChoices();
       break;
 
+    case Setting::kFonts:
+      openFontsChoices();
+      break;
+
     case Setting::kPortal:
       return;
   }
@@ -2360,6 +2423,22 @@ bool applySettingChoice(int row) {
         addChoice("OK", 0, false);
         ui::showSettings();
         return true;
+      }
+      break;
+    case Setting::kFonts:
+      if (value == 3) {
+        return false;  // what is there: nothing to do
+      }
+      if (value == 1) {
+        char error[64] = {};
+        if (!downloadFonts(error, sizeof(error))) {
+          ui::settingsBegin("Fonts", "");
+          g_choice_count = 0;
+          addFirmwareFinding("Not downloaded", error);
+          addChoice("OK", 0, false);
+          ui::showSettings();
+          return true;
+        }
       }
       break;
     case Setting::kRecentHere:
@@ -3089,6 +3168,7 @@ void setup() {
   // Before Wi-Fi, so its pages are there when the portal's server starts.
   services::ha_link::init();
   services::update::init();
+  services::fonts::init();
   // After ha::init(): an unset Music Assistant address is derived from Home
   // Assistant's. The recommendations wait for Wi-Fi on their own task.
   services::ma::init();
@@ -3154,6 +3234,7 @@ void loop() {
   handleMessageRecheck();
   handleHaLink();
   handleFirmwareRequest();
+  handleFontsRequest();
 
   // Before the artwork, and that ordering is the whole point. What is playing
   // is why the device exists; browse thumbnails are a preload for a list

@@ -20,6 +20,10 @@ src/idf_component.yml.orig
 # Compressed copies of data/ files, written by scripts/deflate_embeds.py
 data/deflated/
 
+# The font pack, written by scripts/build_font_pack.py; kept on GitHub, as a
+# release asset, not in the repository
+data/fonts.bin
+
 # Python bytecode from scripts/
 __pycache__/
 *.pyc

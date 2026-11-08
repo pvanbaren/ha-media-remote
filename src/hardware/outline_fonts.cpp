@@ -1,11 +1,12 @@
-#include "hardware/korean_font.h"
+#include "hardware/outline_fonts.h"
 
 #include <esp_heap_caps.h>
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
-#include "hardware/inflate.h"
+#include "hardware/font_pack.h"
 
 // stb_truetype, private to this file. Its working memory -- the edges of the
 // glyph being rendered -- from PSRAM where there is some: internal RAM is
@@ -18,17 +19,6 @@
                                          MALLOC_CAP_8BIT))
 #define STBTT_free(ptr, user) ((void)(user), heap_caps_free(ptr))
 #include "third_party/stb_truetype.h"
-
-// The outline font, where the env embeds it (board_build.embed_files); weak,
-// so a board without it links and goes without Korean.
-extern const uint8_t kKoreanTtf[] asm("_binary_data_korean_ttf_start")
-    __attribute__((weak));
-// Or compressed (scripts/deflate_embeds.py), where an env embeds it so, and
-// inflated into PSRAM the first time a Korean glyph is wanted.
-extern const uint8_t kKoreanTtfPacked[] asm(
-    "_binary_data_deflated_korean_ttf_z_start") __attribute__((weak));
-extern const uint8_t kKoreanTtfPackedEnd[] asm(
-    "_binary_data_deflated_korean_ttf_z_end") __attribute__((weak));
 
 namespace {
 
@@ -53,29 +43,73 @@ size_t setOf(uint16_t c) {
 constexpr uint32_t kHeaderAt = 28;
 constexpr uint32_t kBitmapAt = kHeaderAt + 24;
 
-stbtt_fontinfo s_info;
-bool s_tried = false;
-bool s_ready = false;
+/** How much higher a Thai tone mark goes over a vowel mark, in ems: from
+ *  where Noto Sans Thai puts it, over the letter, to clear of the vowel. */
+constexpr float kThaiToneLiftEm = 0.17f;
 
-bool ready() {
-  if (!s_tried) {
-    s_tried = true;
-    const uint8_t* ttf = kKoreanTtf;
-    if (ttf == nullptr && kKoreanTtfPacked != nullptr) {
-      ttf = hw::inflateEmbedded(kKoreanTtfPacked, kKoreanTtfPackedEnd);
-    }
-    if (ttf != nullptr) {
-      const int offset = stbtt_GetFontOffsetForIndex(ttf, 0);
-      s_ready = offset >= 0 && stbtt_InitFont(&s_info, ttf, offset) != 0;
-    }
-  }
-  return s_ready;
+bool thaiUpperVowel(uint16_t c) {
+  return c == 0x0E31 || (c >= 0x0E34 && c <= 0x0E37) || c == 0x0E47;
 }
+
+bool thaiToneMark(uint16_t c) { return c >= 0x0E48 && c <= 0x0E4C; }
 
 void* psram(size_t bytes) {
   void* mem = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   return mem != nullptr ? mem : heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
 }
+
+// --- The outline fonts ----------------------------------------------------------
+
+constexpr int kMaxSources = hw::font_pack::kMaxFonts + 1;
+
+struct Source {
+  stbtt_fontinfo info;
+  const char* name;
+};
+/** The outline fonts, in the order to look in. */
+Source* s_sources = nullptr;
+int s_source_count = 0;
+/** The pack's generation they were loaded from; 0, never loaded. */
+uint32_t s_sources_of = 0;
+
+bool addSource(const uint8_t* ttf, const char* name) {
+  if (s_source_count >= kMaxSources) {
+    return false;
+  }
+  Source& source = s_sources[s_source_count];
+  const int offset = stbtt_GetFontOffsetForIndex(ttf, 0);
+  if (offset < 0 || stbtt_InitFont(&source.info, ttf, offset) == 0) {
+    return false;
+  }
+  source.name = name;
+  ++s_source_count;
+  return true;
+}
+
+/** The outline fonts, loaded again whenever the pack has changed. */
+int sources() {
+  const uint32_t generation = hw::font_pack::generation();
+  if (generation == s_sources_of) {
+    return s_source_count;
+  }
+  s_sources_of = generation;
+  s_source_count = 0;
+  if (s_sources == nullptr) {
+    s_sources = static_cast<Source*>(psram(sizeof(Source) * kMaxSources));
+    if (s_sources == nullptr) {
+      return 0;
+    }
+  }
+  if (const hw::font_pack::Info* pack = hw::font_pack::info()) {
+    for (int i = 0; i < pack->count; ++i) {
+      const hw::font_pack::Font& font = pack->fonts[i];
+      addSource(font.data, font.name);
+    }
+  }
+  return s_source_count;
+}
+
+// --- Drawing ----------------------------------------------------------------------
 
 void put32(uint8_t* at, int32_t value) {
   const uint32_t v = static_cast<uint32_t>(value);
@@ -114,10 +148,14 @@ struct OneGlyphFace : lgfx::VLWfont {
   }
 };
 
+/** The character drawn last, of any face: what a Thai mark goes over. */
+uint16_t s_drawn_before = 0;
+
 }  // namespace
 
-struct KoreanFont::Glyph {
+struct OutlineFallback::Glyph {
   uint16_t code;
+  bool raised;
   int16_t width;
   int16_t advance;
   int16_t offset;
@@ -125,28 +163,55 @@ struct KoreanFont::Glyph {
   uint8_t* record;
 };
 
-void KoreanFont::attach(const lgfx::VLWfont* face, const uint8_t* face_data) {
+void OutlineFallback::attach(const lgfx::VLWfont* face,
+                             const uint8_t* face_data) {
   face_ = face;
-  scale_ = 0.0f;
-  if (face == nullptr || face_data == nullptr || !ready()) {
+  em_px_ = 0;
+  generation_ = 0;
+  if (face == nullptr || face_data == nullptr) {
     return;
   }
   // The VLW header's third word is the em the face was rendered at, in
-  // pixels (scripts/build_ui_font.py): the Korean is rendered at the same.
-  const int32_t em_px = get32(face_data + 8);
-  if (em_px > 0) {
-    scale_ = stbtt_ScaleForMappingEmToPixels(&s_info,
-                                             static_cast<float>(em_px));
+  // pixels (scripts/build_ui_font.py): the outlines are rendered at the same.
+  em_px_ = get32(face_data + 8);
+}
+
+void OutlineFallback::refresh() const {
+  const int count = sources();
+  if (generation_ == s_sources_of) {
+    return;
+  }
+  generation_ = s_sources_of;
+  if (kept_ != nullptr) {
+    for (size_t i = 0; i < kSlots; ++i) {
+      heap_caps_free(kept_[i]);
+      kept_[i] = nullptr;
+    }
+  }
+  if (scales_ == nullptr) {
+    scales_ = static_cast<float*>(psram(sizeof(float) * kMaxSources));
+    if (scales_ == nullptr) {
+      return;
+    }
+  }
+  for (int i = 0; i < count; ++i) {
+    scales_[i] = stbtt_ScaleForMappingEmToPixels(&s_sources[i].info,
+                                                 static_cast<float>(em_px_));
   }
 }
 
-const KoreanFont::Glyph* KoreanFont::korean(uint16_t c) const {
-  if (scale_ <= 0.0f || c < 0x80) {
+const OutlineFallback::Glyph* OutlineFallback::outline(uint16_t c,
+                                                       bool raised) const {
+  if (em_px_ <= 0 || c < 0x80) {
     return nullptr;
   }
   uint16_t index = 0;
   if (face_->gCount > 0 && face_->getUnicodeIndex(c, &index)) {
     return nullptr;  // the face's own
+  }
+  refresh();
+  if (s_source_count == 0 || scales_ == nullptr) {
+    return nullptr;
   }
   if (kept_ == nullptr) {
     kept_ = static_cast<Glyph**>(psram(sizeof(Glyph*) * kSlots));
@@ -159,47 +224,64 @@ const KoreanFont::Glyph* KoreanFont::korean(uint16_t c) const {
   Glyph** set = kept_ + setOf(c) * kWays;
   for (size_t way = 0; way < kWays; ++way) {
     Glyph* kept = set[way];
-    if (kept != nullptr && kept->code == c) {
+    if (kept != nullptr && kept->code == c && kept->raised == raised) {
       memmove(set + 1, set, way * sizeof(Glyph*));
       set[0] = kept;
       return kept;
     }
   }
 
-  const int glyph = stbtt_FindGlyphIndex(&s_info, c);
-  if (glyph == 0) {
-    return nullptr;  // not Korean either: the face's blank
+  int glyph = 0;
+  int from = 0;
+  for (; from < s_source_count; ++from) {
+    glyph = stbtt_FindGlyphIndex(&s_sources[from].info, c);
+    if (glyph != 0) {
+      break;
+    }
   }
+  if (glyph == 0) {
+    return nullptr;  // in no outline font either: the face's blank
+  }
+  const stbtt_fontinfo* info = &s_sources[from].info;
+  const float scale = scales_[from];
   int advance = 0;
   int bearing = 0;
-  stbtt_GetGlyphHMetrics(&s_info, glyph, &advance, &bearing);
+  stbtt_GetGlyphHMetrics(info, glyph, &advance, &bearing);
   int x0 = 0;
   int y0 = 0;
   int x1 = 0;
   int y1 = 0;
-  stbtt_GetGlyphBitmapBox(&s_info, glyph, scale_, scale_, &x0, &y0, &x1, &y1);
+  stbtt_GetGlyphBitmapBox(info, glyph, scale, scale, &x0, &y0, &x1, &y1);
   const int w = x1 > x0 ? x1 - x0 : 0;
   const int h = y1 > y0 ? y1 - y0 : 0;
+  // A Thai mark sits over the letter before it, to the left of where it is
+  // drawn; VLW keeps that offset in a signed byte.
+  if (x0 < -128) {
+    return nullptr;
+  }
+  const int lift =
+      raised ? static_cast<int>(lroundf(kThaiToneLiftEm * em_px_)) : 0;
 
   auto* fresh = static_cast<Glyph*>(psram(sizeof(Glyph) + kBitmapAt + w * h));
   if (fresh == nullptr) {
     return nullptr;
   }
   fresh->code = c;
+  fresh->raised = raised;
   fresh->width = static_cast<int16_t>(w);
-  fresh->advance = static_cast<int16_t>(lroundf(advance * scale_));
+  fresh->advance = static_cast<int16_t>(lroundf(advance * scale));
   fresh->offset = static_cast<int16_t>(x0);
   fresh->record = reinterpret_cast<uint8_t*>(fresh + 1);
   uint8_t* header = fresh->record + kHeaderAt;
   put32(header, h);
   put32(header + 4, w);
   put32(header + 8, fresh->advance);
-  put32(header + 12, -y0);  // top above the baseline
+  put32(header + 12, lift - y0);  // top above the baseline
   put32(header + 16, x0);
   put32(header + 20, 0);
   if (w > 0 && h > 0) {
-    stbtt_MakeGlyphBitmap(&s_info, fresh->record + kBitmapAt, w, h, w, scale_,
-                          scale_, glyph);
+    stbtt_MakeGlyphBitmap(info, fresh->record + kBitmapAt, w, h, w, scale,
+                          scale, glyph);
   }
 
   heap_caps_free(set[kWays - 1]);
@@ -208,13 +290,13 @@ const KoreanFont::Glyph* KoreanFont::korean(uint16_t c) const {
   return fresh;
 }
 
-void KoreanFont::getDefaultMetric(lgfx::FontMetrics* metrics) const {
+void OutlineFallback::getDefaultMetric(lgfx::FontMetrics* metrics) const {
   face_->getDefaultMetric(metrics);
 }
 
-bool KoreanFont::updateFontMetric(lgfx::FontMetrics* metrics,
-                                  uint16_t uniCode) const {
-  const Glyph* g = korean(uniCode);
+bool OutlineFallback::updateFontMetric(lgfx::FontMetrics* metrics,
+                                       uint16_t uniCode) const {
+  const Glyph* g = outline(uniCode, false);
   if (g == nullptr) {
     return face_->updateFontMetric(metrics, uniCode);
   }
@@ -224,11 +306,13 @@ bool KoreanFont::updateFontMetric(lgfx::FontMetrics* metrics,
   return true;
 }
 
-size_t KoreanFont::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
-                            uint16_t c, const lgfx::TextStyle* style,
-                            lgfx::FontMetrics* metrics,
-                            int32_t& filled_x) const {
-  const Glyph* g = korean(c);
+size_t OutlineFallback::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
+                                 uint16_t c, const lgfx::TextStyle* style,
+                                 lgfx::FontMetrics* metrics,
+                                 int32_t& filled_x) const {
+  const bool raised = thaiToneMark(c) && thaiUpperVowel(s_drawn_before);
+  s_drawn_before = c;
+  const Glyph* g = outline(c, raised);
   if (g == nullptr) {
     return face_->drawChar(gfx, x, y, c, style, metrics, filled_x);
   }
@@ -244,4 +328,16 @@ size_t KoreanFont::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
   return one.drawChar(gfx, x, y, c, style, metrics, filled_x);
 }
 
-bool koreanFontEmbedded() { return ready(); }
+void outlineFontsDescribe(char* out, size_t len) {
+  if (len == 0) {
+    return;
+  }
+  out[0] = '\0';
+  const int count = sources();
+  size_t used = 0;
+  for (int i = 0; i < count && used < len; ++i) {
+    const int n = snprintf(out + used, len - used, "%s%s", i ? ", " : "",
+                           s_sources[i].name);
+    used += n > 0 ? static_cast<size_t>(n) : 0;
+  }
+}

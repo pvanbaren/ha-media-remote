@@ -54,7 +54,7 @@ struct WebPage {
   const char* path = nullptr;
   void (*handler)(WebServer& server) = nullptr;
 };
-WebPage s_web_pages[6];
+WebPage s_web_pages[8];
 
 /** True while wifiSetupConnect() waits in the setup portal. */
 bool s_in_setup_portal = false;
@@ -1402,13 +1402,14 @@ void ensureWifiManager() {
     }
   });
   // WiFiManager's own menu, with the firmware update from GitHub beside its
-  // Update, which takes a file.
+  // Update, which takes a file, and the fonts from GitHub.
   static std::vector<const char*> s_menu = {"wifi", "info", "custom",
                                            "exit", "sep", "update"};
   s_wm.setMenu(s_menu);
   s_wm.setCustomMenuHTML(
       "<form action='/firmware' method='get'><button>Firmware from GitHub"
-      "</button></form><br/>");
+      "</button></form><br/><form action='/fonts' method='get'><button>"
+      "Download fonts</button></form><br/>");
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));
