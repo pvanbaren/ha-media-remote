@@ -159,7 +159,8 @@ String imageUrl(const char* tag) {
  *  once it is full, put back to 0 by the caller once it is written. */
 struct Job {
   bool install = false;
-  char tag[sizeof(CheckResult::tag)] = {};
+  /** What a download fetches. */
+  char url[200] = {};
   CheckResult check;
   bool ok = false;
   char error[sizeof(CheckResult::error)] = {};
@@ -250,15 +251,15 @@ bool handOver(int len) {
   return true;
 }
 
-/** Download the image, a chunk at a time, for the caller to write. */
-bool runDownload(const char* tag, char* error, size_t error_len) {
+/** Download `url`, a chunk at a time, for the caller to write. */
+bool runDownload(const char* url, char* error, size_t error_len) {
   YieldingClientSecure client;
   HTTPClient http;
   prepare(client, http);
   // GitHub sends the download on to where it keeps its files, another host.
   http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   http.setRedirectLimit(5);
-  if (!http.begin(client, imageUrl(tag))) {
+  if (!http.begin(client, url)) {
     setError(error, error_len, "bad address");
     return false;
   }
@@ -270,7 +271,7 @@ bool runDownload(const char* tag, char* error, size_t error_len) {
   }
   const int total = http.getSize();
   if (total <= 0) {
-    setError(error, error_len, "the image came with no length");
+    setError(error, error_len, "the download came with no length");
     http.end();
     return false;
   }
@@ -322,7 +323,7 @@ bool runDownload(const char* tag, char* error, size_t error_len) {
 
 void worker(void*) {
   if (s_job.install) {
-    s_job.ok = runDownload(s_job.tag, s_job.error, sizeof(s_job.error));
+    s_job.ok = runDownload(s_job.url, s_job.error, sizeof(s_job.error));
   } else {
     runCheck(s_job.check);
   }
@@ -382,12 +383,10 @@ void endJob() {
   }
 }
 
-/** Write what the task downloads into the slot not running, here, on the
- *  caller's stack, calling `progress` with each new percentage. Update checks
- *  the image as it ends -- its length, its checksum, and that it is for this
- *  chip -- and only then marks it to boot. */
-bool writeDownload(void (*progress)(int percent), char* error,
-                   size_t error_len) {
+/** Hand what the task downloads to `sink`, here, on the caller's stack,
+ *  calling `progress` with each new percentage. */
+bool writeDownload(const Sink& sink, void (*progress)(int percent),
+                   char* error, size_t error_len) {
   bool begun = false;
   bool ok = true;
   int written = 0;
@@ -402,15 +401,14 @@ bool writeDownload(void (*progress)(int percent), char* error,
       total = s_job.total.load();
       if (!begun) {
         begun = true;
-        if (!Update.begin(static_cast<size_t>(total))) {
-          setError(error, error_len, "%s", Update.errorString());
+        if (!sink.begin(static_cast<size_t>(total), error, error_len)) {
+          begun = false;
           ok = false;
           break;
         }
       }
-      if (Update.write(s_job.chunk, static_cast<size_t>(len)) !=
-          static_cast<size_t>(len)) {
-        setError(error, error_len, "%s", Update.errorString());
+      if (!sink.write(s_job.chunk, static_cast<size_t>(len), error,
+                      error_len)) {
         ok = false;
         break;
       }
@@ -436,21 +434,50 @@ bool writeDownload(void (*progress)(int percent), char* error,
     ok = false;
   }
   if (ok && (!begun || written != total)) {
-    setError(error, error_len, "the image came down short");
+    setError(error, error_len, "the download came down short");
     ok = false;
   }
   if (!ok) {
     if (begun) {
-      Update.abort();
+      sink.abort();
     }
     return false;
   }
+  return sink.end(error, error_len);
+}
+
+// The image goes into the app slot not running. Update checks it as it ends
+// -- its length, its checksum, and that it is for this chip -- and only then
+// marks it to boot.
+
+bool imageBegin(size_t total, char* error, size_t error_len) {
+  if (!Update.begin(total)) {
+    setError(error, error_len, "%s", Update.errorString());
+    return false;
+  }
+  return true;
+}
+
+bool imageWrite(const uint8_t* data, size_t len, char* error,
+                size_t error_len) {
+  if (Update.write(const_cast<uint8_t*>(data), len) != len) {
+    setError(error, error_len, "%s", Update.errorString());
+    return false;
+  }
+  return true;
+}
+
+bool imageEnd(char* error, size_t error_len) {
   if (!Update.end()) {
     setError(error, error_len, "%s", Update.errorString());
     return false;
   }
   return true;
 }
+
+void imageAbort() { Update.abort(); }
+
+constexpr Sink kImageSink = {imageBegin, imageWrite, imageEnd, imageAbort};
 
 // --- The portal page ------------------------------------------------------------
 
@@ -604,11 +631,11 @@ bool install(const char* tag, void (*progress)(int percent), char* error,
   LOG_INFO("Firmware: installing %s for " FIRMWARE_ENV " (this is %s)", tag,
            FIRMWARE_VERSION);
   s_job.install = true;
-  snprintf(s_job.tag, sizeof(s_job.tag), "%s", tag);
+  snprintf(s_job.url, sizeof(s_job.url), "%s", imageUrl(tag).c_str());
   s_job.ok = false;
   s_job.error[0] = '\0';
   const bool ok = startJob(error, error_len) &&
-                  writeDownload(progress, error, error_len);
+                  writeDownload(kImageSink, progress, error, error_len);
   s_busy.store(false);
   if (ok) {
     s_last_install_error[0] = '\0';
@@ -617,6 +644,27 @@ bool install(const char* tag, void (*progress)(int percent), char* error,
     snprintf(s_last_install_error, sizeof(s_last_install_error), "%s", error);
     LOG_WARN("Firmware: install of %s failed: %s", tag, error);
   }
+  return ok;
+}
+
+bool download(const char* url, const Sink& sink,
+              void (*progress)(int percent), char* error, size_t error_len) {
+  if (url == nullptr || strlen(url) >= sizeof(s_job.url)) {
+    setError(error, error_len, "bad address");
+    return false;
+  }
+  bool expected = false;
+  if (!s_busy.compare_exchange_strong(expected, true)) {
+    setError(error, error_len, "an update is under way");
+    return false;
+  }
+  s_job.install = true;
+  snprintf(s_job.url, sizeof(s_job.url), "%s", url);
+  s_job.ok = false;
+  s_job.error[0] = '\0';
+  const bool ok = startJob(error, error_len) &&
+                  writeDownload(sink, progress, error, error_len);
+  s_busy.store(false);
   return ok;
 }
 

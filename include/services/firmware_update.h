@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 /**
  * Firmware from GitHub: whether a newer release is out, and installing it.
@@ -49,6 +50,26 @@ void check(CheckResult& out);
  *  `error` saying why, and the running firmware untouched. Blocks. */
 bool install(const char* tag, void (*progress)(int percent), char* error,
              size_t error_len);
+
+/** Where a download goes, a chunk at a time, on the caller's stack -- which
+ *  is where flash can be written from. begin() hears the length before the
+ *  first chunk; end() after the last, to check and keep it; abort() instead,
+ *  when it stopped part way. The first three say false, with `error`, to
+ *  give up. */
+struct Sink {
+  bool (*begin)(size_t total, char* error, size_t error_len);
+  bool (*write)(const uint8_t* data, size_t len, char* error,
+                size_t error_len);
+  bool (*end)(char* error, size_t error_len);
+  void (*abort)();
+};
+
+/** Download `url` over HTTPS into `sink`, calling `progress` with 0-100 as
+ *  it comes down: the same task, certificate check and timeouts as an
+ *  install, and not while one is under way. True once `sink` has kept it.
+ *  Blocks. */
+bool download(const char* url, const Sink& sink,
+              void (*progress)(int percent), char* error, size_t error_len);
 
 /** Serve the portal's /firmware page: this build, a check, and an install.
  *  Call before Wi-Fi comes up, as for any portal page. */
