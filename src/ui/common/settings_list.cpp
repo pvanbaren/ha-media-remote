@@ -100,6 +100,20 @@ void drawLine(lgfx::LovyanGFX& gfx, const char* str, int x, int y,
   gfx.drawString(line, x, y);
 }
 
+/** The size for a row's line: `text_px`, or the headings' smaller size where
+ *  that is too wide -- a row up where a round panel narrows, as the first of
+ *  three, which is the Firmware and Fonts pages' finding: "5.1 MB from
+ *  GitHub" lost a third of itself on the 360 px circle. At the smaller size
+ *  it fits on every round panel; past that it is still ellipsized. */
+int fittedTextPx(lgfx::LovyanGFX& gfx, const char* str, int text_px,
+                 int width) {
+  if (text_px <= theme::kListHeaderTextPx) {
+    return text_px;
+  }
+  displayFontApplyHeight(gfx, text_px);
+  return gfx.textWidth(str) <= width ? text_px : theme::kListHeaderTextPx;
+}
+
 /** A pressed row is lit in the accent with dark text, unlike anything a row
  *  shows at rest -- the current choice included -- so a tap on any row is
  *  seen to land. */
@@ -125,7 +139,8 @@ void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top,
                              : theme::kTextPrimary;
   const int text_w = w - 2 * theme::kListTextInset;
   if (row.detail[0] == '\0') {
-    drawLine(gfx, row.text, theme::kCenterX, cy, theme::kListRowTextPx, color,
+    drawLine(gfx, row.text, theme::kCenterX, cy,
+             fittedTextPx(gfx, row.text, theme::kListRowTextPx, text_w), color,
              text_w);
     return;
   }
@@ -133,7 +148,8 @@ void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top,
            theme::kListHeaderTextPx,
            pressed ? theme::kBackground : theme::kTextMuted, text_w);
   drawLine(gfx, row.detail, theme::kCenterX, cy + kDetailDy,
-           theme::kListRowTextPx, color, text_w);
+           fittedTextPx(gfx, row.detail, theme::kListRowTextPx, text_w), color,
+           text_w);
 }
 
 }  // namespace
