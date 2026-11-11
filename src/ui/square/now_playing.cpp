@@ -35,6 +35,7 @@
 #include "ui/canvas.h"
 #include "ui/peers_chip.h"
 #include "ui/text.h"
+#include "ui/toast.h"
 #include "ui/text_glow.h"
 #include "ui/theme.h"
 
@@ -287,15 +288,22 @@ void drawVolumeBar(lgfx::LovyanGFX& gfx, const PlayerState& state,
                     theme::kArcTrack);
 
   // Grey when nothing will be heard at that level: muted, or the volume
-  // device switched off.
-  const uint16_t fill =
-      state.muted || state.control_off ? theme::kVolumeMutedFill : kBarFill;
+  // device switched off. Darker grey while a power tap waits on Home
+  // Assistant.
+  const uint16_t fill = state.power_pending ? theme::kVolumePendingFill
+                        : state.muted || state.control_off
+                            ? theme::kVolumeMutedFill
+                            : kBarFill;
   const int filled = static_cast<int>(kBarWidth * level + 0.5f);
   if (filled > 0) {
     gfx.fillRoundRect(kBarLeft, kBarY, filled, kBarHeight, kBarRadius, fill);
   }
 
   // The knob is what makes it read as draggable rather than as a readout.
+  // Not while a power tap is pending: just the grey fill, then.
+  if (state.power_pending) {
+    return;
+  }
   const int knob_x = kBarLeft + filled;
   const int knob_y = kBarY + kBarHeight / 2;
   gfx.fillCircle(knob_x, knob_y, kKnobRadius, fill);
@@ -565,7 +573,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   // Whether or not the bar is shown now: volume can become available without
   // anything else changing, and the first drag must still find the backdrop.
   saveBandBackdrop(gfx);
-  if (volumeAvailable(state)) {
+  if (services::ha::volumeAvailable(state)) {
     drawVolumeBar(gfx, state, state.volume);
   }
 
@@ -575,6 +583,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
                         enabledFor(action, state));
   }
   ui::peers_chip::draw(gfx, state);
+  ui::toast::draw(gfx);
 }
 
 }  // namespace
@@ -632,21 +641,6 @@ void refreshVolume(const PlayerState& state, float level) {
   // Only the band the bar and its knob occupy: about 100 of 720 rows, so a
   // drag costs a tenth of what presenting the frame would.
   ui::canvasPresentRegion(0, kBarBandTop, theme::kSize, kBarBandHeight);
-}
-
-bool volumeAvailable(const PlayerState& state) {
-  if (state.volume < 0.0f) {
-    return false;
-  }
-  if (state.playback == PlaybackState::kUnavailable ||
-      state.playback == PlaybackState::kOff) {
-    return false;
-  }
-  // Tested against the *control* entity: it is the one the slider drives, and
-  // where the two differ it is entirely normal for the receiver to set
-  // VOLUME_SET while the player streaming into it does not.
-  return state.control_features == 0 ||
-         (state.control_features & services::ha::kFeatureVolumeSet) != 0;
 }
 
 float volumeLevelPerPx() {
@@ -726,6 +720,16 @@ void showButtonPressed(Action action, bool pressed) {
   const int edge = button.radius * 2 + 1;
   ui::canvasPresentRegion(button.cx - button.radius,
                           button.cy - button.radius, edge, edge);
+}
+
+void showPowerPending(bool pending) {
+  if (s_last_drawn.power_pending == pending) {
+    return;
+  }
+  s_last_drawn.power_pending = pending;
+  if (volumeAvailable(s_last_drawn)) {
+    refreshVolume(s_last_drawn, s_last_drawn.volume);
+  }
 }
 
 }  // namespace ui::now_playing

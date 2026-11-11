@@ -13,7 +13,8 @@ namespace services {
  * the services::Yielding clients, so that every wait in it blocks rather than
  * spins (see yielding_client.h for why that matters on this board).
  *
- * Deliberately small. Text messages only, no extensions (no permessage-deflate:
+ * Deliberately small. Text messages in, text and binary out -- the binary
+ * being a voice request's audio -- and no extensions (no permessage-deflate:
  * the messages this carries are a few hundred bytes, and inflate would want a
  * 32 KB window), no subprotocols. Pings are answered and a close is honoured
  * inside poll(), so a caller only ever sees whole text messages.
@@ -43,6 +44,10 @@ class WebSocket {
 
   /** Send one text message, masked as a client must. */
   bool sendText(const char* data, size_t len);
+
+  /** Send one binary message, masked likewise: audio for Home Assistant's
+   *  Assist pipeline, which takes it as binary frames. */
+  bool sendBinary(const uint8_t* data, size_t len);
 
   /** Read one message if one has started to arrive. Once a frame has begun,
    *  waits up to the open() timeout for the rest of it. */

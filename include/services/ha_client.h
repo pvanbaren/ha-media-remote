@@ -107,6 +107,10 @@ struct PlayerState {
    *  on or off less than config::kOffHereHoldMs ago, so "Off in this room" is
    *  not shown while the device and the player catch up with each other. */
   bool hold_off_here = false;
+  /** Set by the app, not the server: a power tap has gone to Home Assistant
+   *  and no state since has shown what it did, so the volume is drawn in the
+   *  pending grey -- an answer to the touch before Home Assistant's. */
+  bool power_pending = false;
   /** Set by the app, not the server: Home Assistant has not been heard from
    *  for config::kHaOfflineMarkMs, so this is the last state there was and
    *  now playing says so. */
@@ -130,6 +134,18 @@ constexpr uint32_t kFeatureTurnOn = 1u << 7;
 constexpr uint32_t kFeatureTurnOff = 1u << 8;
 constexpr uint32_t kFeatureSelectSource = 1u << 11;
 constexpr uint32_t kFeaturePlay = 1u << 14;
+
+/** True when the player exposes a volume a slider or a knob can drive.
+ *  Tested against the *control* entity: it is the one they drive, and where
+ *  the two differ it is entirely normal for the receiver to set VOLUME_SET
+ *  while the player streaming into it does not. */
+bool volumeAvailable(const PlayerState& state);
+
+/** Whether a volume gesture should switch the volume device on rather than
+ *  set its level: it is off, and it can be switched on -- a device reporting
+ *  no features at all counting as one that can, as everywhere else. One that
+ *  cannot gets the level as it is. */
+bool powerOnForVolume(const PlayerState& state);
 
 /** Load base URL / token / last selection from NVS. Call once in setup(). */
 void init();
@@ -262,6 +278,30 @@ bool streamIsOpen();
  *  against have changed -- check streamIsOpen() after a false. */
 bool streamService(PlayerState& out, uint32_t wait_ms);
 void streamClose();
+
+// --- A conversation of its own on the stream, for services::voice ----------
+// Home Assistant's Assist pipeline runs over the same WebSocket as the state,
+// since a second TLS session beside the stream's leaves too little internal
+// RAM for the reply's download. The socket stays the owner's alone: the hook
+// runs on the owner, on every pass while the stream is open, and the two
+// sends below are for the hook and the listener only.
+
+/** Called on the stream's owner on every pass while the stream is open. */
+using StreamHook = void (*)();
+/** Called on the owner with each message whose id is the one
+ *  streamRequest() last returned; with nullptr when the stream closes. */
+using StreamListener = void (*)(const char* message);
+void setStreamHook(StreamHook hook);
+void setStreamListener(StreamListener listener);
+
+/** From the hook or the listener: `body` -- the members after the id -- as
+ *  a request, its messages from now on for the listener. Its id, or 0 if
+ *  the send failed, which closes the stream. */
+int streamRequest(const char* body);
+
+/** From the hook or the listener: one binary message. False if the send
+ *  failed, which closes the stream. */
+bool streamSendBinary(const uint8_t* data, size_t len);
 
 /** Fetch one slice of the Music Assistant library, via
  *  `music_assistant.get_library?return_response`.

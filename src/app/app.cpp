@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -34,6 +35,8 @@
 #include "services/browse.h"
 #include "services/device_name.h"
 #include "services/display_settings.h"
+#include "services/firmware_update.h"
+#include "services/fonts.h"
 #include "services/ha_link.h"
 #include "services/history.h"
 #include "services/ma_api.h"
@@ -41,6 +44,8 @@
 #include "services/recommend.h"
 #include "services/ha_client.h"
 #include "services/search.h"
+#include "services/voice.h"
+#include "services/wake_word.h"
 #include "services/wifi_setup.h"
 #include "ui/ui.h"
 
@@ -84,6 +89,22 @@ std::atomic<bool> g_poll_now{false};
  *  switched off. Handed to the poll task rather than called from the loop:
  *  turn_off is a network round trip. */
 std::atomic<bool> g_turn_off_control{false};
+/** A voice request has started and the music should be turned down. Handed
+ *  to the poll task for the same reason: on the loop the call held touch
+ *  unread for as long as Home Assistant took to answer, and a hold let go
+ *  meanwhile went on listening. */
+std::atomic<bool> g_duck_for_voice{false};
+/** The volume the music was turned down from and to, while it is down for a
+ *  voice request. Poll task only. */
+bool g_ducked = false;
+float g_duck_from = 0.0f;
+float g_duck_to = 0.0f;
+/** Volume steps asked for by voice and not yet made, up positive: from the
+ *  stream's owner (takeVoiceCommand()) to the poll task. */
+std::atomic<int> g_voice_volume_steps{0};
+/** "Stop" or "turn off" asked by voice and not yet done: from the stream's
+ *  owner to the poll task (turnOffForVoice()). */
+std::atomic<bool> g_voice_turn_off{false};
 
 unsigned long g_last_elapsed_ms = 0;
 /** When the browse list or search screen was last opened, for
@@ -210,6 +231,9 @@ bool g_untitled_repaint_owed = false;
 /** A frame went up with "Off in this room" held back; one more is owed when
  *  the hold runs out, in case the device is off still. Loop task only. */
 bool g_off_here_repaint_owed = false;
+/** A power tap not yet answered by the state: when it was made, or 0. Now
+ *  playing draws the volume in the pending grey meanwhile. Loop task only. */
+unsigned long g_power_pending_ms = 0;
 
 /** True while the volume device was asked to come on by this remote less
  *  than config::kOffHereHoldMs ago. */
@@ -383,6 +407,7 @@ void showNowPlaying() {
     snapshot.hold_off_here = true;
     g_off_here_repaint_owed = true;
   }
+  snapshot.power_pending = g_power_pending_ms != 0;
 
   LOG_DEBUG("UI: now playing \"%s\"", snapshot.title);
   ui::showNowPlaying(snapshot);
@@ -637,6 +662,7 @@ enum class CommandKind : uint8_t {
   kPlayItem,   // a pick from the browse list or the search
   kIsolate,    // the other rooms on this input off
   kSeek,       // a drag along the progress line
+  kPlayQuery,  // "play <something>", asked by voice
 };
 
 struct CommandJob {
@@ -662,6 +688,8 @@ struct CommandJob {
   float position = 0.0f;
   /** kIsolate: the rooms, comma-separated, as PlayerState::peer_ids. */
   char ids[sizeof(PlayerState::peer_ids)] = {};
+  /** kPlayQuery: the something, as heard. */
+  char query[96] = {};
 };
 
 struct CommandResult {
@@ -740,6 +768,88 @@ uint32_t turnOffRooms(char* ids) {
   return failed;
 }
 
+/** Whether an artist's name is near enough the words: the same letters
+ *  and digits, case and a leading "The" aside, give or take one wrong in
+ *  three -- "Katya Bunyatishvili" is Khatia Buniatishvili, as speech to
+ *  text hears her. Only Music Assistant's first few artists for the
+ *  words are compared, so a loose match is still one of the right few. */
+bool nearName(const char* name, const char* words) {
+  // "The Beatles" is Beatles, said either way.
+  const auto skipThe = [](const char* s) {
+    return strncasecmp(s, "the ", 4) == 0 ? s + 4 : s;
+  };
+  name = skipThe(name);
+  words = skipThe(words);
+  char a[48];
+  char b[48];
+  size_t na = 0;
+  size_t nb = 0;
+  for (const char* p = name; *p != '\0' && na < sizeof(a); ++p) {
+    if (isalnum(static_cast<unsigned char>(*p))) {
+      a[na++] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+    }
+  }
+  for (const char* p = words; *p != '\0' && nb < sizeof(b); ++p) {
+    if (isalnum(static_cast<unsigned char>(*p))) {
+      b[nb++] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+    }
+  }
+  if (na == 0 || nb == 0) {
+    return false;
+  }
+  // Edit distance, a row at a time.
+  uint8_t prev[sizeof(b) + 1];
+  uint8_t row[sizeof(b) + 1];
+  for (size_t j = 0; j <= nb; ++j) {
+    prev[j] = static_cast<uint8_t>(j);
+  }
+  for (size_t i = 1; i <= na; ++i) {
+    row[0] = static_cast<uint8_t>(i);
+    for (size_t j = 1; j <= nb; ++j) {
+      const int sub = prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+      const int del = prev[j] + 1;
+      const int ins = row[j - 1] + 1;
+      row[j] = static_cast<uint8_t>(std::min(sub, std::min(del, ins)));
+    }
+    memcpy(prev, row, nb + 1);
+  }
+  const size_t longer = na > nb ? na : nb;
+  return prev[nb] <= std::max<size_t>(1, longer / 3);
+}
+
+/** "Play <query>" by voice, on this remote's player: an artist whose name
+ *  is near enough the words, played as a tap on it in the search plays it
+ *  (config::kArtistsPlayRadio), or else whatever Music Assistant makes of
+ *  the words -- a track, an album, a playlist. Worker only. */
+bool playVoiceQuery(const char* query) {
+  char player[config::kEntityIdMaxLen];
+  services::ha::copySelectedEntity(player, sizeof(player));
+  if (player[0] == '\0') {
+    return false;
+  }
+  constexpr int kArtists = 3;
+  static services::ha::LibraryItem* found = [] {
+    void* mem = heap_caps_malloc(kArtists * sizeof(services::ha::LibraryItem),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem != nullptr ? new (mem) services::ha::LibraryItem[kArtists]
+                          : new services::ha::LibraryItem[kArtists];
+  }();
+  const int n = services::ha::search(query, "artist", found, kArtists);
+  for (int i = 0; i < n; ++i) {
+    if (nearName(found[i].name, query)) {
+      LOG_INFO("VOICE: \"%s\" is the artist %s", query, found[i].name);
+      const bool ok = services::ha::playMedia(player, found[i].uri, "artist",
+                                              config::kArtistsPlayRadio);
+      if (ok) {
+        services::history::notePicked(found[i]);
+      }
+      return ok;
+    }
+  }
+  LOG_INFO("VOICE: \"%s\" is no artist; asking Music Assistant", query);
+  return services::ha::playMedia(player, query, nullptr, false);
+}
+
 void runCommand(CommandJob& job, CommandResult& r) {
   r = {job.kind, job.intent, true, job.starting, job.was, 0};
   switch (job.kind) {
@@ -801,6 +911,35 @@ void runCommand(CommandJob& job, CommandResult& r) {
       r.failed = turnOffRooms(job.ids);
       r.ok = r.failed == 0;
       break;
+    case CommandKind::kPlayQuery: {
+      if (job.generation != g_play_generation) {
+        LOG_INFO("VOICE: play dropped, cancelled before it was sent");
+        r.ok = false;
+        break;
+      }
+      // As a pick from the search does: the volume device on, and to the
+      // player's input, first. Then said at once, as Music Assistant can
+      // take ten seconds to start it.
+      if (job.power_first) {
+        powerOnControl();
+      }
+      {
+        char text[sizeof(job.query) + 16];
+        snprintf(text, sizeof(text), "Playing %s.", job.query);
+        if (!services::voice::say(text)) {
+          LOG_INFO("VOICE: cannot speak now");
+        }
+      }
+      r.ok = playVoiceQuery(job.query);
+      if (!r.ok) {
+        char text[sizeof(job.query) + 40];
+        snprintf(text, sizeof(text), "Sorry, I couldn't find %s.", job.query);
+        if (!services::voice::say(text)) {
+          LOG_INFO("VOICE: cannot speak now");
+        }
+      }
+      break;
+    }
   }
   g_poll_now = true;
 }
@@ -1163,6 +1302,21 @@ bool g_toggle_was_known = false;
   snprintf(job.entity, sizeof(job.entity), "%s", control);
   g_toggle_sent_ms = 0;
   queueCommand(job);
+
+  // The answer to the touch, now: the volume in the pending grey until a
+  // state shows what the toggle did (handleToggleSettled()).
+  g_power_pending_ms = millis();
+  ui::showCommandPending(Intent::kTogglePower, true);
+}
+
+/** The pending grey is done with: the next frame draws the volume as the
+ *  state has it. */
+void endPowerPending() {
+  if (g_power_pending_ms == 0) {
+    return;
+  }
+  g_power_pending_ms = 0;
+  g_state_dirty = true;
 }
 
 /** A power tap's toggle, once a state sampled after it shows it took: if the
@@ -1177,6 +1331,12 @@ bool g_toggle_was_known = false;
  *  still showing the old power is one rendered before the toggle landed, and
  *  is waited past. */
 [[gnu::noinline]] void handleToggleSettled() {
+  // Never grey for longer than the wait: whatever the state says by then is
+  // what is drawn.
+  if (g_power_pending_ms != 0 &&
+      millis() - g_power_pending_ms >= kToggleSettleMs) {
+    endPowerPending();
+  }
   if (g_toggle_sent_ms == 0) {
     return;
   }
@@ -1193,6 +1353,7 @@ bool g_toggle_was_known = false;
     return;
   }
   g_toggle_sent_ms = 0;
+  endPowerPending();
   LOG_INFO("UI: %s is now %s", services::ha::controlEntity(),
            now.control_off ? "off" : "on");
   if (!now.control_off) {
@@ -1392,7 +1553,12 @@ const char* serviceFor(Intent intent) {
   g_poll_now = true;
 }
 
-[[gnu::noinline]] void sendCommand(Intent intent) {
+/** What play-pause is to do: what the player's state calls for, as the
+ *  button does -- or play, or pause, whatever that is, as asked by voice. */
+enum class PlayWish : uint8_t { kToggle, kPlay, kPause };
+
+[[gnu::noinline]] void sendCommand(Intent intent,
+                                   PlayWish wish = PlayWish::kToggle) {
   const char* service = serviceFor(intent);
   if (service == nullptr) {
     return;
@@ -1432,7 +1598,9 @@ const char* serviceFor(Intent intent) {
   // whose state the snapshot did not have -- a player playing unheard behind
   // another input was paused by the press meant to start it.
   const bool starting =
-      !have_before || before.playback != PlaybackState::kPlaying;
+      wish == PlayWish::kPlay ||
+      (wish == PlayWish::kToggle &&
+       (!have_before || before.playback != PlaybackState::kPlaying));
   if (intent == Intent::kPlayPause) {
     service = starting ? "media_play" : "media_pause";
   }
@@ -1492,6 +1660,7 @@ const char* serviceFor(Intent intent) {
         } else {
           LOG_WARN("UI: toggle of %s refused", services::ha::controlEntity());
           g_toggle_sent_ms = 0;
+          endPowerPending();
         }
         break;
       case CommandKind::kIsolate:
@@ -1623,6 +1792,155 @@ bool startingSettled();
   g_poll_now = true;
 }
 
+/** A voice request has started: music playing in the room is turned down,
+ *  so the command is heard over it -- by the poll task, so nothing here
+ *  waits on Home Assistant -- and turned back up after (restoreAfterVoice).
+ *  Turned down rather than paused, which left the music off after every
+ *  request. */
+void duckForVoice() {
+  PlayerState now;
+  if (snapshotState(now) && now.playback == PlaybackState::kPlaying) {
+    g_duck_for_voice = true;
+    g_poll_now = true;
+  }
+}
+
+/** The poll task's half of duckForVoice(): the volume device to a quarter of
+ *  its level. Not again while it is already down -- a request straight after
+ *  another -- or the level to go back to would be the lowered one. */
+void duckMusicForVoice() {
+  PlayerState now;
+  if (g_ducked || !snapshotState(now) ||
+      now.playback != PlaybackState::kPlaying ||
+      !services::ha::volumeAvailable(now)) {
+    return;
+  }
+  g_duck_from = now.volume;
+  g_duck_to = now.volume * config::kVoiceDuckShare;
+  g_ducked = true;
+  LOG_INFO("VOICE: music down from %.2f to %.2f", g_duck_from, g_duck_to);
+  commandVolume(services::ha::controlEntity(), g_duck_to);
+  // commandVolume() moves the level on record but repaints nothing -- a drag
+  // draws its own arc -- and when Home Assistant reports this level it will
+  // match the record, so no update would ever show it. Ask for the repaint.
+  g_state_dirty = true;
+}
+
+/** The words a voice request heard, in quotes over now playing for
+ *  config::kVoiceToastMs, so what it understood can be read; and now
+ *  playing composed again without them once they have had their time.
+ *  Loop only. */
+[[gnu::noinline]] void handleVoiceToast() {
+  static char shown[sizeof(services::voice::Status::heard)] = {};
+  static services::voice::Status* status = [] {
+    void* mem = heap_caps_malloc(sizeof(services::voice::Status),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem != nullptr ? new (mem) services::voice::Status()
+                          : new services::voice::Status();
+  }();
+  services::voice::status(*status);
+  if (status->heard[0] == '\0') {
+    shown[0] = '\0';  // a new request: the same words again are news
+  } else if (strcmp(status->heard, shown) != 0) {
+    snprintf(shown, sizeof(shown), "%s", status->heard);
+    char text[sizeof(shown) + 4];
+    snprintf(text, sizeof(text), "\"%s\"", shown);
+    ui::showToast(text, config::kVoiceToastMs);
+    g_state_dirty = true;
+  }
+  if (ui::toastExpired()) {
+    g_state_dirty = true;
+  }
+}
+
+/** "Stop" and "turn off" by voice: the volume device off, as the power chip
+ *  switches it off -- the player, where there is no volume device. The
+ *  music put back to its level first, if it is down for the request, so the
+ *  device comes back on at that level rather than the lowered one; set here
+ *  rather than by the command worker, so it lands before the power-off.
+ *  Poll task. */
+void turnOffForVoice() {
+  if (!g_voice_turn_off.exchange(false)) {
+    return;
+  }
+  char control[config::kEntityIdMaxLen];
+  services::ha::copyControlEntity(control, sizeof(control));
+  if (g_ducked) {
+    g_ducked = false;
+    LOG_INFO("VOICE: music back to %.2f before turning off", g_duck_from);
+    services::ha::setVolume(control, g_duck_from);
+  }
+  LOG_INFO("VOICE: turning off %s", control);
+  powerOffControl();
+  g_state_dirty = true;
+}
+
+/** "Volume up" and "volume down" by voice, kVoiceVolumeStep each, on the
+ *  volume device. While the music is down for the request, the level it
+ *  comes back up to is what moves, or bringing it back would undo them.
+ *  Poll task. */
+void stepVolumeForVoice() {
+  const int steps = g_voice_volume_steps.exchange(0);
+  if (steps == 0) {
+    return;
+  }
+  PlayerState now;
+  if (!snapshotState(now) || !services::ha::volumeAvailable(now)) {
+    LOG_INFO("VOICE: no volume to change");
+    return;
+  }
+  const float delta = steps * config::kVoiceVolumeStep;
+  if (g_ducked) {
+    g_duck_from = std::min(1.0f, std::max(0.0f, g_duck_from + delta));
+    LOG_INFO("VOICE: volume to %.2f, once the request is over", g_duck_from);
+    return;
+  }
+  const float level = std::min(1.0f, std::max(0.0f, now.volume + delta));
+  LOG_INFO("VOICE: volume from %.2f to %.2f", now.volume, level);
+  commandVolume(services::ha::controlEntity(), level);
+  g_state_dirty = true;  // as for the ducking: the arc repaints
+}
+
+/** The music back up once the request and its reply are over -- unless the
+ *  volume has moved since it was turned down, which is the request having
+ *  set it, or someone turning it by hand. Poll task. */
+void restoreAfterVoice() {
+  if (!g_ducked || services::voice::busy()) {
+    return;
+  }
+  g_ducked = false;
+  PlayerState now;
+  if (!snapshotState(now)) {
+    return;
+  }
+  if (fabsf(now.volume - g_duck_to) > config::kVoiceDuckTolerance) {
+    LOG_INFO("VOICE: volume moved to %.2f meanwhile, left there", now.volume);
+    return;
+  }
+  LOG_INFO("VOICE: music back up to %.2f", g_duck_from);
+  commandVolume(services::ha::controlEntity(), g_duck_from);
+  // As above: without this the arc stayed at the lowered level.
+  g_state_dirty = true;
+}
+
+/** The wake word, heard: a voice request from where it ended. */
+[[gnu::noinline]] void handleWakeWord() {
+  uint32_t position = 0;
+  if (!services::wake_word::takeDetection(position)) {
+    return;
+  }
+  if (!services::voice::startAt(position)) {
+    LOG_INFO("VOICE: wake word heard, but no request can start now");
+    return;
+  }
+  // Someone is here, as for a tap on a dark panel: lit, and the idle clock
+  // started again, so what the request does -- the Starting... card, play
+  // paused, the volume moved -- is there to see.
+  wakeDisplay();
+  noteTouchWake();
+  duckForVoice();
+}
+
 /** Linking to Home Assistant, from the loop: look for it once Wi-Fi is up
  *  and nothing is linked, put the QR code up when it is found, and finish
  *  the sign-in once a browser comes back with a code. */
@@ -1701,6 +2019,89 @@ unsigned long g_start_ms = 0;
   g_screen = Screen::kStarting;
   g_message_recheck_ms = millis();
   g_poll_now = true;
+}
+
+/** A Command asked by voice, for this room's player: from the stream's
+ *  owner, copied here for the loop, which carries it out -- but for the
+ *  volume, which is the poll task's (stepVolumeForVoice()). */
+char g_voice_query[sizeof(CommandJob::query)] = {};
+services::voice::Command g_voice_command = services::voice::Command::kPlay;
+portMUX_TYPE g_voice_command_lock = portMUX_INITIALIZER_UNLOCKED;
+std::atomic<bool> g_voice_command_waiting{false};
+
+bool takeVoiceCommand(services::voice::Command command, const char* query) {
+  using services::voice::Command;
+  char player[config::kEntityIdMaxLen];
+  services::ha::copySelectedEntity(player, sizeof(player));
+  if (player[0] == '\0') {
+    return false;  // no player to do it to: Assist's
+  }
+  if (command == Command::kVolumeUp || command == Command::kVolumeDown) {
+    g_voice_volume_steps += command == Command::kVolumeUp ? 1 : -1;
+    g_poll_now = true;
+    return true;
+  }
+  if (command == Command::kTurnOff) {
+    g_voice_turn_off = true;
+    g_poll_now = true;
+    return true;
+  }
+  taskENTER_CRITICAL(&g_voice_command_lock);
+  g_voice_command = command;
+  snprintf(g_voice_query, sizeof(g_voice_query), "%s", query);
+  taskEXIT_CRITICAL(&g_voice_command_lock);
+  g_voice_command_waiting = true;
+  return true;
+}
+
+/** The loop's half of takeVoiceCommand(): "play <something>" queued as a
+ *  pick from the search would be, with the Starting... card up -- the words
+ *  heard on it -- until it starts; play, pause, next and previous as the
+ *  buttons send them, whatever the player is doing: "play" is play and
+ *  "pause" pause, where the button decides which from the state, which can
+ *  be a moment behind. */
+[[gnu::noinline]] void handleVoiceCommand() {
+  using services::voice::Command;
+  if (!g_voice_command_waiting.exchange(false)) {
+    return;
+  }
+  Command command;
+  char query[sizeof(g_voice_query)];
+  taskENTER_CRITICAL(&g_voice_command_lock);
+  command = g_voice_command;
+  memcpy(query, g_voice_query, sizeof(query));
+  taskEXIT_CRITICAL(&g_voice_command_lock);
+  switch (command) {
+    case Command::kPlay: {
+      CommandJob& job = loopJob();
+      job.kind = CommandKind::kPlayQuery;
+      job.power_first = true;
+      job.generation = g_play_generation;
+      memcpy(job.query, query, sizeof(job.query));
+      const bool queued = queueCommand(job);
+      startPlaying(queued);
+      if (queued) {
+        ui::showVoiceStarting(query);
+      }
+      break;
+    }
+    case Command::kResume:
+      sendCommand(Intent::kPlayPause, PlayWish::kPlay);
+      break;
+    case Command::kPause:
+      sendCommand(Intent::kPlayPause, PlayWish::kPause);
+      break;
+    case Command::kNext:
+      sendCommand(Intent::kNext);
+      break;
+    case Command::kPrevious:
+      sendCommand(Intent::kPrevious);
+      break;
+    case Command::kVolumeUp:
+    case Command::kVolumeDown:
+    case Command::kTurnOff:
+      break;  // the poll task's
+  }
 }
 
 /** Whether the Starting... card has done its job: the player is playing,
@@ -1783,14 +2184,17 @@ enum class Setting : uint8_t {
   kWakeVolume,
   kAutoOff,
   kRecentHere,
+  kVoice,  // only in a build with voice
   kTxPower,
   kKeyboard,
   kRotation,
+  kFirmware,
+  kFonts,
   kRestart,
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 12;
+constexpr int kMaxSettingRows = 15;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -1801,6 +2205,8 @@ Setting g_setting_open = Setting::kWifi;
 int g_setting_open_row = -1;
 /** The network list was opened from the settings page, and goes back to it. */
 bool g_wifi_from_settings = false;
+/** The release the Firmware row's check found newer, to install. */
+char g_firmware_tag[sizeof(services::update::CheckResult::tag)] = {};
 
 /** The values behind a short list of choices, by row. The player and input
  *  lists are read by row from services::players and g_sources instead. */
@@ -1916,6 +2322,15 @@ void showSettingsPage(int focus) {
                   services::browse::recentHere() ? "Room only"
                                                  : "Music Assistant");
   }
+  if (services::voice::built()) {
+    const int voice_setting = services::voice::setting();
+    addSettingRow(Setting::kVoice, "Voice",
+                  voice_setting == 0
+                      ? "Disabled"
+                      : services::wake_word::phraseOf(
+                            static_cast<services::wake_word::Word>(
+                                voice_setting - 1)));
+  }
   formatTxPower(value, sizeof(value), wifiTxPower());
   addSettingRow(Setting::kTxPower, "Wi-Fi transmit power", value);
   addSettingRow(Setting::kKeyboard, "Search keyboard",
@@ -1925,6 +2340,14 @@ void showSettingsPage(int focus) {
                     : "Alphabetical");
   addSettingRow(Setting::kRotation, "Screen rotation",
                 kRotationNames[services::display::rotation() & 3]);
+  addSettingRow(Setting::kFirmware, "Firmware",
+                services::update::currentVersion());
+  {
+    char scripts[192];
+    services::fonts::describe(scripts, sizeof(scripts));
+    addSettingRow(Setting::kFonts, "Fonts",
+                  scripts[0] != '\0' ? "Downloaded" : "Not downloaded");
+  }
   addSettingRow(Setting::kRestart, "Restart", "");
   // The name, the Home Assistant link and Music Assistant stay in the
   // portal: typed text, which the portal does better.
@@ -1963,6 +2386,156 @@ int loadSources() {
                     : -1;
   g_source_count = n > 0 ? n : 0;
   return n;
+}
+
+// --- Firmware from GitHub --------------------------------------------------------
+
+void restartNow(const char* why);
+
+/** What the check found, as a row of its own over the choices -- a heading
+ *  over a line, where the list's note would be one line at the top, which a
+ *  round panel cuts short. A tap on it does nothing (value 3). */
+void addFirmwareFinding(const char* heading, const char* line) {
+  if (g_choice_count >= kMaxChoiceValues) {
+    return;
+  }
+  g_choice_values[g_choice_count++] = 3;
+  ui::settingsAdd(heading, line, ui::SettingStyle::kNormal);
+}
+
+/** Ask GitHub whether there is newer firmware, behind a loading card, and
+ *  list what can be done about it: install it, or not. The choices' values:
+ *  1 installs g_firmware_tag, 2 asks again, 0 goes back. */
+[[gnu::noinline]] void openFirmwareChoices() {
+  ui::showLoading("the latest release");
+  services::update::CheckResult result;
+  services::update::check(result);
+  char line[64];
+  g_firmware_tag[0] = '\0';
+  ui::settingsBegin("Firmware", "");
+  switch (result.result) {
+    case services::update::Check::kNewer: {
+      snprintf(g_firmware_tag, sizeof(g_firmware_tag), "%s", result.tag);
+      snprintf(line, sizeof(line), "%s is out", result.tag);
+      addFirmwareFinding("Newer firmware", line);
+      char text[48];
+      snprintf(text, sizeof(text), "Install %s", result.tag);
+      addChoice(text, 1, false);
+      addChoice("Not now", 0, false);
+      return;
+    }
+    case services::update::Check::kUpToDate:
+      snprintf(line, sizeof(line), "%s is the latest", result.tag);
+      addFirmwareFinding("Up to date", line);
+      break;
+    case services::update::Check::kNoImage:
+      snprintf(line, sizeof(line), "%s is out", result.tag);
+      addFirmwareFinding("No image for this board", line);
+      break;
+    case services::update::Check::kFailed:
+      addFirmwareFinding("Could not ask GitHub", result.error);
+      addChoice("Try again", 2, false);
+      break;
+  }
+  addChoice("OK", 0, false);
+}
+
+/** The progress card, redrawn as the download grows: every 2%, which is
+ *  plenty to see it move without drawing the card a hundred times. */
+const char* g_firmware_installing = "";
+void showFirmwareProgress(int percent) {
+  static int s_shown = -1;
+  if (percent == 0 || percent >= 100 || percent - s_shown >= 2 ||
+      percent < s_shown) {
+    s_shown = percent;
+    ui::showUpdating(g_firmware_installing, percent);
+  }
+}
+
+/** Download and install release `tag`, with its progress on screen, and
+ *  restart into it. Returns only when it failed, with `error` saying why. */
+[[gnu::noinline]] void installFirmware(const char* tag, char* error,
+                                       size_t error_len) {
+  wakeDisplay();
+  g_firmware_installing = tag;
+  showFirmwareProgress(0);
+  if (services::update::install(tag, showFirmwareProgress, error,
+                                error_len)) {
+    char why[48];
+    snprintf(why, sizeof(why), "Updated to %s", tag);
+    restartNow(why);
+  }
+}
+
+// --- Fonts from GitHub ----------------------------------------------------------
+
+/** The fonts on this remote, or what downloading them brings, and the
+ *  choices: 1 downloads, 0 goes back. */
+[[gnu::noinline]] void openFontsChoices() {
+  char pack[48];
+  services::fonts::summary(pack, sizeof(pack));
+  ui::settingsBegin("Fonts", "");
+  if (pack[0] != '\0') {
+    const bool current = services::fonts::current();
+    addFirmwareFinding(current ? "Downloaded" : "Newer fonts are out",
+                       pack);
+    addChoice(current ? "Download again" : "Download fonts", 1, false);
+  } else {
+    char line[64];
+    snprintf(line, sizeof(line), "%s from GitHub", config::kFontPackSize);
+    addFirmwareFinding("Not downloaded", line);
+    addChoice("Download fonts", 1, false);
+  }
+  addChoice("Cancel", 0, false);
+}
+
+/** Download the fonts, with the progress on screen. False with `error`
+ *  saying why. */
+[[gnu::noinline]] bool downloadFonts(char* error, size_t error_len) {
+  wakeDisplay();
+  g_firmware_installing = "fonts";
+  showFirmwareProgress(0);
+  return services::fonts::download(showFirmwareProgress, error, error_len);
+}
+
+/** A download asked for on the portal's Fonts page, run here where the
+ *  screen can show it. A failure is said on the screen for a moment and on
+ *  the page. */
+[[gnu::noinline]] void handleFontsRequest() {
+  if (!services::fonts::takeDownloadRequest()) {
+    return;
+  }
+  char error[64] = {};
+  if (!downloadFonts(error, sizeof(error))) {
+    ui::showUpdateFailed(error);
+    delay(3000);
+  }
+  // Back to what was up: the card took the screen from it.
+  if (g_screen == Screen::kSettings) {
+    showSettingsPage(-1);
+  } else {
+    showNowPlaying();
+  }
+}
+
+/** An install asked for on the portal's Firmware page. It runs here, where
+ *  the screen can show it; a failure is said on the screen for a moment and
+ *  on the page, and the remote carries on as it was. */
+[[gnu::noinline]] void handleFirmwareRequest() {
+  char tag[sizeof(services::update::CheckResult::tag)];
+  if (!services::update::takeInstallRequest(tag, sizeof(tag))) {
+    return;
+  }
+  char error[64] = {};
+  installFirmware(tag, error, sizeof(error));
+  ui::showUpdateFailed(error);
+  delay(3000);
+  // Back to what was up: the card took the screen from it.
+  if (g_screen == Screen::kSettings) {
+    showSettingsPage(-1);
+  } else {
+    showNowPlaying();
+  }
 }
 
 /** The list of choices behind one row of the page. */
@@ -2064,6 +2637,19 @@ void openSettingChoices(Setting setting, int row) {
       addChoice("Music Assistant", 0, !room);
       break;
     }
+    case Setting::kVoice: {
+      ui::settingsBegin("Voice",
+                        "Listen for a wake word, and answer through Assist");
+      const int voice = services::voice::setting();
+      addChoice("Disabled", 0, voice == 0);
+      for (int i = 0; i < services::wake_word::kWordCount; ++i) {
+        const auto word = static_cast<services::wake_word::Word>(i);
+        if (services::wake_word::has(word)) {
+          addChoice(services::wake_word::phraseOf(word), i + 1, voice == i + 1);
+        }
+      }
+      break;
+    }
 
     case Setting::kTxPower: {
       ui::settingsBegin("Transmit power", "");
@@ -2099,6 +2685,14 @@ void openSettingChoices(Setting setting, int row) {
       ui::settingsBegin("Restart?", "");
       addChoice("Restart now", 1, false);
       addChoice("Cancel", 0, false);
+      break;
+
+    case Setting::kFirmware:
+      openFirmwareChoices();
+      break;
+
+    case Setting::kFonts:
+      openFontsChoices();
       break;
 
     case Setting::kPortal:
@@ -2181,6 +2775,10 @@ bool applySettingChoice(int row) {
         changed = true;
       }
       break;
+    case Setting::kVoice:
+      changed = value != services::voice::setting() &&
+                services::voice::saveSetting(value);
+      break;
     case Setting::kTxPower:
       changed = value != wifiTxPower() &&
                 wifiSetTxPower(static_cast<int8_t>(value));
@@ -2204,6 +2802,42 @@ bool applySettingChoice(int row) {
     case Setting::kRestart:
       if (value == 1) {
         restartNow("");
+      }
+      break;
+    case Setting::kFirmware:
+      if (value == 3) {
+        return false;  // what the check found: nothing to do
+      }
+      if (value == 2) {
+        openSettingChoices(Setting::kFirmware, g_setting_open_row);
+        return true;
+      }
+      if (value == 1 && g_firmware_tag[0] != '\0') {
+        char error[64] = {};
+        installFirmware(g_firmware_tag, error, sizeof(error));
+        // Still here: it failed, and the running firmware is untouched.
+        ui::settingsBegin("Firmware", "");
+        g_choice_count = 0;
+        addFirmwareFinding("Not installed", error);
+        addChoice("OK", 0, false);
+        ui::showSettings();
+        return true;
+      }
+      break;
+    case Setting::kFonts:
+      if (value == 3) {
+        return false;  // what is there: nothing to do
+      }
+      if (value == 1) {
+        char error[64] = {};
+        if (!downloadFonts(error, sizeof(error))) {
+          ui::settingsBegin("Fonts", "");
+          g_choice_count = 0;
+          addFirmwareFinding("Not downloaded", error);
+          addChoice("OK", 0, false);
+          ui::showSettings();
+          return true;
+        }
       }
       break;
     case Setting::kRecentHere:
@@ -2730,6 +3364,12 @@ void haPollTask(void*) {
         g_turn_off_control = false;
         powerOffControl();
       }
+      if (g_duck_for_voice.exchange(false)) {
+        duckMusicForVoice();
+      }
+      stepVolumeForVoice();
+      turnOffForVoice();
+      restoreAfterVoice();
 
       // Load the browse list ahead of anyone asking for it, so a swipe up
       // lands on a list rather than on a loading card. Cheap to call: it only
@@ -2740,7 +3380,11 @@ void haPollTask(void*) {
       // lock that the drawing side also takes, so doing it anyway would be
       // correct -- but it would mean scrolling stuttering against a load, and
       // there is no reason to refresh a list someone is reading.
-      if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch) {
+      //
+      // Skipped during a voice request too: a load holds this task, and with
+      // it the microphone's audio and the reply, for seconds.
+      if (g_screen != Screen::kBrowse && g_screen != Screen::kSearch &&
+          !services::voice::busy()) {
         services::browse::preload();
       }
 
@@ -2786,7 +3430,8 @@ void haPollTask(void*) {
         // What plays on this player is what plays in this room: the history
         // the swipe-up list's first two sections are built from. A new
         // artist costs a search, here on the network task.
-        if (fresh.playback == PlaybackState::kPlaying) {
+        if (fresh.playback == PlaybackState::kPlaying &&
+            !services::voice::busy()) {
           services::history::notePlaying(fresh.artist, fresh.track);
         }
 
@@ -2815,7 +3460,9 @@ void haPollTask(void*) {
 
       // After a restart the history has names but no pictures; one is found
       // again every few seconds until the list is whole.
-      services::history::refreshPictures();
+      if (!services::voice::busy()) {
+        services::history::refreshPictures();
+      }
     }
 
     if (streaming) {
@@ -2930,8 +3577,20 @@ void setup() {
     ui::showPortal();
   }
   services::ha::init();
+  // The microphone and speaker, on a board that has them, and the hook into
+  // the stream that voice requests run over. Before Wi-Fi, while PSRAM is
+  // unfragmented; nothing on a board without them.
+  services::voice::init();
+  services::voice::setCommandHandler(takeVoiceCommand);
+  // Listening for the wake word from now on, on a board with a microphone
+  // and the model; nothing elsewhere. Before Wi-Fi, for the same reason.
+  if (services::wake_word::init()) {
+    services::wake_word::setListening(services::voice::enabled());
+  }
   // Before Wi-Fi, so its pages are there when the portal's server starts.
   services::ha_link::init();
+  services::update::init();
+  services::fonts::init();
   // After ha::init(): an unset Music Assistant address is derived from Home
   // Assistant's. The recommendations wait for Wi-Fi on their own task.
   services::ma::init();
@@ -2996,6 +3655,11 @@ void loop() {
 
   handleMessageRecheck();
   handleHaLink();
+  handleWakeWord();
+  handleVoiceCommand();
+  handleVoiceToast();
+  handleFirmwareRequest();
+  handleFontsRequest();
 
   // Before the artwork, and that ordering is the whole point. What is playing
   // is why the device exists; browse thumbnails are a preload for a list

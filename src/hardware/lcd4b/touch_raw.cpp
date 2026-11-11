@@ -1,9 +1,9 @@
 #include "hardware/touch_raw.h"
 
 #include <Arduino.h>
-#include <Wire.h>
 
 #include "board/board.h"
+#include "hardware/i2c_bus.h"
 #include "log.h"
 
 /**
@@ -43,28 +43,15 @@ int s_y = 0;
 unsigned long s_report_ms = 0;
 
 bool readRegs(uint16_t reg, uint8_t* out, size_t len) {
-  Wire.beginTransmission(s_address);
-  Wire.write(static_cast<uint8_t>(reg >> 8));
-  Wire.write(static_cast<uint8_t>(reg & 0xFF));
-  if (Wire.endTransmission(false) != 0) {
-    return false;
-  }
-  if (Wire.requestFrom(static_cast<int>(s_address), static_cast<int>(len)) !=
-      static_cast<int>(len)) {
-    return false;
-  }
-  for (size_t i = 0; i < len; ++i) {
-    out[i] = static_cast<uint8_t>(Wire.read());
-  }
-  return true;
+  const uint8_t addr[2] = {static_cast<uint8_t>(reg >> 8),
+                           static_cast<uint8_t>(reg & 0xFF)};
+  return i2c::writeRead(s_address, addr, sizeof(addr), out, len);
 }
 
 bool writeReg(uint16_t reg, uint8_t value) {
-  Wire.beginTransmission(s_address);
-  Wire.write(static_cast<uint8_t>(reg >> 8));
-  Wire.write(static_cast<uint8_t>(reg & 0xFF));
-  Wire.write(value);
-  return Wire.endTransmission() == 0;
+  const uint8_t buf[3] = {static_cast<uint8_t>(reg >> 8),
+                          static_cast<uint8_t>(reg & 0xFF), value};
+  return i2c::write(s_address, buf, sizeof(buf));
 }
 
 }  // namespace
@@ -77,8 +64,12 @@ bool touchRawInit() {
   digitalWrite(board::kTouchPinRst, HIGH);
   delay(100);
 
-  Wire.begin(static_cast<int>(board::kTouchPinSda),
-             static_cast<int>(board::kTouchPinScl), board::kTouchI2cHz);
+  // The bus the audio codecs share: started here, by the first of them to
+  // come up, and by nothing else (hardware/i2c_bus.h).
+  if (!i2c::begin(static_cast<int>(board::kTouchPinSda),
+                  static_cast<int>(board::kTouchPinScl), board::kTouchI2cHz)) {
+    return false;
+  }
 
   uint8_t id[4] = {};
   for (const uint8_t address :
@@ -107,23 +98,28 @@ bool touchReadRaw(int& x, int& y) {
     return false;
   }
   uint8_t status = 0;
-  if (!readRegs(kRegStatus, &status, 1)) {
-    return false;
-  }
-  if ((status & kStatusReady) != 0) {
-    s_report_ms = millis();
-    const uint8_t points = status & 0x0F;
-    uint8_t p[4] = {};
-    if (points > 0 && points <= 5 && readRegs(kRegPoint1, p, sizeof(p))) {
-      s_x = p[0] | (p[1] << 8);
-      s_y = p[2] | (p[3] << 8);
-      s_down = s_x < board::kTouchNativeSize && s_y < board::kTouchNativeSize;
-    } else {
-      s_down = false;  // a report of no points: the finger lifted
+  {
+    // The status, the point and the acknowledgement as one sequence.
+    i2c::Lock lock;
+    if (!readRegs(kRegStatus, &status, 1)) {
+      return false;
     }
-    writeReg(kRegStatus, 0);
-  } else if (s_down && millis() - s_report_ms > kReportStaleMs) {
-    s_down = false;
+    if ((status & kStatusReady) != 0) {
+      s_report_ms = millis();
+      const uint8_t points = status & 0x0F;
+      uint8_t p[4] = {};
+      if (points > 0 && points <= 5 && readRegs(kRegPoint1, p, sizeof(p))) {
+        s_x = p[0] | (p[1] << 8);
+        s_y = p[2] | (p[3] << 8);
+        s_down =
+            s_x < board::kTouchNativeSize && s_y < board::kTouchNativeSize;
+      } else {
+        s_down = false;  // a report of no points: the finger lifted
+      }
+      writeReg(kRegStatus, 0);
+    } else if (s_down && millis() - s_report_ms > kReportStaleMs) {
+      s_down = false;
+    }
   }
   if (!s_down) {
     return false;

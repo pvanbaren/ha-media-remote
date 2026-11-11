@@ -398,6 +398,8 @@ The CST9217 touch controller is read by hand (`touch_raw.cpp`): LovyanGFX's
 The AXP2101 power manager is read for the battery's charge
 (`hardware/battery.cpp`), its fuel gauge turned on if it is off; it is
 otherwise left alone, as are the QMI8658 IMU and audio.
+The QMI8658 IMU is left alone; the audio codec
+and microphone are used for voice, in a build with it (`-DVOICE_ASSIST`).
 
 `amoled466-s3` is the 1.75 (Rev 1.1, with an SD card slot). The 1.75C has
 the same pins but for its resets -- the display's on GPIO 1 and the touch's
@@ -531,8 +533,8 @@ wrong; the P4 4B's is 32 MB, of which the table uses the first 16.
 **Settings** are in NVS, each group in its own namespace so a reset can clear
 one and keep another: `hamedia` (Home Assistant), `ma` (Music Assistant),
 `device` (the name), `display` (rotation, keyboard), `history`, `browse`
-(the Recent list setting) and `ha_link` (the id of a token forgotten from the
-portal, for the next link to delete). A BOOT reset clears `hamedia`, `ma` and
+(the Recent list setting), `voice` (whether it listens) and `ha_link` (the
+id of a token forgotten from the portal, for the next link to delete). A BOOT reset clears `hamedia`, `ma` and
 the Wi-Fi settings and keeps the rest. The Wi-Fi credentials are the Wi-Fi
 stack's own, beside a `wifi` namespace holding the transmit power and a flag
 to open the setup portal on the next boot.

@@ -49,7 +49,27 @@ constexpr int kDetailDy = theme::listPx(7);
 
 int rowTop(int row) { return kListTop + row * kPitch - s_scroll_px; }
 
+/** Where a short list rests: on a round panel, one that fits sits in the
+ *  middle, where the rows are widest, rather than up under the title where
+ *  the circle pinches them -- a one-row answer there was cut to a sliver.
+ *  Negative, which moves the rows down; 0 for a list that does not fit, and
+ *  on a square panel, whose rows are as wide at the top. */
+int restingScrollPx() {
+  if (s_count <= 0 || theme::chordHalfWidth(kListTop) >=
+                          theme::chordHalfWidth(theme::kCenterY)) {
+    return 0;
+  }
+  const int block = s_count * kPitch - theme::kListRowGap;
+  const int centred = kListTop + block / 2 - theme::kCenterY;
+  return centred < 0 ? centred : 0;
+}
+
 int maxScrollPx() {
+  // A list that rests in the middle does not scroll.
+  const int resting = restingScrollPx();
+  if (resting < 0) {
+    return resting;
+  }
   // Far enough for the last row's centre to reach the middle of the panel,
   // as on the other lists: on a circle it would otherwise rest in the
   // pinched bottom, the hardest place to hit.
@@ -60,8 +80,9 @@ int maxScrollPx() {
 
 void clampScroll() {
   const int limit = maxScrollPx();
+  const int least = restingScrollPx();
   s_scroll_px = s_scroll_px > limit ? limit : s_scroll_px;
-  s_scroll_px = s_scroll_px < 0 ? 0 : s_scroll_px;
+  s_scroll_px = s_scroll_px < least ? least : s_scroll_px;
 }
 
 /** The row's tile: see theme::listRowHalfWidth(). */
@@ -77,6 +98,20 @@ void drawLine(lgfx::LovyanGFX& gfx, const char* str, int x, int y,
   char line[text::kMaxLineLen];
   text::ellipsize(gfx, str, width, line, sizeof(line));
   gfx.drawString(line, x, y);
+}
+
+/** The size for a row's line: `text_px`, or the headings' smaller size where
+ *  that is too wide -- a row up where a round panel narrows, as the first of
+ *  three, which is the Firmware and Fonts pages' finding: "5.1 MB from
+ *  GitHub" lost a third of itself on the 360 px circle. At the smaller size
+ *  it fits on every round panel; past that it is still ellipsized. */
+int fittedTextPx(lgfx::LovyanGFX& gfx, const char* str, int text_px,
+                 int width) {
+  if (text_px <= theme::kListHeaderTextPx) {
+    return text_px;
+  }
+  displayFontApplyHeight(gfx, text_px);
+  return gfx.textWidth(str) <= width ? text_px : theme::kListHeaderTextPx;
 }
 
 /** A pressed row is lit in the accent with dark text, unlike anything a row
@@ -104,7 +139,8 @@ void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top,
                              : theme::kTextPrimary;
   const int text_w = w - 2 * theme::kListTextInset;
   if (row.detail[0] == '\0') {
-    drawLine(gfx, row.text, theme::kCenterX, cy, theme::kListRowTextPx, color,
+    drawLine(gfx, row.text, theme::kCenterX, cy,
+             fittedTextPx(gfx, row.text, theme::kListRowTextPx, text_w), color,
              text_w);
     return;
   }
@@ -112,7 +148,8 @@ void drawRow(lgfx::LovyanGFX& gfx, const Row& row, int top,
            theme::kListHeaderTextPx,
            pressed ? theme::kBackground : theme::kTextMuted, text_w);
   drawLine(gfx, row.detail, theme::kCenterX, cy + kDetailDy,
-           theme::kListRowTextPx, color, text_w);
+           fittedTextPx(gfx, row.detail, theme::kListRowTextPx, text_w), color,
+           text_w);
 }
 
 }  // namespace
@@ -212,7 +249,8 @@ bool scrollByPx(int delta) {
 }
 
 bool atScrollLimit(int direction) {
-  return direction < 0 ? s_scroll_px <= 0 : s_scroll_px >= maxScrollPx();
+  return direction < 0 ? s_scroll_px <= restingScrollPx()
+                       : s_scroll_px >= maxScrollPx();
 }
 
 int rowAt(int x, int y) {

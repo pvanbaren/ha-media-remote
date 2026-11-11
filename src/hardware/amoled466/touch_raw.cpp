@@ -1,9 +1,9 @@
 #include "hardware/touch_raw.h"
 
 #include <Arduino.h>
-#include <Wire.h>
 
 #include "board/board.h"
+#include "hardware/i2c_bus.h"
 #include "log.h"
 
 /**
@@ -47,31 +47,24 @@ bool s_irq_logged = false;
 
 void IRAM_ATTR onTouchIrq() { s_irq = true; }
 
+/** Its registers have 16-bit addresses, high byte first. */
 bool writeReg(uint16_t reg, const uint8_t* data = nullptr, size_t len = 0) {
-  Wire.beginTransmission(board::kTouchI2cAddress);
-  Wire.write(static_cast<uint8_t>(reg >> 8));
-  Wire.write(static_cast<uint8_t>(reg & 0xFF));
-  for (size_t i = 0; i < len; ++i) {
-    Wire.write(data[i]);
+  uint8_t buf[2 + 4] = {static_cast<uint8_t>(reg >> 8),
+                        static_cast<uint8_t>(reg & 0xFF)};
+  if (len > sizeof(buf) - 2) {
+    return false;
   }
-  return Wire.endTransmission() == 0;
+  for (size_t i = 0; i < len; ++i) {
+    buf[2 + i] = data[i];
+  }
+  return i2c::write(board::kTouchI2cAddress, buf, 2 + len);
 }
 
 bool readReg(uint16_t reg, uint8_t* out, size_t len) {
-  Wire.beginTransmission(board::kTouchI2cAddress);
-  Wire.write(static_cast<uint8_t>(reg >> 8));
-  Wire.write(static_cast<uint8_t>(reg & 0xFF));
-  if (Wire.endTransmission(false) != 0) {
-    return false;
-  }
-  if (Wire.requestFrom(static_cast<int>(board::kTouchI2cAddress),
-                       static_cast<int>(len)) != static_cast<int>(len)) {
-    return false;
-  }
-  for (size_t i = 0; i < len; ++i) {
-    out[i] = static_cast<uint8_t>(Wire.read());
-  }
-  return true;
+  const uint8_t addr[2] = {static_cast<uint8_t>(reg >> 8),
+                           static_cast<uint8_t>(reg & 0xFF)};
+  return i2c::writeRead(board::kTouchI2cAddress, addr, sizeof(addr), out,
+                        len);
 }
 
 void reset() {
@@ -87,28 +80,37 @@ void reset() {
 
 bool touchRawInit() {
   pinMode(board::kTouchPinInt, INPUT_PULLUP);
-  Wire.begin(static_cast<int>(board::kTouchPinSda),
-             static_cast<int>(board::kTouchPinScl), board::kTouchI2cHz);
+  // The bus the codecs, the power manager and the rest share: started here,
+  // by the first of them to come up, and by nothing else (hardware/i2c_bus.h).
+  if (!i2c::begin(static_cast<int>(board::kTouchPinSda),
+                  static_cast<int>(board::kTouchPinScl), board::kTouchI2cHz)) {
+    return false;
+  }
   reset();
 
   // Who it is and what raster it reports against, which it only says in
   // command mode.
   uint8_t info[4] = {};
   uint16_t chip = 0;
-  if (writeReg(kRegCommandMode)) {
-    delay(10);
-    if (readReg(kRegChipType, info, sizeof(info))) {
-      chip = static_cast<uint16_t>(info[3] << 8 | info[2]);
-    }
-    if (readReg(kRegResolution, info, sizeof(info))) {
-      const int rx = info[1] << 8 | info[0];
-      const int ry = info[3] << 8 | info[2];
-      if (rx > 0 && ry > 0) {
-        s_raster_x = rx;
-        s_raster_y = ry;
+  {
+    // One sequence: nothing else on the bus between entering command mode
+    // and leaving it.
+    i2c::Lock lock;
+    if (writeReg(kRegCommandMode)) {
+      delay(10);
+      if (readReg(kRegChipType, info, sizeof(info))) {
+        chip = static_cast<uint16_t>(info[3] << 8 | info[2]);
       }
+      if (readReg(kRegResolution, info, sizeof(info))) {
+        const int rx = info[1] << 8 | info[0];
+        const int ry = info[3] << 8 | info[2];
+        if (rx > 0 && ry > 0) {
+          s_raster_x = rx;
+          s_raster_y = ry;
+        }
+      }
+      writeReg(kRegNormalMode);
     }
-    writeReg(kRegNormalMode);
   }
   if (chip == 0) {
     LOG_ERROR("Touch: no CST92xx at 0x%02X -- panel will not answer taps",
@@ -139,11 +141,15 @@ bool touchReadRaw(int& x, int& y) {
   // lift, as it always did, and the next edge starts over.
   s_down = false;
   uint8_t r[kReportBytes] = {};
-  if (!readReg(kRegReport, r, sizeof(r))) {
-    return false;
+  {
+    // The report and its acknowledgement as one sequence.
+    i2c::Lock lock;
+    if (!readReg(kRegReport, r, sizeof(r))) {
+      return false;
+    }
+    // Acknowledge, or the controller keeps this report and sends no more.
+    writeReg(kRegReport, &kAck, 1);
   }
-  // Acknowledge, or the controller keeps this report and sends no more.
-  writeReg(kRegReport, &kAck, 1);
 
   if (r[0] == 0x00 || r[0] == kAck || r[6] != kAck) {
     return false;  // no report, or half of one

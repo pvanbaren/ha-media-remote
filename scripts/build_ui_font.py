@@ -15,11 +15,11 @@ Only the glyphs LovyanGFX itself measures are allowed to set that height; see
 counts_towards_height().
 
 Charset: ASCII, the Latin-1 accented block, Latin Extended-A and Romanian's
-comma-below letters, the letters a few more Latin-script languages need, and
-a little typography and the common symbols -- enough to set the languages of
-western and central Europe, Romanian, Turkish and the Baltic ones, and
-Azerbaijani, Welsh, the Sami languages, Uzbek, Hawaiian, Navajo, Guarani,
-Yoruba, Igbo, Hausa and Akan. See CHARSET below.
+comma-below letters, and a little typography -- enough to set the languages
+of western and central Europe, Romanian, Turkish and the Baltic ones. See
+CHARSET below. Everything else -- the letters of other Latin-script
+languages, symbols, other scripts -- comes from the font pack's outline
+fonts (src/hardware/outline_fonts.cpp), once the remote has downloaded it.
 
 Usage (regenerate everything the firmware embeds):
     python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
@@ -59,11 +59,6 @@ _LATIN1_LETTERS = [c for c in range(0xC0, 0x100) if c not in (0xD7, 0xF7)]
 # the degree sign the UI already had.
 _LATIN1_PUNCT = [0xA1, 0xAA, 0xAB, 0xB0, 0xB7, 0xBA, 0xBB, 0xBF]
 
-# Symbols from the same block that turn up in track and artist names: pound,
-# yen, copyright, registered, micro (as in "µ-Ziq"), one half, and the
-# multiplication sign left out of the letters above.
-_LATIN1_SYMBOLS = [0xA3, 0xA5, 0xA9, 0xAE, 0xB5, 0xBD, 0xD7]
-
 # Latin Extended-A, U+0100..U+017F, the block entire for the same reason as
 # Latin-1's: Polish, Czech, Slovak, Hungarian, Croatian, Slovenian, Turkish,
 # Maltese, the Baltic languages, Romanian's breve and circumflex letters, and
@@ -80,53 +75,22 @@ _LATIN1_SYMBOLS = [0xA3, 0xA5, 0xA9, 0xAE, 0xB5, 0xBD, 0xD7]
 _LATIN_EXT_A = list(range(0x0100, 0x0180))
 _LATIN_EXT = [0x0218, 0x0219, 0x021A, 0x021B, 0x1E9E]
 
-# The letters that other Latin-script languages need beyond those blocks,
-# each in both cases where it has two: schwa for Azerbaijani and Tatar; the
-# w and y with grave, acute and diaeresis Welsh uses now and then; the g with
-# stroke, g and k with caron, ezh and ezh with caron of Skolt and Inari Sami;
-# the okina of Hawaiian, Samoan and Tongan, and the apostrophe Uzbek and
-# Hausa write as a letter; Navajo's o with ogonek; Guarani's nasal e and y;
-# the dotted letters of Yoruba and Igbo (the u, o and i serve Vietnamese
-# too); Hausa's hooked b, d, k and y; and the open e and open o of Akan, Ewe,
-# Ga and Lingala.
-_LATIN_MORE = [
-    0x018F, 0x0259,                                  # Ə ə
-    0x1E80, 0x1E81, 0x1E82, 0x1E83, 0x1E84, 0x1E85,  # Ẁ ẁ Ẃ ẃ Ẅ ẅ
-    0x1EF2, 0x1EF3,                                  # Ỳ ỳ
-    0x01E4, 0x01E5, 0x01E6, 0x01E7, 0x01E8, 0x01E9,  # Ǥ ǥ Ǧ ǧ Ǩ ǩ
-    0x01B7, 0x0292, 0x01EE, 0x01EF,                  # Ʒ ʒ Ǯ ǯ
-    0x02BB, 0x02BC,                                  # ʻ ʼ
-    0x01EA, 0x01EB,                                  # Ǫ ǫ
-    0x1EBC, 0x1EBD, 0x1EF8, 0x1EF9,                  # Ẽ ẽ Ỹ ỹ
-    0x1EB8, 0x1EB9, 0x1ECC, 0x1ECD, 0x1E62, 0x1E63,  # Ẹ ẹ Ọ ọ Ṣ ṣ
-    0x1ECA, 0x1ECB, 0x1EE4, 0x1EE5, 0x1E44, 0x1E45,  # Ị ị Ụ ụ Ṅ ṅ
-    0x0181, 0x0253, 0x018A, 0x0257,                  # Ɓ ɓ Ɗ ɗ
-    0x0198, 0x0199, 0x01B3, 0x01B4,                  # Ƙ ƙ Ƴ ƴ
-    0x0190, 0x025B, 0x0186, 0x0254,                  # Ɛ ɛ Ɔ ɔ
-]
-
 # General punctuation. Not language coverage as such, but track and artist
 # names arrive from Music Assistant full of curly quotes, en dashes and real
 # ellipses, and a codepoint the font does not have renders as a blank space.
 _PUNCT = [0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x201E, 0x2026]
 
-# German's low single quote, the bullet, the single guillemets of French and
-# Swiss German, and the euro sign.
-_SYMBOLS = [0x201A, 0x2022, 0x2039, 0x203A, 0x20AC]
-
 # Sorted, and that is load-bearing rather than tidy: LovyanGFX looks glyphs up
 # with std::lower_bound over the table in file order (VLWfont::getUnicodeIndex),
 # so an unsorted table silently finds the wrong glyph or none at all.
 CHARSET = sorted(set(_ASCII + _LATIN1_LETTERS + _LATIN1_PUNCT +
-                     _LATIN1_SYMBOLS + _LATIN_EXT_A + _LATIN_EXT + _LATIN_MORE +
-                     _PUNCT + _SYMBOLS))
+                     _LATIN_EXT_A + _LATIN_EXT + _PUNCT))
 
 # Glyphs that may reach above or below the line without moving it: the ones
 # above with marks over a capital or under the baseline. The firmware resets
 # each face's line height to the header's, which counts_towards_height() keeps
 # them out of.
-_OVERHANG = (set(_LATIN_EXT_A) | {0x0218, 0x0219, 0x021A, 0x021B} |
-             set(_LATIN_MORE))
+_OVERHANG = set(_LATIN_EXT_A) | {0x0218, 0x0219, 0x021A, 0x021B}
 
 # gUnicode[] is uint16_t, so nothing outside the Basic Multilingual Plane.
 assert all(0 < cp <= 0xFFFF for cp in CHARSET)

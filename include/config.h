@@ -24,6 +24,28 @@ constexpr char kPortalHostname[] = "media-remote";
  *  its name -- to be answering again when the form reloads. */
 constexpr unsigned long kPortalSavedReturnMs = 15000;
 
+// --- Firmware update ---
+/** The GitHub repository whose releases the firmware update takes: owner and
+ *  name. Each release carries every board's image as firmware-<env>.bin. */
+constexpr char kFirmwareRepo[] = "pvanbaren/ha-media-remote";
+/** How long a request to GitHub, or a pause in an image coming down, may
+ *  take before the check or the install gives up. */
+constexpr uint32_t kFirmwareTimeoutMs = 15000;
+
+// --- Fonts ---
+/** The release on kFirmwareRepo that carries the font pack the remote
+ *  downloads (services::fonts), as kFontPackAsset: a pre-release, so that it
+ *  is never the latest release the firmware update looks for. A new pack goes
+ *  up under a new tag, and the firmware that reads it names it here. */
+constexpr char kFontPackTag[] = "fonts-1";
+constexpr char kFontPackAsset[] = "fonts.bin";
+/** What the pack holds and weighs, for the remote and the portal to say
+ *  before it is downloaded. */
+constexpr char kFontPackScripts[] =
+    "Chinese, Japanese, Korean, Thai, Cyrillic, Greek, Vietnamese and "
+    "symbols";
+constexpr char kFontPackSize[] = "5.1 MB";
+
 /** Per-attempt STA connect wait (ms); retried kWifiConnectAttempts times. */
 constexpr unsigned long kWifiConnectAttemptMs = 15000;
 constexpr uint8_t kWifiConnectAttempts = 3;
@@ -309,6 +331,14 @@ constexpr bool kHaKeepAlive = true;
 constexpr size_t kHaTlsRoomBytes = 56 * 1024;
 constexpr unsigned long kHaTlsRoomWaitMs = 1000;
 
+/** Every TLS handshake (services::tls) waits first for any other to finish
+ *  -- up to kTlsQueueWaitMs, longer than a handshake should take -- and then
+ *  up to kTlsRoomWaitMs for kTlsRoomBytes of internal RAM, the room the Home
+ *  Assistant retry above wants; then it goes ahead either way. */
+constexpr size_t kTlsRoomBytes = kHaTlsRoomBytes;
+constexpr unsigned long kTlsRoomWaitMs = 3000;
+constexpr unsigned long kTlsQueueWaitMs = 15000;
+
 /** Plain mallocs at least this big go to PSRAM first, internal RAM only
  *  when PSRAM is out. The SDK's own rule keeps everything under 4 KB
  *  internal (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL) -- every String, every
@@ -519,6 +549,83 @@ constexpr size_t kCoverArtMaxBytes = 2u * 1024u * 1024u;
  *  Safe to leave on: a refusal is retried with the untouched URL, and
  *  rewriting is then dropped for the session. */
 constexpr bool kCoverArtRequestPanelSize = true;
+
+// =====================================================================
+// Voice -- Home Assistant's Assist, on a board with a microphone
+// =====================================================================
+/** Longest a request listens for. Home Assistant normally ends it sooner,
+ *  when it hears the speech stop; this is for a room too noisy for that. */
+constexpr unsigned long kVoiceMaxListenMs = 8000;
+/** One wake word heard by two remotes: Home Assistant gives it to the
+ *  request that starts first and turns the other away. So the remote that
+ *  heard it louder -- the nearer one -- starts sooner: a request from the
+ *  wake word waits kVoiceWakeHoldMsPerDb for each dB its last
+ *  kVoiceWakeLevelMs was quieter than kVoiceWakeLoudDbfs, up to
+ *  kVoiceWakeHoldMaxMs. The microphone keeps the speech meanwhile. */
+constexpr float kVoiceWakeLoudDbfs = -20.0f;
+constexpr float kVoiceWakeHoldMsPerDb = 10.0f;
+constexpr uint32_t kVoiceWakeHoldMaxMs = 400;
+constexpr uint32_t kVoiceWakeLevelMs = 1000;
+/** The remote's own end of a request, for when Home Assistant does not
+ *  hear the speech stop -- its detector wants 0.3 s of speech, and "stop"
+ *  can be shorter: once kVoiceSpeechMessages messages of audio have been
+ *  kVoiceSpeechOverFloorDb above the quietest the room has been, before
+ *  the wake word or since, kVoiceEndQuietMs without another ends it. The
+ *  beep is never taken for speech. */
+constexpr float kVoiceSpeechOverFloorDb = 10.0f;
+constexpr int kVoiceSpeechMessages = 2;
+constexpr uint32_t kVoiceEndQuietMs = 800;
+/** Samples per binary message of audio: 64 ms. In testing this kept up with
+ *  the microphone with at most one message waiting. */
+constexpr size_t kVoiceFrameSamples = 1024;
+/** Longest the reply's download waits for its headers. Home Assistant holds
+ *  them until the speech has been made, which takes Piper a fraction of a
+ *  second and Google Cloud 1.5 s for a sentence it has not said before. */
+constexpr uint16_t kVoiceReplyTimeoutMs = 15000;
+/** How long the reply's download waits for internal RAM for its TLS
+ *  session (see voice.cpp's tlsFits()) before it gives up, and the reply is
+ *  shown but not spoken. */
+constexpr unsigned long kVoiceFetchMemoryWaitMs = 1000;
+/** How loud the speaker is, 0..100. */
+constexpr int kVoiceVolume = 70;
+/** How long the words a voice request heard stay over now playing. */
+constexpr uint32_t kVoiceToastMs = 4000;
+/** How far "volume up" and "volume down", said to the remote, move the
+ *  volume device, as a share of its whole range. */
+constexpr float kVoiceVolumeStep = 0.1f;
+/** While a voice request runs, music playing in the room is turned down to
+ *  this share of its volume, about 12 dB, so the command is heard over it --
+ *  and back up once the request and its reply are over. Not paused: a pause
+ *  left the music off after every request. */
+constexpr float kVoiceDuckShare = 0.25f;
+/** The volume is put back only if it is still within this of where it was
+ *  turned down to: a request that set the volume itself keeps its level. */
+constexpr float kVoiceDuckTolerance = 0.02f;
+/** The wake word fires when the model's confidence, averaged over its last
+ *  kWakeWordWindow runs (30 ms each), reaches the model's cutoff, which its
+ *  manifest gives (wake_word.cpp's kModels): 5 for all four. */
+constexpr int kWakeWordWindow = 5;
+/** After it fires, or starts listening afresh, this long before it may fire:
+ *  the model's memory of the last few seconds settles first. */
+constexpr unsigned long kWakeWordSettleMs = 1000;
+/** A request after "Hey Jarvis" starts this far back from where it was
+ *  heard. It is heard a little after it ends -- the five runs averaged are
+ *  150 ms of sound -- and a command said in the same breath lost its first
+ *  word ("off the master bedroom lights") without it. At 200 ms the end of
+ *  the wake word came through now and then, heard as "Let's"; at 150 ms a
+ *  first word was still lost now and then. */
+constexpr unsigned long kWakeWordPreRollMs = 175;
+/** A request after any other wake word starts at the quietest
+ *  kWakeWordGapSpanMs between these two, in ms from where the word was
+ *  heard -- the earliest within kWakeWordGapSlackDb of the quietest, so a
+ *  hush inside the command's first word ("st-op") loses to the pause before
+ *  it. A fixed start, as Hey Jarvis's, let the end of "Alexa" through,
+ *  which speech to text made words of: "Turn it off. Play." */
+constexpr int16_t kWakeWordGapFromMs = -100;
+constexpr int16_t kWakeWordGapToMs = 300;
+constexpr uint32_t kWakeWordGapSpanMs = 30;
+constexpr uint32_t kWakeWordGapStepMs = 10;
+constexpr float kWakeWordGapSlackDb = 3.0f;
 
 // --- UI colours (RGB565) ---
 constexpr uint16_t kColorBlack = 0x0000;

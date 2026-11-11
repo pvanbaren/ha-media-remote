@@ -58,6 +58,9 @@ constexpr uint16_t kTextMuted = 0x8410;        // mid grey
 constexpr uint16_t kArcTrack = 0x2945;         // unfilled arc, shared
 constexpr uint16_t kVolumeFill = 0xFFFF;
 constexpr uint16_t kVolumeMutedFill = 0x8410;  // level still shown, greyed
+/** A power tap waiting on Home Assistant: darker than either the on or the
+ *  off look, so the touch shows whichever way it goes. */
+constexpr uint16_t kVolumePendingFill = 0x4A69;
 constexpr uint16_t kWarning = 0xFD20;          // amber
 
 // --- Scrim over the cover art, so text stays legible on any image ---

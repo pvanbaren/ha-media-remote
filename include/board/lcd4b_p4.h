@@ -6,8 +6,9 @@
 
 /**
  * Waveshare ESP32-P4-WIFI6-Touch-LCD-4B: a 4" square 720x720 ST7703 panel on
- * two-lane MIPI-DSI, GT911 touch, an ESP32-P4 with 32 MB of flash and 32 MB
- * of PSRAM, and an ESP32-C6 beside it for Wi-Fi. The Qualia's size of glass
+ * two-lane MIPI-DSI, GT911 touch, an ES8311 speaker codec and an ES7210
+ * microphone ADC, an ESP32-P4 with 32 MB of flash and 32 MB of PSRAM, and an
+ * ESP32-C6 beside it for Wi-Fi. The Qualia's size of glass
  * on another chip altogether -- see include/hardware/rgb_panel.h for why it
  * still shares the Qualia's output stage.
  *
@@ -108,9 +109,9 @@ constexpr uint8_t kBacklightPwmBits = 10;
 constexpr bool kBacklightActiveLow = true;
 
 // --- Touch: GT911 ----------------------------------------------------------
-// On the board's I2C bus, which also carries the audio codecs. Reset is
-// wired; the interrupt is not, so the address is whichever of the two the
-// controller answers on, and it is polled.
+// On the board's I2C bus, which also carries the audio codecs; hw::i2c owns
+// it. Reset is wired; the interrupt is not, so the address is whichever of
+// the two the controller answers on, and it is polled.
 constexpr gpio_num_t kTouchPinSda = GPIO_NUM_7;
 constexpr gpio_num_t kTouchPinScl = GPIO_NUM_8;
 constexpr gpio_num_t kTouchPinRst = GPIO_NUM_23;
@@ -154,9 +155,27 @@ constexpr unsigned long kListRedrawMinMs = 50;
 /** No stand-off while composing: the PSRAM has the bandwidth to spare. */
 constexpr int kComposeSlabRows = 0;
 
+// --- Audio: ES8311 speaker codec, ES7210 microphone ADC --------------------
+// The AMOLED 1.75's pair, at the same addresses on the touch bus, set up by
+// the same hardware/es8311_es7210.cpp. One I2S port, both directions, the P4
+// the clock for both. Pins from Waveshare's BSP for the 4B
+// (esp32_p4_wifi6_touch_lcd_4b), as HomeTiles has them. Three microphones:
+// MIC1 front left, MIC2 front right, MIC3 at the back; standard I2S carries
+// MIC1 and MIC2, and only MIC1 is used.
+#define BOARD_HAS_MIC 1
+#define BOARD_AUDIO_ES8311_ES7210 1
+
+constexpr gpio_num_t kAudioPinMclk = GPIO_NUM_13;
+constexpr gpio_num_t kAudioPinBclk = GPIO_NUM_12;
+constexpr gpio_num_t kAudioPinLrck = GPIO_NUM_10;
+constexpr gpio_num_t kAudioPinDout = GPIO_NUM_9;   // to the ES8311
+constexpr gpio_num_t kAudioPinDin = GPIO_NUM_11;   // from the ES7210
+/** The speaker amplifier's enable, high for on. */
+constexpr gpio_num_t kAudioPinSpeakerEnable = GPIO_NUM_53;
+constexpr uint8_t kAudioDacI2cAddress = 0x18;  // ES8311
+constexpr uint8_t kAudioAdcI2cAddress = 0x40;  // ES7210
+
 // --- Not used here ---------------------------------------------------------
-// ES8311 codec and ES7210 microphones on the same I2C bus (0x18, 0x40), I2S
-// on 9-13, the speaker amplifier's enable on 53; an SD slot; a CSI camera
-// connector. None of it is wired up.
+// An SD slot and a CSI camera connector.
 
 }  // namespace board

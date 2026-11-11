@@ -16,6 +16,7 @@
 #include "ui/canvas.h"
 #include "ui/peers_chip.h"
 #include "ui/text.h"
+#include "ui/toast.h"
 #include "ui/text_glow.h"
 #include "ui/theme.h"
 
@@ -300,8 +301,10 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
   const float filled_end =
       theme::kVolumeArcStartDeg + theme::kVolumeArcSweepDeg * level;
   // Grey when nothing will be heard at that level: muted, or the volume
-  // device switched off.
-  const uint16_t fill = state.muted || state.control_off
+  // device switched off. Darker grey while a power tap waits on Home
+  // Assistant.
+  const uint16_t fill = state.power_pending ? theme::kVolumePendingFill
+                        : state.muted || state.control_off
                             ? theme::kVolumeMutedFill
                             : theme::kVolumeFill;
   if (filled_end > theme::kVolumeArcStartDeg + 0.5f) {
@@ -311,6 +314,10 @@ void drawVolumeArc(lgfx::LovyanGFX& gfx, const PlayerState& state, float level) 
   }
 
   // The knob is what makes it read as draggable rather than as a readout.
+  // Not while a power tap is pending: just the grey fill, then.
+  if (state.power_pending) {
+    return;
+  }
   int knob_x = 0;
   int knob_y = 0;
   volumePoint(level, knob_x, knob_y);
@@ -578,7 +585,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   // wherever the two might meet.
   drawProgressArc(gfx, state);
   drawElapsedChip(gfx, state);
-  if (volumeAvailable(state)) {
+  if (services::ha::volumeAvailable(state)) {
     saveArcBackdrop(gfx);
     drawVolumeArc(gfx, state, state.volume);
     s_arc_drawn_level = state.volume;
@@ -592,6 +599,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
                         enabledFor(action, state));
   }
   ui::peers_chip::draw(gfx, state);
+  ui::toast::draw(gfx);
 }
 
 }  // namespace
@@ -703,21 +711,6 @@ void refreshVolume(const PlayerState& state, float level) {
   s_arc_drawn_level = level;
 }
 
-bool volumeAvailable(const PlayerState& state) {
-  if (state.volume < 0.0f) {
-    return false;
-  }
-  if (state.playback == PlaybackState::kUnavailable ||
-      state.playback == PlaybackState::kOff) {
-    return false;
-  }
-  // Tested against the *control* entity: it is the one the slider drives, and
-  // where the two differ it is entirely normal for the receiver to set
-  // VOLUME_SET while the player streaming into it does not.
-  return state.control_features == 0 ||
-         (state.control_features & services::ha::kFeatureVolumeSet) != 0;
-}
-
 float volumeLevelPerPx() {
   // Length of the arc the knob runs along, in pixels, measured down its
   // centreline -- the same radius volumePoint() places the knob at. One pixel
@@ -822,6 +815,22 @@ void showButtonPressed(Action action, bool pressed) {
     ui::canvasPresentRegion(button.cx - button.radius,
                             button.cy - button.radius, edge, edge);
   }
+}
+
+void showPowerPending(bool pending) {
+  if (s_last_drawn.power_pending == pending) {
+    return;
+  }
+  s_last_drawn.power_pending = pending;
+  if (!volumeAvailable(s_last_drawn)) {
+    return;
+  }
+  // The whole fill changes colour, not just the stretch by the knob that a
+  // drag repaints: from the start of the ring.
+  if (s_arc_drawn_level >= 0.0f) {
+    s_arc_drawn_level = 0.0f;
+  }
+  refreshVolume(s_last_drawn, s_last_drawn.volume);
 }
 
 }  // namespace ui::now_playing

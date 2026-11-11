@@ -34,6 +34,15 @@ Each board's build embeds only the fonts it uses and compiles only its own
 `src/hardware/<board>/` and `src/ui/<shape>/` (see
 [the code](code.md)).
 
+**Voice** -- the wake word, Assist requests and spoken replies -- is built
+only into an env that opts in with `-DVOICE_ASSIST` in its `build_flags`,
+on a board with a microphone (`BOARD_HAS_MIC`; anything else stops the build
+with an error). `amoled466-s3` (and `amoled466c-s3`, which extends it) and
+`lcd4b-p4` opt in. Leave the flag out and the audio, the voice requests and the
+wake word are stubs: none of their code, TensorFlow Lite Micro or the wake
+word's model is in the image. A build with voice can still have it turned
+off at run time, by the **Voice** setting.
+
 `guition4848-s3` and `lcd4b-p4` are the builds that compile ESP-IDF from source
 (`custom_sdkconfig` in `platformio.ini` says why), so its first build takes
 about five minutes more. Its link needs SCons 4.11.1 where the platform
@@ -150,6 +159,16 @@ curl -F "update=@.pio/build/round360-s3/firmware.bin" http://bedroom-remote.loca
 A device flashed before the table had a second slot answers "Partition Could
 Not be Found" and carries on unharmed; one USB flash gives it the new table.
 
+**From GitHub.** A remote can fetch a release itself: the **Firmware** row of
+its settings, or **Firmware from GitHub** in its portal (`/firmware`), asks
+GitHub for the latest release of `config::kFirmwareRepo` and, when it is newer
+than the build running, installs that release's `firmware-<env>.bin` into the
+same spare slot, checking GitHub's certificate against the root certificates
+ESP-IDF builds in. A build knows its version and env from
+`scripts/firmware_version.py`: the tag on a tag's build in CI, `git describe`
+elsewhere -- `v1.5.0-23-gc83026a` for a build 23 commits after v1.5.0, which
+counts as v1.5.0, so it is offered v1.6.0 but not v1.5.0 again.
+
 ## Fonts
 
 Text is anti-aliased VLW, one embedded face per pixel height the UI uses on
@@ -170,6 +189,13 @@ natively.
 Three lists must agree for a board: `--heights`, `board_build.embed_files` in
 its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 
+An env can embed a file compressed instead: list `data/deflated/<name>.z` for
+`data/<name>`, and `scripts/deflate_embeds.py` (a `pre:` script of that env)
+writes it before the build. At run time `hw::inflateEmbedded()` puts the
+original back in PSRAM. The P4 4B does this for its faces -- 1.10 MB as they
+are, 0.23 MB compressed -- which keeps its image well inside a 4 MB app
+slot; they are inflated at boot, in a few tens of milliseconds.
+
 | Board | Faces |
 |---|---|
 | Waveshare | 15, 17, 20, 24 |
@@ -181,33 +207,62 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 | 4848S040 | 23, 26, 30, 36, and 15, 17, 20 for the lists -- the Qualia's sizes at two thirds |
 | P4 4B | 34, 38, 45, 54, and 23, 26, 30 for the lists -- the Qualia's |
 
-The character set is 369 glyphs: ASCII, the Latin-1 letters and
+The character set is 305 glyphs: ASCII, the Latin-1 letters and
 punctuation, all of Latin Extended-A, Romanian's ș and ț, ẞ, and the dashes
 and curly quotes track titles are full of -- the languages of western and
-central Europe, Romanian, Turkish and the Baltic ones. Then the letters a few
-more Latin-script languages need: Azerbaijani's ə, Welsh's ẁ ẃ ẅ ỳ, Sami's
-ǥ ǧ ǩ ʒ ǯ, the ʻokina and ʼ, Navajo's ǫ, Guarani's ẽ ỹ, Yoruba's and Igbo's
-ẹ ọ ṣ ị ụ ṅ, Hausa's ɓ ɗ ƙ ƴ, and the ɛ and ɔ of Akan, Ewe and Lingala,
-with their capitals. And the symbols that turn up in names: € £ ¥ © ® µ ×
-½ • ‚ ‹ ›. A missing glyph renders as a space.
+central Europe, Romanian, Turkish and the Baltic ones. Other Latin-script
+languages' letters -- Azerbaijani's ə, Welsh's ẁ, Yoruba's ọ -- and symbols
+such as € £ © ½ • come from the font pack, below, as a remote's other
+scripts do; without it they render as spaces.
 
-**Korean** is not in the faces: 2,350 syllables pre-rendered at every size
-would not fit in an app slot. A character a face lacks is drawn instead from
-`data/korean.ttf`, an outline font, by `src/hardware/korean_font.cpp` with
-stb_truetype, at the face's own em size, the first time it is wanted; 128
-rendered glyphs are kept per face, in PSRAM. The font is Noto Sans KR at the
-Regular weight -- the Latin faces' family -- cut down to the 2,350 KS X 1001
-syllables and the 94 jamo, about 420 KB in every board's image. Regenerate it
-from Google Fonts' variable `NotoSansKR[wght].ttf`
-([google/fonts](https://github.com/google/fonts/tree/main/ofl/notosanskr),
-SIL Open Font License, `assets/fonts/NotoSansKR-OFL.txt`):
+**Korean, Chinese, Japanese, Thai, Cyrillic and Greek** are not in the
+faces, nor are most of Vietnamese's letters, nor symbols such as € ♪ ♥ → ✓:
+the Han
+characters alone are thousands, which pre-rendered at every size would not
+fit anywhere. A character a face lacks is drawn instead from an outline
+font, by `src/hardware/outline_fonts.cpp` with stb_truetype, at the face's
+own em size, the first time it is wanted; 128 rendered glyphs are kept per
+face, in PSRAM.
+
+The outline fonts are the **font pack**, which the remote downloads from
+GitHub into the flash partition the partition table calls `spiffs` --
+Settings > Fonts on the remote, or Download fonts in the portal
+(`src/services/fonts.cpp`) -- and reads in place (`src/hardware/font_pack.cpp`).
+It is the asset `fonts.bin` of the pre-release `config::kFontPackTag`
+(`include/config.h`), about 5.1 MB: Noto Sans KR, SC, JP, TC and Thai -- the
+Latin faces' family -- at the Regular weight, cut down to KS X 1001's Hangul,
+GB2312, JIS X 0208, the common Traditional characters those two lack, and the
+Thai block; Noto Sans itself for Cyrillic, Greek, the rest of Latin, the
+combining accents, punctuation, currency and letterlike signs; and Noto Sans
+Math, Symbols and Symbols 2 for arrows, mathematics, the miscellaneous
+symbols and dingbats. Build it from Google Fonts' fonts
+([google/fonts](https://github.com/google/fonts/tree/main/ofl), SIL Open Font
+License, `assets/fonts/*-OFL.txt`):
 
 ```bash
-python scripts/build_korean_font.py "NotoSansKR[wght].ttf" data/korean.ttf
+python scripts/build_font_pack.py --tag fonts-1 --out data/fonts.bin \
+    Kore="NotoSansKR[wght].ttf" \
+    Latn=assets/fonts/NotoSans-Regular.ttf \
+    Grek=assets/fonts/NotoSans-Regular.ttf \
+    Cyrl=assets/fonts/NotoSans-Regular.ttf \
+    Zmth=NotoSansMath-Regular.ttf Zsym="NotoSansSymbols[wght].ttf" \
+    Zdng=NotoSansSymbols2-Regular.ttf \
+    Hans="NotoSansSC[wght].ttf" Jpan="NotoSansJP[wght].ttf" \
+    Hant="NotoSansTC[wght].ttf" Thai="NotoSansThai[wdth,wght].ttf"
 ```
 
-An env without `data/korean.ttf` in its `board_build.embed_files` still
-builds, and draws Korean as blanks.
+The order is the order the remote looks in: a Han character Chinese and
+Japanese share is drawn as the Chinese font draws it, and an arrow or a star
+the Chinese font has too is drawn by the Latin-style fonts before it. A changed pack goes up
+under a new tag, as a pre-release -- never the latest release, which is what
+the firmware update takes -- with `kFontPackTag` moved to it:
+
+```bash
+gh release create fonts-2 data/fonts.bin assets/fonts/*-OFL.txt --prerelease --latest=false
+```
+
+Korean, too, comes only from the pack: a remote that has not downloaded it
+draws Hangul as blanks.
 
 Most of Latin Extended-A's capitals -- Č, Ś, Ž, Ă, Ÿ -- carry a mark above
 the cap height, and LovyanGFX sets a face's line height from its tallest

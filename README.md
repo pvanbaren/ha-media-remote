@@ -26,7 +26,10 @@ Nine boards are supported:
 | Waveshare ESP32-P4-WIFI6-Touch-LCD-4B | 4" square, 720×720 ST7703 (MIPI-DSI), GT911 touch; Wi-Fi on an ESP32-C6 | 32 MB / 32 MB | `lcd4b-p4` |
 
 A tenth target, `headless`, runs the whole remote with no display and
-narrates to the serial console.
+narrates to the serial console. Voice -- a wake word, "Hey Jarvis", "Okay
+Nabu", "Hey Mycroft" or "Alexa", and Home Assistant's Assist -- is built
+into `amoled466-s3`, `amoled466c-s3` and `lcd4b-p4`; see
+[Building](docs/building.md).
 
 What you need:
 
@@ -287,9 +290,11 @@ row a setting's name over its value:
 | Player volume at switch-on | Off, or 10% to 100% |
 | Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |
 | Recent list | Room only, or Music Assistant: whether the list's top section is the artists played in this room, or on any player |
+| Voice | Disabled, or the wake word to listen for: Hey Jarvis, Okay Nabu, Hey Mycroft or Alexa. Only in a build with voice |
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
+| Firmware | The version running. A tap asks GitHub for the latest release: install it when it is newer, with the download's progress on screen, and the remote restarts into it |
 | Restart | Restart now, or cancel |
 | More at | The portal's address, `<name>.local`; not a choice |
 
@@ -443,8 +448,9 @@ and the search work straight away.
 The rest of what needs no typing is in [the settings](#settings-on-the-device),
 behind the gear on the status page (swipe down on now playing): a separate
 **Volume & power** device -- an amplifier or receiver -- and the player's input
-on it, the player volume at switch-on, Auto-off, the Recent list, Wi-Fi
-transmit power, the search keyboard and the screen rotation.
+on it, the player volume at switch-on, Auto-off, the Recent list, Voice
+(in a build with it), Wi-Fi transmit power, the search keyboard and the
+screen rotation.
 
 The few settings that are typed are in [the portal](#the-portal):
 
@@ -520,7 +526,10 @@ it -- or at the device's IP address, which the status page shows. The last
 row of the device's settings page gives the name too. **Configure WiFi**
 holds the settings below, under the network name and password (leave those
 blank to keep the current network; `/param` shows the settings alone).
-**Update** installs firmware and **Info** shows the device's details.
+**Firmware from GitHub** shows the version running, checks for a newer
+release and installs it, as the Firmware row of the device's settings does;
+**Update** installs a firmware file you upload, and **Info** shows the
+device's details, its memory among them.
 
 **Before Wi-Fi.** With no Wi-Fi saved, or when the saved network does not
 answer at boot, the remote also raises an access point,
@@ -553,7 +562,7 @@ A few rules hold for every field:
 
 In the order the page shows them. Wi-Fi transmit power, the screen rotation,
 the search keyboard, the media player, Volume & power, the player's input,
-the player volume at switch-on, Auto-off and the Recent list are on [the device's
+the player volume at switch-on, Auto-off, the Recent list and Voice are on [the device's
 settings](#settings-on-the-device) as well. After a save the confirmation page goes
 back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
 long enough for a setting that restarts the device to have taken effect. A
@@ -654,6 +663,44 @@ screen blanks after five minutes with the player paused, idle or off;
 ([Blanking, and the amplifier](#blanking-and-the-amplifier)). The default for a
 remote that has never stored one is `config::kTurnOffControlOnBlank`.
 
+**Voice** *(only in a build with voice)* -- *Disabled*, the default, takes
+no voice requests and listens for nothing; choosing a wake word -- *Hey
+Jarvis*, *Okay Nabu*, *Hey Mycroft* or *Alexa*, microWakeWord's four, each
+with the threshold its model's manifest gives -- listens for that one and
+answers voice requests through Home Assistant's Assist. A remote never
+listens until someone has picked a wake word on it. A request that fails says
+so: "Sorry, I didn't catch that" when nothing was heard, "Sorry, Home
+Assistant couldn't answer that" when anything else went wrong -- the
+conversation agent erred, say -- and two low falling notes when Home
+Assistant could not be reached to speak either.
+
+Where two remotes hear the same wake word, one answers: Home Assistant
+gives a wake word to the first request to reach it and turns the other away,
+and the remote that heard it louder -- the nearer one -- asks sooner
+(`config::kVoiceWakeHoldMsPerDb`). A request ends when Home Assistant hears
+the speech stop, or when the remote does (`config::kVoiceEndQuietMs` quiet
+after speech well above the room's level), whichever is first -- a word as
+short as "stop" can be too short for Home Assistant's detector. The wake word lights a dark screen, as a
+tap does, so what a request does can be seen, and the words it heard show over now playing for a
+few seconds -- in the middle of a round screen, on up to two lines, and at the top of a square one (`config::kVoiceToastMs`). A few requests are this remote's own, for its player, when they name no
+player: "play", "pause", "skip" (or "next"), "previous", "volume up" and
+"volume down" (or "louder", "quieter", "turn it up"...) do what the buttons
+and the volume arc do -- play and pause whatever the player is doing, the
+volume `config::kVoiceVolumeStep` at a time -- "stop" or "turn off" switches
+the volume device off, as the power chip does (the player, where there is no
+volume device), and "play" with an artist, album,
+track or playlist -- "Hey Jarvis, play Khatia Buniatishvili" -- plays it, with the
+volume device switched on and to the player's input first, as a pick from
+the search would. The remote says "Playing Khatia Buniatishvili" at once and shows
+the words on the Starting... card, as Music Assistant can take ten seconds
+to start; an artist is matched by name, allowing for speech to text's
+spelling, and played as radio (`config::kArtistsPlayRadio`), and anything
+else is whatever Music Assistant finds by that name. A request that names
+its player -- "play Khatia Buniatishvili on the stereo" -- goes to Assist like any
+other.
+The microphone and the speaker stay set up either way, so turning it back
+on, or changing the wake word, needs no restart.
+
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the
 device connect, and reload the page. Until a player is chosen the screen
@@ -700,7 +747,7 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Music Assistant URL and token | cleared | kept |
 | Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
-| Recent list, the room's history | kept | kept |
+| Recent list, Voice, the room's history | kept | kept |
 
 Either way the device reboots into the setup access point.
 

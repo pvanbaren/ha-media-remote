@@ -210,11 +210,24 @@ struct IsolateCard {
 void showIsolate(const IsolateCard& card);
 /** A card while the device restarts, saying `why`. */
 void showRestarting(const char* why);
+/** A card while firmware `version` comes down from GitHub, `percent` of it
+ *  so far. Called again as it grows. */
+void showUpdating(const char* version, int percent);
+/** The firmware did not install, for `why`; what runs is as it was. */
+void showUpdateFailed(const char* why);
 
 /** Results for whatever services::search now holds. */
 void showSearchResults();
 /** A frame before a blocking call, so the panel does not simply stop. */
 void showSearching();
+/** The Starting... card for something asked for by voice: the words heard. */
+void showVoiceStarting(const char* words);
+/** A line over now playing for `ms` -- the words a voice request heard. It
+ *  is in now playing's next compose, which the caller asks for; and
+ *  toastExpired() is true once, when it has had its time, for the caller to
+ *  compose now playing again without it. */
+void showToast(const char* text, uint32_t ms);
+bool toastExpired();
 void showLoadingList();
 /** The boot card, naming whatever is being waited on. */
 void showLoading(const char* what);

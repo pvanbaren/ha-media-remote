@@ -4,6 +4,10 @@
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 
+#include <type_traits>
+
+#include "services/tls_gate.h"
+
 namespace services {
 
 /**
@@ -52,6 +56,40 @@ class Yielding : public Base {
       delay(1);
     }
     return n;
+  }
+
+  // A TLS client's connect takes services::tls's gate for its handshake:
+  // one at a time, each with room in internal RAM. Only the outermost call,
+  // as the overloads call one another.
+  using Base::connect;  // the others, with certificates, unchanged
+  int connect(IPAddress ip, uint16_t port) override {
+    return gated([&] { return Base::connect(ip, port); });
+  }
+  int connect(const char* host, uint16_t port) override {
+    return gated([&] { return Base::connect(host, port); });
+  }
+  int connect(IPAddress ip, uint16_t port, int32_t timeout) override {
+    return gated([&] { return Base::connect(ip, port, timeout); });
+  }
+  int connect(const char* host, uint16_t port, int32_t timeout) override {
+    return gated([&] { return Base::connect(host, port, timeout); });
+  }
+
+ private:
+  static constexpr bool kTls = std::is_base_of_v<NetworkClientSecure, Base>;
+  bool in_call_ = false;
+
+  template <typename F>
+  int gated(F&& call) {
+    if (!kTls || in_call_) {
+      return call();
+    }
+    in_call_ = true;
+    tls::begin();
+    const int r = call();
+    tls::end();
+    in_call_ = false;
+    return r;
   }
 };
 

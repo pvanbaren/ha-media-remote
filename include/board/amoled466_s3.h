@@ -9,8 +9,9 @@
  *
  * The board is a Waveshare ESP32-S3-Touch-AMOLED-1.75 (Rev 1.1, with an SD
  * card slot): ESP32-S3R8, 16 MB flash, 8 MB octal PSRAM, a CST9217 touch
- * controller, and on the same board an AXP2101 power manager, a QMI8658 IMU
- * and ES8311/ES7210 audio that this firmware does not use.
+ * controller, an ES8311 speaker codec and an ES7210 microphone ADC, and on
+ * the same board an AXP2101 power manager and a QMI8658 IMU that this
+ * firmware does not use.
  *
  * The 1.75C builds from this header too, as env amoled466c-s3, which sets
  * BOARD_AMOLED466_175C. Its pins are the 1.75's but for its resets: the
@@ -133,8 +134,9 @@ constexpr uint8_t kDisplayBrightness = 200;
 // --- Touch: CST9217 capacitive controller (I2C) ----------------------------
 // Read by hand in hardware/amoled466/touch_raw.cpp: LovyanGFX's nearest
 // driver, Touch_CST226, speaks the same protocol but accepts only the
-// CST226's chip id. The bus is shared with the AXP2101 and the QMI8658,
-// neither of which this firmware talks to.
+// CST226's chip id. The bus is shared with the audio codecs, and with the
+// AXP2101 and the QMI8658, which this firmware does not talk to; hw::i2c
+// owns it.
 constexpr gpio_num_t kTouchPinSda = GPIO_NUM_15;
 constexpr gpio_num_t kTouchPinScl = GPIO_NUM_14;
 constexpr gpio_num_t kTouchPinInt = GPIO_NUM_11;
@@ -186,10 +188,34 @@ constexpr unsigned long kListRedrawMinMs = 24;
 /** Written over a bus, not scanned out of PSRAM: nothing to stand off. */
 constexpr int kComposeSlabRows = 0;
 
+// --- Audio: ES8311 speaker codec, ES7210 microphone ADC --------------------
+// One I2S port, both directions: the S3 sends the speaker on DOUT and reads
+// the microphones on DIN, and is the clock for both codecs. They are set up
+// over the touch bus, in hardware/es8311_es7210.cpp; pins and setup are
+// Waveshare's BSP for the 1.75. Two microphones face the front, on the
+// ES7210's MIC1 and MIC2; only MIC1 is used. Its MIC3 is the speaker looped
+// back, for echo cancelling, which nothing here does.
+#define BOARD_HAS_MIC 1
+#define BOARD_AUDIO_ES8311_ES7210 1
+
+/** The 1.75C's is GPIO 16, as Waveshare's pin_config.h for it has it. */
+#ifdef BOARD_AMOLED466_175C
+constexpr gpio_num_t kAudioPinMclk = GPIO_NUM_16;
+#else
+constexpr gpio_num_t kAudioPinMclk = GPIO_NUM_42;
+#endif
+constexpr gpio_num_t kAudioPinBclk = GPIO_NUM_9;
+constexpr gpio_num_t kAudioPinLrck = GPIO_NUM_45;
+constexpr gpio_num_t kAudioPinDout = GPIO_NUM_8;   // to the ES8311
+constexpr gpio_num_t kAudioPinDin = GPIO_NUM_10;   // from the ES7210
+/** The speaker amplifier's enable, high for on. */
+constexpr gpio_num_t kAudioPinSpeakerEnable = GPIO_NUM_46;
+constexpr uint8_t kAudioDacI2cAddress = 0x18;  // ES8311
+constexpr uint8_t kAudioAdcI2cAddress = 0x40;  // ES7210
+
 // --- Not used here ---------------------------------------------------------
-// I2S audio on 8/9/10/45 with its MCLK on 42 (16 on the 1.75C) and the
-// amplifier enable on 46, the QMI8658 on the touch bus, and on
-// the 1.75 the SD card, on GPIO 1 and 2 among others. Listed so that nobody
+// The QMI8658 on the touch bus, and on the 1.75 the SD card,
+// on GPIO 1 and 2 among others. Listed so that nobody
 // reaches for one of those pins thinking it is spare.
 
 }  // namespace board

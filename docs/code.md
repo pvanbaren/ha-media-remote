@@ -68,6 +68,7 @@ src/services/
                            Home Assistant settings in NVS
   ha_stream.cpp            the WebSocket state stream, and calls over it
   websocket.cpp            an RFC 6455 client over a Yielding socket
+  tls_gate.cpp             one TLS handshake at a time, with room for it
   ha_internal.h            what ha_client and ha_stream share
   player_list.cpp          cached media_player list, for the portal and the
                            device's lists
@@ -79,6 +80,13 @@ src/services/
   ma_api.cpp               Music Assistant's own API, and its settings
   display_settings.cpp     rotation and keyboard layout
   device_name.cpp          hostname and mDNS
+  voice.cpp                Assist requests and spoken replies, the Voice
+                           setting (builds with -DVOICE_ASSIST)
+  wake_word.cpp            the wake word chosen, of microWakeWord's four,
+                           on TensorFlow Lite Micro
+  firmware_update.cpp      the latest release on GitHub, and installing it;
+                           the portal's /firmware page
+  fonts.cpp                the font pack from GitHub; the portal's /fonts
 src/ui/round/, src/ui/square/
   theme.cpp                chordHalfWidth(): the panel's shape
   now_playing.cpp          the main screen: volume arc or bar, transport
@@ -103,10 +111,16 @@ src/hardware/
   encoder.cpp              the knob, on a board with one
   battery.cpp              the battery, on a board with an AXP2101
   display_font.cpp         picks the embedded face for a height
-  korean_font.cpp          Korean behind each face, from an outline font
+  audio.cpp                microphone and speaker streams, for voice
+  es8311_es7210.cpp        the codec and microphone ADC
+  i2c_bus.cpp              the shared I2C bus
+  outline_fonts.cpp        other scripts and symbols behind each face
+  font_pack.cpp            the font pack, in its flash partition
   <board>/display.cpp      panel bring-up, backlight, sleep, rotation
   <board>/touch_raw.cpp    reads the touch controller
   <board>/font_table.cpp   the faces this board embeds
+  inflate.cpp              an embedded file compressed at build time, back
+                           in PSRAM
   <board>/boot_button.cpp  the reset button (the Qualia's is on its expander)
   rgb/framebuffer.cpp      the framebuffer: copy, scroll and flush
   rgb/rgb_panel.cpp        the S3's RGB peripheral, opened for it
@@ -117,11 +131,12 @@ src/hardware/
   lcd4b/panel.cpp          the P4 4B's DSI bus, LDOs and ST7703 init
 scripts/
   build_ui_font.py         the VLW font generator
-  build_korean_font.py     the Korean outline font, data/korean.ttf
+  build_font_pack.py       the font pack the remote downloads
+  deflate_embeds.py        compresses what an env embeds as data/deflated/
   board_header_stamp.py    rebuilds everything when the board header changes
   merge_firmware.py        pio run -t merge
   pin_components.py        holds a source build's IDF components
-include/third_party/stb_truetype.h  draws the Korean outlines (public domain)
+include/third_party/stb_truetype.h  draws the outline fonts (public domain)
 partitions/media_remote.csv  the flash layout, shared by every board
 .github/workflows/build.yml  CI: builds every board on each push
 .github/workflows/pages.yml  the install page, on each published release
@@ -141,6 +156,7 @@ site/                        the install page and its board manifests
 | Network task (`haPollTask`) | Owns the state stream, or polls without it; history, list loads, picture lookups |
 | Artwork worker (`thumbs`, core 0) | The now-playing cover first, then list thumbnails |
 | Recommendations (`recommend`, stack in PSRAM) | Builds the recommendation pool from Music Assistant's API |
+| Voice (`voice`, `wake`, `audio_in`, `audio_out`; builds with `-DVOICE_ASSIST`) | The wake word, Assist requests, the microphone and the speaker |
 | Touch sampler (Qualia, 2.8C, MaTouch, 4848S040, P4 4B) | Reads the touch controller into a queue of timestamped changes |
 
 They share three kinds of thing, each with its own discipline:
