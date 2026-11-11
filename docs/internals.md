@@ -405,7 +405,7 @@ the same pins but for its resets -- the display's on GPIO 1 and the touch's
 on GPIO 2, which on the 1.75 are SD card lines, against 39 and 40 there --
 and is built as `amoled466c-s3`, which sets `BOARD_AMOLED466_175C` for
 `board/amoled466_s3.h` to pick those. It has 32 MB of flash; the build uses
-the first 16. It has not been tried on a 1.75C.
+the first 16.
 
 ## The Qualia
 

@@ -21,7 +21,7 @@ Libraries are fetched by PlatformIO: LovyanGFX and WiFiManager.
 pio run -e waveshare-s3      # 1.28" round (the default env)
 pio run -e round360-s3       # 1.85" round 360x360
 pio run -e amoled466-s3      # 1.75" round 466x466 AMOLED
-pio run -e amoled466c-s3     # the same on a 1.75C (untried)
+pio run -e amoled466c-s3     # the same on a 1.75C
 pio run -e qualia-720        # 4" square 720x720
 pio run -e lcd28c-s3         # 2.8" round 480x480
 pio run -e matouch21-s3      # 2.1" round 480x480

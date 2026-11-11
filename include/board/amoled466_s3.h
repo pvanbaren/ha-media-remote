@@ -17,8 +17,7 @@
  * BOARD_AMOLED466_175C. Its pins are the 1.75's but for its resets: the
  * display's on GPIO 1 and the touch's on GPIO 2, where the 1.75 has its SD
  * card, against 39 and 40 on the 1.75. It has 32 MB of flash, of which the
- * build uses the first 16, and no SD card slot. It has not been tried on the
- * glass.
+ * build uses the first 16, and no SD card slot.
  *
  * Named for the panel, as the DFR1221's round360 is, rather than for a vendor
  * that makes several round boards.
