@@ -214,8 +214,8 @@ constexpr uint8_t kAudioDacI2cAddress = 0x18;  // ES8311
 constexpr uint8_t kAudioAdcI2cAddress = 0x40;  // ES7210
 
 // --- Not used here ---------------------------------------------------------
-// The QMI8658 on the touch bus, and on the 1.75 the SD card,
-// on GPIO 1 and 2 among others. Listed so that nobody
-// reaches for one of those pins thinking it is spare.
+// The QMI8658 on the touch bus, and on the 1.75 the SD card, on GPIO 1 and 2
+// among others. Listed so that nobody reaches for one of those pins
+// thinking it is spare.
 
 }  // namespace board
