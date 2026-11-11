@@ -4,15 +4,16 @@
 
 #if defined(BOARD_HAS_AXP2101)
 
-#include <Arduino.h>
-#include <Wire.h>
-
+#include "hardware/i2c_bus.h"
 #include "log.h"
 
 /**
- * The AXP2101, read over the touch controller's I2C bus with the same Wire,
- * which touchRawInit() starts. Registers as XPowersLib (MIT) reads them, the
- * library Waveshare's examples drive this board's power manager with.
+ * The AXP2101, on the bus the touch controller, the codecs and the rest
+ * share, which touchRawInit() starts: every exchange through hardware/
+ * i2c_bus.h, its one owner, so a reading cannot land in the middle of a
+ * codec's locked sequence and gets the bus's retry. Registers as
+ * XPowersLib (MIT) reads them, the library Waveshare's examples drive this
+ * board's power manager with.
  */
 namespace hw {
 namespace {
@@ -30,20 +31,8 @@ bool s_ready = false;
 
 /** One register, or -1 when the power manager does not answer. */
 int readReg(uint8_t reg) {
-  Wire.beginTransmission(board::kPmuI2cAddress);
-  Wire.write(reg);
-  if (Wire.endTransmission(false) != 0 ||
-      Wire.requestFrom(static_cast<int>(board::kPmuI2cAddress), 1) != 1) {
-    return -1;
-  }
-  return Wire.read();
-}
-
-bool writeReg(uint8_t reg, uint8_t value) {
-  Wire.beginTransmission(board::kPmuI2cAddress);
-  Wire.write(reg);
-  Wire.write(value);
-  return Wire.endTransmission() == 0;
+  uint8_t value = 0;
+  return i2c::readReg8(board::kPmuI2cAddress, reg, value) ? value : -1;
 }
 
 }  // namespace
@@ -52,13 +41,19 @@ bool batteryInit() {
   if (s_ready) {
     return true;
   }
+  if (!i2c::ready()) {
+    LOG_WARN("Battery: the I2C bus is not started");
+    return false;
+  }
   const int gauge = readReg(kRegGaugeCtrl);
   if (gauge < 0) {
     LOG_WARN("Battery: no AXP2101 at 0x%02X", board::kPmuI2cAddress);
     return false;
   }
+  // The gauge's bit alone, read and written back under one lock.
   if ((gauge & kGaugeOn) == 0 &&
-      !writeReg(kRegGaugeCtrl, static_cast<uint8_t>(gauge | kGaugeOn))) {
+      !i2c::updateReg8(board::kPmuI2cAddress, kRegGaugeCtrl, kGaugeOn,
+                       kGaugeOn)) {
     LOG_WARN("Battery: could not turn the fuel gauge on");
   }
   s_ready = true;
@@ -75,6 +70,8 @@ int batteryPercent() {
   if (!s_ready) {
     return -1;
   }
+  // Present and the charge, read together.
+  i2c::Lock lock;
   const int status = readReg(kRegStatus1);
   if (status < 0 || (status & 0x08) == 0) {
     return -1;
