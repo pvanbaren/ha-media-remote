@@ -243,6 +243,8 @@ input on that device is chosen, the input takes the player's line. Then come
 the address, the time since the remote started, the Wi-Fi network and its
 channel, the signal the remote hears (**Rx**) and the power it transmits with
 (**Tx**).
+On a board with a battery -- the AMOLED 1.75 and 1.75C -- its charge comes
+after the address, with *charging* while it charges.
 
 The page refreshes every second. The **gear** at the top right, across the
 title row from the back button, opens

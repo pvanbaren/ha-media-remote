@@ -109,6 +109,7 @@ src/ui/common/
 src/hardware/
   touch_gestures.cpp       press tracking, tap / swipe, the touch queue
   encoder.cpp              the knob, on a board with one
+  battery.cpp              the battery, on a board with an AXP2101
   display_font.cpp         picks the embedded face for a height
   audio.cpp                microphone and speaker streams, for voice
   es8311_es7210.cpp        the codec and microphone ADC
