@@ -700,6 +700,12 @@ spelling, and played as radio (`config::kArtistsPlayRadio`), and anything
 else is whatever Music Assistant finds by that name. A request that names
 its player -- "play Khatia Buniatishvili on the stereo" -- goes to Assist like any
 other.
+"Turn on the lights", "turn off the lights", "turn on the fan" and "turn
+off the fan" (or "lights on", "switch the fan off"...) are the remote's
+own too: they switch every light, or every fan, in the room the volume
+device is in -- its area in Home Assistant, or the player's where there is
+no volume device -- with one call, and the remote says what it did
+("Kitchen lights on."), or that the room has none or no area.
 The microphone and the speaker stay set up either way, so turning it back
 on, or changing the wake word, needs no restart.
 

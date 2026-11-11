@@ -377,6 +377,20 @@ bool callService(const char* service, const char* entity_id);
  *  is playing. */
 bool seek(const char* entity_id, float position_s);
 
+/** What switchArea() did. */
+enum class AreaSwitch : uint8_t {
+  kDone,       // the call went through
+  kNoArea,     // the entity is in no area
+  kNoneThere,  // the area has none of the domain's entities
+  kFailed,     // Home Assistant could not be asked, or refused
+};
+
+/** `domain`'s entities -- "light" or "fan" -- turned on or off in the
+ *  area `entity_id` is in, its own or its device's: one call, with the
+ *  area as its target. `area` gets the area's name, "Kitchen". */
+AreaSwitch switchArea(const char* domain, bool on, const char* entity_id,
+                      char* area, size_t area_len);
+
 /** media_player.select_source for one entity. */
 bool selectSource(const char* entity_id, const char* source);
 

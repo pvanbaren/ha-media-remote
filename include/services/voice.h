@@ -77,7 +77,8 @@ bool enabled();
 bool saveSetting(int value);
 
 /** What a voice request can ask of this remote's own player, with no
- *  player named, instead of asking Assist. */
+ *  player named, or of its room's lights and fans, instead of asking
+ *  Assist. */
 enum class Command : uint8_t {
   kPlay,        // "play Khatia Buniatishvili": the something comes with it
   kResume,      // "play", "resume", "continue"
@@ -87,6 +88,10 @@ enum class Command : uint8_t {
   kVolumeUp,    // "volume up", "louder", "turn it up"
   kVolumeDown,  // "volume down", "quieter", "turn it down"
   kTurnOff,     // "stop", "turn off": the volume device off
+  kLightsOn,    // "turn on the lights": the room's lights
+  kLightsOff,   // "turn off the lights"
+  kFanOn,       // "turn on the fan": the room's fans
+  kFanOff,      // "turn off the fan"
 };
 
 /** What carries out a Command: called on the stream's owner with it, and

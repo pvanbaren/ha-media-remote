@@ -105,6 +105,10 @@ std::atomic<int> g_voice_volume_steps{0};
 /** "Stop" or "turn off" asked by voice and not yet done: from the stream's
  *  owner to the poll task (turnOffForVoice()). */
 std::atomic<bool> g_voice_turn_off{false};
+/** "Turn on the lights" and the like by voice, as the Command plus one
+ *  (0, none): from the stream's owner to the poll task
+ *  (switchForVoice()). */
+std::atomic<uint8_t> g_voice_switch{0};
 
 unsigned long g_last_elapsed_ms = 0;
 /** When the browse list or search screen was last opened, for
@@ -1876,6 +1880,53 @@ void turnOffForVoice() {
   g_state_dirty = true;
 }
 
+/** "Turn on the lights", "turn off the fan" and the like by voice: the
+ *  lights or the fans of the area the volume device is in -- the
+ *  player's, where there is none -- with one call to Home Assistant,
+ *  and said: "Kitchen lights on.", or why not. Poll task. */
+void switchForVoice() {
+  using services::voice::Command;
+  using services::ha::AreaSwitch;
+  const uint8_t code = g_voice_switch.exchange(0);
+  if (code == 0) {
+    return;
+  }
+  const auto command = static_cast<Command>(code - 1);
+  const bool on = command == Command::kLightsOn || command == Command::kFanOn;
+  const bool lights =
+      command == Command::kLightsOn || command == Command::kLightsOff;
+  const char* what = lights ? "lights" : "fan";
+  char control[config::kEntityIdMaxLen];
+  services::ha::copyControlEntity(control, sizeof(control));
+  char area[48];
+  const AreaSwitch result = services::ha::switchArea(
+      lights ? "light" : "fan", on, control, area, sizeof(area));
+  char text[96];
+  switch (result) {
+    case AreaSwitch::kDone:
+      snprintf(text, sizeof(text), "%s %s %s.", area, what, on ? "on" : "off");
+      break;
+    case AreaSwitch::kNoArea:
+      snprintf(text, sizeof(text), "Sorry, I don't know which room this is.");
+      break;
+    case AreaSwitch::kNoneThere:
+      snprintf(text, sizeof(text),
+               lights ? "There are no lights in the %s."
+                      : "There's no fan in the %s.",
+               area);
+      break;
+    case AreaSwitch::kFailed:
+      snprintf(text, sizeof(text),
+               "Sorry, Home Assistant couldn't turn the %s %s.", what,
+               on ? "on" : "off");
+      break;
+  }
+  LOG_INFO("VOICE: %s", text);
+  if (!services::voice::say(text)) {
+    LOG_INFO("VOICE: cannot speak now");
+  }
+}
+
 /** "Volume up" and "volume down" by voice, kVoiceVolumeStep each, on the
  *  volume device. While the music is down for the request, the level it
  *  comes back up to is what moves, or bringing it back would undo them.
@@ -2032,6 +2083,19 @@ std::atomic<bool> g_voice_command_waiting{false};
 
 bool takeVoiceCommand(services::voice::Command command, const char* query) {
   using services::voice::Command;
+  if (command == Command::kLightsOn || command == Command::kLightsOff ||
+      command == Command::kFanOn || command == Command::kFanOff) {
+    // The room is the volume device's area -- or the player's, where
+    // there is no volume device: with neither, Assist's.
+    char control[config::kEntityIdMaxLen];
+    services::ha::copyControlEntity(control, sizeof(control));
+    if (control[0] == '\0') {
+      return false;
+    }
+    g_voice_switch = static_cast<uint8_t>(command) + 1;
+    g_poll_now = true;
+    return true;
+  }
   char player[config::kEntityIdMaxLen];
   services::ha::copySelectedEntity(player, sizeof(player));
   if (player[0] == '\0') {
@@ -2101,6 +2165,10 @@ bool takeVoiceCommand(services::voice::Command command, const char* query) {
     case Command::kVolumeUp:
     case Command::kVolumeDown:
     case Command::kTurnOff:
+    case Command::kLightsOn:
+    case Command::kLightsOff:
+    case Command::kFanOn:
+    case Command::kFanOff:
       break;  // the poll task's
   }
 }
@@ -3381,6 +3449,7 @@ void haPollTask(void*) {
       }
       stepVolumeForVoice();
       turnOffForVoice();
+      switchForVoice();
       restoreAfterVoice();
 
       // Load the browse list ahead of anyone asking for it, so a swipe up

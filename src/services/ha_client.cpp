@@ -1829,6 +1829,48 @@ bool callService(const char* service, const char* entity_id) {
   return ok;
 }
 
+AreaSwitch switchArea(const char* domain, bool on, const char* entity_id,
+                      char* area, size_t area_len) {
+  area[0] = '\0';
+  if (!validEntityId(entity_id)) {
+    return AreaSwitch::kNoArea;
+  }
+  // The area's id, its name, and how many of the domain's entities it
+  // has -- area_entities() counts those of its devices too -- in one
+  // render: "kitchen|Kitchen|3", or nothing for an entity in no area.
+  char tmpl[config::kEntityIdMaxLen + 192];
+  snprintf(tmpl, sizeof(tmpl),
+           "{%% set a = area_id('%s') %%}{%% if a %%}{{ a }}|"
+           "{{ area_name(a) }}|{{ area_entities(a) | "
+           "select('match', '%s[.]') | list | count }}{%% endif %%}",
+           entity_id, domain);
+  String out;
+  if (!renderTemplate(tmpl, out)) {
+    LOG_WARN("HA: area of %s -> %s", entity_id, s_last_error);
+    return AreaSwitch::kFailed;
+  }
+  out.trim();
+  const int bar1 = out.indexOf('|');
+  const int bar2 = bar1 < 0 ? -1 : out.indexOf('|', bar1 + 1);
+  if (bar2 < 0) {
+    LOG_INFO("HA: %s is in no area", entity_id);
+    return AreaSwitch::kNoArea;
+  }
+  const String area_id = out.substring(0, bar1);
+  snprintf(area, area_len, "%s", out.substring(bar1 + 1, bar2).c_str());
+  if (out.substring(bar2 + 1).toInt() <= 0) {
+    LOG_INFO("HA: no %s in %s", domain, area);
+    return AreaSwitch::kNoneThere;
+  }
+  String body("{\"area_id\":");
+  appendJsonString(body, area_id.c_str());
+  body += '}';
+  const bool ok = serviceCall(domain, on ? "turn_on" : "turn_off", body);
+  LOG_INFO("HA: %s.%s in %s -> %s", domain, on ? "turn_on" : "turn_off",
+           area_id.c_str(), ok ? "ok" : s_last_error);
+  return ok ? AreaSwitch::kDone : AreaSwitch::kFailed;
+}
+
 bool selectSource(const char* entity_id, const char* source) {
   if (!validEntityId(entity_id) || source == nullptr || source[0] == '\0') {
     setError("bad source");

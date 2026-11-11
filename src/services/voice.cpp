@@ -435,6 +435,62 @@ const Saying kSayings[] = {
     {"turn off music", Command::kTurnOff},
     {"switch off", Command::kTurnOff},
     {"switch it off", Command::kTurnOff},
+    {"turn on the lights", Command::kLightsOn},
+    {"turn the lights on", Command::kLightsOn},
+    {"turn on lights", Command::kLightsOn},
+    {"switch on the lights", Command::kLightsOn},
+    {"switch the lights on", Command::kLightsOn},
+    {"switch on lights", Command::kLightsOn},
+    {"lights on", Command::kLightsOn},
+    {"turn off the lights", Command::kLightsOff},
+    {"turn the lights off", Command::kLightsOff},
+    {"turn off lights", Command::kLightsOff},
+    {"switch off the lights", Command::kLightsOff},
+    {"switch the lights off", Command::kLightsOff},
+    {"switch off lights", Command::kLightsOff},
+    {"lights off", Command::kLightsOff},
+    {"turn on the light", Command::kLightsOn},
+    {"turn the light on", Command::kLightsOn},
+    {"turn on light", Command::kLightsOn},
+    {"switch on the light", Command::kLightsOn},
+    {"switch the light on", Command::kLightsOn},
+    {"switch on light", Command::kLightsOn},
+    {"light on", Command::kLightsOn},
+    {"turn off the light", Command::kLightsOff},
+    {"turn the light off", Command::kLightsOff},
+    {"turn off light", Command::kLightsOff},
+    {"switch off the light", Command::kLightsOff},
+    {"switch the light off", Command::kLightsOff},
+    {"switch off light", Command::kLightsOff},
+    {"light off", Command::kLightsOff},
+    {"turn on the fan", Command::kFanOn},
+    {"turn the fan on", Command::kFanOn},
+    {"turn on fan", Command::kFanOn},
+    {"switch on the fan", Command::kFanOn},
+    {"switch the fan on", Command::kFanOn},
+    {"switch on fan", Command::kFanOn},
+    {"fan on", Command::kFanOn},
+    {"turn off the fan", Command::kFanOff},
+    {"turn the fan off", Command::kFanOff},
+    {"turn off fan", Command::kFanOff},
+    {"switch off the fan", Command::kFanOff},
+    {"switch the fan off", Command::kFanOff},
+    {"switch off fan", Command::kFanOff},
+    {"fan off", Command::kFanOff},
+    {"turn on the fans", Command::kFanOn},
+    {"turn the fans on", Command::kFanOn},
+    {"turn on fans", Command::kFanOn},
+    {"switch on the fans", Command::kFanOn},
+    {"switch the fans on", Command::kFanOn},
+    {"switch on fans", Command::kFanOn},
+    {"fans on", Command::kFanOn},
+    {"turn off the fans", Command::kFanOff},
+    {"turn the fans off", Command::kFanOff},
+    {"turn off fans", Command::kFanOff},
+    {"switch off the fans", Command::kFanOff},
+    {"switch the fans off", Command::kFanOff},
+    {"switch off fans", Command::kFanOff},
+    {"fans off", Command::kFanOff},
 };
 
 /** What the words heard ask of this remote's player, if anything: one of
@@ -529,6 +585,14 @@ const char* commandName(Command command) {
       return "Volume down";
     case Command::kTurnOff:
       return "Turn off";
+    case Command::kLightsOn:
+      return "Lights on";
+    case Command::kLightsOff:
+      return "Lights off";
+    case Command::kFanOn:
+      return "Fan on";
+    case Command::kFanOff:
+      return "Fan off";
   }
   return "";
 }

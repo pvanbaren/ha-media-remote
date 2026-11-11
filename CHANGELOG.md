@@ -15,6 +15,7 @@ GitHub release from that version's section, with
 ### Added
 
 - **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
+- **"Turn on the lights", "turn off the fan":** said to a remote, they switch the lights or the fans in its room -- the Home Assistant area its volume device is in -- with one call, and the remote says what it did: "Kitchen lights on." A room with no lights, or no fan, is said so, as is a volume device in no area.
 
 ### Changed
 
