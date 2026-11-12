@@ -293,6 +293,7 @@ row a setting's name over its value:
 | Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |
 | Recent list | Room only, or Music Assistant: whether the list's top section is the artists played in this room, or on any player |
 | Voice | Disabled, or the wake word to listen for: Hey Jarvis, Okay Nabu, Hey Mycroft or Alexa. Only in a build with voice |
+| Room | The volume device's area, or one of Home Assistant's areas: where lights and fans by voice switch. Only in a build with voice |
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
@@ -702,12 +703,20 @@ its player -- "play Khatia Buniatishvili on the stereo" -- goes to Assist like a
 other.
 "Turn on the lights", "turn off the lights", "turn on the fan" and "turn
 off the fan" (or "lights on", "switch the fan off"...) are the remote's
-own too: they switch every light, or every fan, in the room the volume
-device is in -- its area in Home Assistant, or the player's where there is
-no volume device -- with one call, and the remote says what it did
-("Kitchen lights on."), or that the room has none or no area.
+own too: they switch every light, or every fan, in the remote's room --
+the **Room** setting's area, or by default the area the volume device is
+in, or the player where there is no volume device -- with one call, and
+the remote says what it did ("Kitchen lights on."), or that the room has
+none or no area.
 The microphone and the speaker stay set up either way, so turning it back
 on, or changing the wake word, needs no restart.
+
+**Room** *(only in a build with voice)* -- the Home Assistant area whose
+lights and fans a voice request switches. *The volume device's area*, the
+default, is right where the volume device -- or the player, with no
+separate volume device -- is in the remote's own room. Choose an area
+where it is not: a player shared between rooms, or a receiver in another
+room feeding this one. An area since deleted falls back to the default.
 
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the
@@ -751,7 +760,7 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Setting | BOOT held | Erase WiFi config |
 |---|---|---|
 | Wi-Fi network | cleared | cleared |
-| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Auto-off, Music Assistant entry id | cleared | kept |
+| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Auto-off, Room, Music Assistant entry id | cleared | kept |
 | Music Assistant URL and token | cleared | kept |
 | Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |

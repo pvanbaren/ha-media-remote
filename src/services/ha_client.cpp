@@ -31,6 +31,9 @@ constexpr char kPrefsSelectedKey[] = "sel";
 constexpr char kPrefsMaEntryKey[] = "maid";
 constexpr char kPrefsControlKey[] = "ctl";
 constexpr char kPrefsControlInputKey[] = "ctlin";
+/** The Room setting: an area id, and the area's name as it was chosen. */
+constexpr char kPrefsRoomKey[] = "room";
+constexpr char kPrefsRoomNameKey[] = "roomnm";
 /** The player's volume at switch-on in percent: -1 off, 0..100 on. Absent
  *  until the
  *  portal first saves one, which is what lets the build's default stand. */
@@ -272,6 +275,8 @@ char s_control[config::kEntityIdMaxLen] = {};
  *  means "the input named after the player, if there is one". Under
  *  s_entity_lock like the two entities. */
 char s_control_input[config::kSourceNameMaxLen] = {};
+char s_room[config::kAreaIdMaxLen] = {};
+char s_room_name[config::kFriendlyNameMaxLen] = {};
 /** Guards s_selected and s_control: the portal writes them on the Arduino
  *  loop while the network task reads them. Held only for a copy of a few
  *  dozen bytes. */
@@ -979,6 +984,22 @@ void disambiguateNames(PlayerEntry* entries, size_t count) {
 
 /** entity_id comes back from HA, but it gets interpolated into a Jinja string
  *  literal -- hold it to the characters HA itself allows. */
+/** An area id as Home Assistant makes them -- lower-case letters, digits
+ *  and underscores -- that fits: safe in a Jinja string literal. */
+bool validAreaId(const char* id) {
+  const size_t n = strlen(id);
+  if (n == 0 || n >= config::kAreaIdMaxLen) {
+    return false;
+  }
+  for (const char* c = id; *c != '\0'; ++c) {
+    if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') ||
+          *c == '_')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool validEntityId(const char* entity_id) {
   if (entity_id == nullptr || entity_id[0] == '\0') {
     return false;
@@ -1372,6 +1393,8 @@ void init() {
   prefs.getString(kPrefsControlKey, s_control, sizeof(s_control));
   prefs.getString(kPrefsControlInputKey, s_control_input,
                   sizeof(s_control_input));
+  prefs.getString(kPrefsRoomKey, s_room, sizeof(s_room));
+  prefs.getString(kPrefsRoomNameKey, s_room_name, sizeof(s_room_name));
   const int32_t wake = prefs.getInt(kPrefsWakeVolumeKey, kWakeVolumeUnset);
   s_auto_off = prefs.getBool(kPrefsAutoOffKey, config::kTurnOffControlOnBlank);
   prefs.end();
@@ -1829,31 +1852,43 @@ bool callService(const char* service, const char* entity_id) {
   return ok;
 }
 
-AreaSwitch switchArea(const char* domain, bool on, const char* entity_id,
-                      char* area, size_t area_len) {
+AreaSwitch switchArea(const char* domain, bool on, const char* room,
+                      const char* entity_id, char* area,
+                      size_t area_len) {
   area[0] = '\0';
-  if (!validEntityId(entity_id)) {
+  // Both go into Jinja string literals: what is not an id is nothing.
+  if (room == nullptr || !validAreaId(room)) {
+    room = "";
+  }
+  if (entity_id == nullptr || !validEntityId(entity_id)) {
+    entity_id = "";
+  }
+  if (room[0] == '\0' && entity_id[0] == '\0') {
     return AreaSwitch::kNoArea;
   }
-  // The area's id, its name, and how many of the domain's entities it
-  // has -- area_entities() counts those of its devices too -- in one
-  // render: "kitchen|Kitchen|3", or nothing for an entity in no area.
-  char tmpl[config::kEntityIdMaxLen + 192];
+  // The area -- the room chosen, while it is still one, or the entity's
+  // -- its name, and how many of the domain's entities it has --
+  // area_entities() counts those of its devices too -- in one render:
+  // "kitchen|Kitchen|3", or nothing for no area.
+  char tmpl[config::kAreaIdMaxLen * 2 + config::kEntityIdMaxLen + 256];
   snprintf(tmpl, sizeof(tmpl),
-           "{%% set a = area_id('%s') %%}{%% if a %%}{{ a }}|"
+           "{%% set r = '%s' %%}"
+           "{%% set a = r if r and r in areas() else area_id('%s') %%}"
+           "{%% if a %%}{{ a }}|"
            "{{ area_name(a) }}|{{ area_entities(a) | "
            "select('match', '%s[.]') | list | count }}{%% endif %%}",
-           entity_id, domain);
+           room, entity_id, domain);
   String out;
   if (!renderTemplate(tmpl, out)) {
-    LOG_WARN("HA: area of %s -> %s", entity_id, s_last_error);
+    LOG_WARN("HA: area of %s -> %s", room[0] != '\0' ? room : entity_id,
+             s_last_error);
     return AreaSwitch::kFailed;
   }
   out.trim();
   const int bar1 = out.indexOf('|');
   const int bar2 = bar1 < 0 ? -1 : out.indexOf('|', bar1 + 1);
   if (bar2 < 0) {
-    LOG_INFO("HA: %s is in no area", entity_id);
+    LOG_INFO("HA: no room chosen, and %s is in no area", entity_id);
     return AreaSwitch::kNoArea;
   }
   const String area_id = out.substring(0, bar1);
@@ -1975,6 +2010,68 @@ void selectControlInput(const char* input) {
   LOG_INFO("HA: player's input on the volume device: %s",
                 s_control_input[0] != '\0' ? s_control_input
                                             : "the one named after it");
+}
+
+const char* storedRoom() { return s_room; }
+
+const char* storedRoomName() { return s_room_name; }
+
+void copyRoom(char* out, size_t out_len) {
+  taskENTER_CRITICAL(&s_entity_lock);
+  copyBounded(out, out_len, s_room);
+  taskEXIT_CRITICAL(&s_entity_lock);
+}
+
+void selectRoom(const char* area_id, const char* name) {
+  if (area_id == nullptr || !validAreaId(area_id)) {
+    area_id = "";  // the volume device's area
+  }
+  taskENTER_CRITICAL(&s_entity_lock);
+  copyBounded(s_room, sizeof(s_room), area_id);
+  copyBounded(s_room_name, sizeof(s_room_name),
+              area_id[0] != '\0' && name != nullptr ? name : "");
+  taskEXIT_CRITICAL(&s_entity_lock);
+
+  Preferences prefs;
+  if (!prefs.begin(kPrefsNamespace, false)) {
+    return;
+  }
+  prefs.putString(kPrefsRoomKey, s_room);
+  prefs.putString(kPrefsRoomNameKey, s_room_name);
+  prefs.end();
+  LOG_INFO("HA: room: %s", s_room[0] != '\0' ? s_room_name
+                                              : "the volume device's area");
+}
+
+int fetchAreas(AreaEntry* out, int capacity) {
+  // By name: areas() gives ids in the order they were made.
+  String body;
+  if (!renderTemplate(
+          "{% set ns = namespace(l=[]) %}{% for a in areas() %}"
+          "{% set ns.l = ns.l + [[area_name(a), a]] %}{% endfor %}"
+          "{% for n in ns.l|sort %}{{n[1]}}\037{{n[0]}}\036{% endfor %}",
+          body)) {
+    LOG_WARN("HA: areas -> %s", s_last_error);
+    return -1;
+  }
+  int count = 0;
+  int pos = 0;
+  const int len = static_cast<int>(body.length());
+  while (pos < len && count < capacity) {
+    const String id = nextField(body, pos);
+    if (id.length() == 0) {
+      break;
+    }
+    const String name = nextField(body, pos);
+    if (!validAreaId(id.c_str())) {
+      continue;  // too long to keep, or not an id
+    }
+    copyField(out[count].id, sizeof(out[count].id), id);
+    copyField(out[count].name, sizeof(out[count].name),
+              name.length() > 0 ? name : id);
+    ++count;
+  }
+  return count;
 }
 
 float playerWakeVolume() {

@@ -784,6 +784,86 @@ void buildInputSelect() {
   refreshWakeVolumeField();
 }
 
+/** Room: the Home Assistant area whose lights and fans a voice request
+ *  switches, in a build with voice. A dropdown of the areas, built with the
+ *  player lists since it needs Home Assistant too; the hidden input holds
+ *  the area id, and the name is looked up in the list it was built from.
+ *  Registered the first time it is built, so it sits under the inputs. */
+constexpr size_t kRoomAttrsBytes =
+    256 + config::kMaxAreas *
+              (config::kAreaIdMaxLen + config::kFriendlyNameMaxLen + 32);
+char* s_room_attrs = nullptr;  // PSRAM
+WiFiManagerParameter* s_param_room = nullptr;
+services::ha::AreaEntry* s_areas = nullptr;  // PSRAM
+int s_area_count = 0;
+
+void buildRoomSelect() {
+  if (!services::voice::built()) {
+    return;
+  }
+  if (s_room_attrs == nullptr) {
+    s_room_attrs = static_cast<char*>(heap_caps_calloc(
+        1, kRoomAttrsBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (s_areas == nullptr) {
+    s_areas = static_cast<services::ha::AreaEntry*>(heap_caps_calloc(
+        config::kMaxAreas, sizeof(services::ha::AreaEntry),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (s_room_attrs == nullptr || s_areas == nullptr) {
+    return;  // no dropdown; the volume device's area still applies
+  }
+  const int n = services::ha::fetchAreas(s_areas, config::kMaxAreas);
+  s_area_count = n > 0 ? n : 0;
+  const char* stored = services::ha::storedRoom();
+  String html;
+  html.reserve(kRoomAttrsBytes);
+  html += " type=\"hidden\"><select id=\"room_sel\" "
+          "onchange='document.getElementById(\"room\").value=this.value'>";
+  html += "<option value=\"\"";
+  html += stored[0] == '\0' ? " selected>" : ">";
+  html += "The volume device's area</option>";
+  bool stored_listed = stored[0] == '\0';
+  for (int i = 0; i < s_area_count; ++i) {
+    // Room for this option and the closing tags, or stop: the buffer the
+    // parameter points at never grows.
+    if (html.length() + config::kAreaIdMaxLen + config::kFriendlyNameMaxLen +
+            96 > kRoomAttrsBytes) {
+      break;
+    }
+    const bool selected = strcmp(s_areas[i].id, stored) == 0;
+    stored_listed = stored_listed || selected;
+    html += "<option value=\"";
+    html += s_areas[i].id;
+    html += selected ? "\" selected>" : "\">";
+    appendHtmlEscaped(html, s_areas[i].name);
+    html += "</option>";
+  }
+  if (!stored_listed) {
+    // Chosen before, and Home Assistant does not list it now: kept, and
+    // said so. A voice request falls back to the volume device's area.
+    html += "<option value=\"";
+    html += stored;
+    html += "\" selected>";
+    appendHtmlEscaped(html, services::ha::storedRoomName());
+    html += " (not listed now)</option>";
+  }
+  if (n < 0) {
+    html += "<option value=\"\" disabled>could not load the areas</option>";
+  }
+  html += "</select";
+  snprintf(s_room_attrs, kRoomAttrsBytes, "%s", html.c_str());
+  if (s_param_room != nullptr) {
+    s_param_room->setValue(stored,
+                           static_cast<int>(config::kAreaIdMaxLen) - 1);
+    return;
+  }
+  s_param_room = new WiFiManagerParameter(
+      "room", "Room: the area whose lights and fans a voice request switches",
+      stored, static_cast<int>(config::kAreaIdMaxLen) - 1, s_room_attrs);
+  s_wm.addParameter(s_param_room);
+}
+
 void buildPlayerSelects() {
   buildEntitySelect(s_player_select, services::ha::selectedEntity());
   // The *stored* value, not the resolved one: an empty string means "follow
@@ -793,6 +873,7 @@ void buildPlayerSelects() {
   if (s_control_select.param != nullptr) {
     buildInputSelect();
   }
+  buildRoomSelect();
 }
 
 void refreshPortalParamDefaults() {
@@ -1116,6 +1197,22 @@ void onPortalParamsSaved() {
     services::voice::saveSetting(voice[0] - '0');  // refuses a word not here
   }
   buildVoiceSelect();  // the choice just saved, marked
+
+  // Room: an area from the list the dropdown was built from, whose name
+  // goes with it, or none for the volume device's area.
+  if (s_param_room != nullptr && submitted("room")) {
+    const char* room = s_param_room->getValue();
+    if (room != nullptr && strcmp(room, services::ha::storedRoom()) != 0) {
+      const char* name = "";
+      for (int i = 0; i < s_area_count; ++i) {
+        if (strcmp(s_areas[i].id, room) == 0) {
+          name = s_areas[i].name;
+        }
+      }
+      services::ha::selectRoom(room, name);
+      buildRoomSelect();  // the choice just saved, marked
+    }
+  }
 
   const char* txpow = submitted("txpow") ? s_param_txpow.getValue() : nullptr;
   if (txpow != nullptr && txpow[0] != '\0') {

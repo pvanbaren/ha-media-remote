@@ -117,6 +117,10 @@ constexpr unsigned long kHistoryPictureLookupMs = 5000;
 constexpr size_t kSourceNameMaxLen = 64;
 /** Inputs offered in the portal's dropdown. A Yamaha receiver lists 27. */
 constexpr int kMaxSources = 40;
+/** Home Assistant's areas, as the Room setting lists them, and the longest
+ *  area id kept: an area's id is a slug of its name. */
+constexpr int kMaxAreas = 48;
+constexpr size_t kAreaIdMaxLen = 48;
 constexpr size_t kFriendlyNameMaxLen = 40;
 
 /** Music Assistant config entry id, entered in the portal. `get_library` is

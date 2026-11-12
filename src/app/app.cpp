@@ -1896,11 +1896,13 @@ void switchForVoice() {
   const bool lights =
       command == Command::kLightsOn || command == Command::kLightsOff;
   const char* what = lights ? "lights" : "fan";
+  char room[config::kAreaIdMaxLen];
+  services::ha::copyRoom(room, sizeof(room));
   char control[config::kEntityIdMaxLen];
   services::ha::copyControlEntity(control, sizeof(control));
   char area[48];
   const AreaSwitch result = services::ha::switchArea(
-      lights ? "light" : "fan", on, control, area, sizeof(area));
+      lights ? "light" : "fan", on, room, control, area, sizeof(area));
   char text[96];
   switch (result) {
     case AreaSwitch::kDone:
@@ -2254,6 +2256,7 @@ enum class Setting : uint8_t {
   kAutoOff,
   kRecentHere,
   kVoice,  // only in a build with voice
+  kRoom,   // only in a build with voice
   kTxPower,
   kKeyboard,
   kRotation,
@@ -2263,7 +2266,7 @@ enum class Setting : uint8_t {
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 15;
+constexpr int kMaxSettingRows = 16;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -2287,6 +2290,11 @@ int g_choice_count = 0;
  *  first use and kept. */
 char (*g_sources)[config::kSourceNameMaxLen] = nullptr;
 int g_source_count = 0;
+
+/** Home Assistant's areas, for the Room setting's list of choices: PSRAM,
+ *  claimed on first use and kept. */
+services::ha::AreaEntry* g_areas = nullptr;
+int g_area_count = 0;
 
 const char* const kRotationNames[4] = {"Upright", "+90 (clockwise)", "180",
                                        "-90 (counter-clockwise)"};
@@ -2404,6 +2412,10 @@ void showSettingsPage(int focus) {
                       : services::wake_word::phraseOf(
                             static_cast<services::wake_word::Word>(
                                 voice_setting - 1)));
+    addSettingRow(Setting::kRoom, "Room",
+                  services::ha::storedRoom()[0] != '\0'
+                      ? services::ha::storedRoomName()
+                      : "The volume device's");
   }
   formatTxPower(value, sizeof(value), wifiTxPower());
   addSettingRow(Setting::kTxPower, "Wi-Fi transmit power", value);
@@ -2459,6 +2471,22 @@ int loadSources() {
                                                  g_sources, config::kMaxSources)
                     : -1;
   g_source_count = n > 0 ? n : 0;
+  return n;
+}
+
+/** Fetch Home Assistant's areas into g_areas, behind a loading card: the
+ *  count, or -1 when they could not be had. */
+int loadAreas() {
+  ui::showLoading("rooms");
+  if (g_areas == nullptr) {
+    g_areas = static_cast<services::ha::AreaEntry*>(heap_caps_calloc(
+        config::kMaxAreas, sizeof(services::ha::AreaEntry),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  const int n = g_areas != nullptr
+                    ? services::ha::fetchAreas(g_areas, config::kMaxAreas)
+                    : -1;
+  g_area_count = n > 0 ? n : 0;
   return n;
 }
 
@@ -2728,6 +2756,22 @@ void openSettingChoices(Setting setting, int row) {
       break;
     }
 
+    case Setting::kRoom: {
+      const int n = loadAreas();
+      const char* current = services::ha::storedRoom();
+      ui::settingsBegin("Room", n < 0 ? "Could not load rooms" : "");
+      ui::settingsAdd("The volume device's", "its area in Home Assistant",
+                      current[0] == '\0' ? ui::SettingStyle::kCurrent
+                                         : ui::SettingStyle::kNormal);
+      for (int i = 0; i < g_area_count; ++i) {
+        ui::settingsAdd(g_areas[i].name, "",
+                        strcmp(g_areas[i].id, current) == 0
+                            ? ui::SettingStyle::kCurrent
+                            : ui::SettingStyle::kNormal);
+      }
+      break;
+    }
+
     case Setting::kTxPower: {
       ui::settingsBegin("Transmit power", "");
       const WifiTxPowerStep* steps = nullptr;
@@ -2839,6 +2883,18 @@ bool applySettingChoice(int row) {
       const char* chosen = row == 0 ? "" : g_sources[row - 1];
       if (strcmp(chosen, services::ha::storedControlInput()) != 0) {
         services::ha::selectControlInput(chosen);
+        changed = true;
+      }
+      break;
+    }
+    case Setting::kRoom: {
+      // Row 0 is the volume device's area; the areas follow it.
+      if (row < 0 || row > g_area_count) {
+        return false;
+      }
+      const char* id = row == 0 ? "" : g_areas[row - 1].id;
+      if (strcmp(id, services::ha::storedRoom()) != 0) {
+        services::ha::selectRoom(id, row == 0 ? "" : g_areas[row - 1].name);
         changed = true;
       }
       break;

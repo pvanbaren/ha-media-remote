@@ -223,6 +223,15 @@ void selectControlEntity(const char* entity_id);
  *  empty means the input named after the player, where there is one. */
 const char* storedControlInput();
 void selectControlInput(const char* input);
+/** The Room setting: the Home Assistant area this remote is in, whose
+ *  lights and fans a voice request switches (switchArea()). Empty, the
+ *  default, for the area of the volume device, or of the player where
+ *  there is none. storedRoomName() is the area's name as it was when
+ *  chosen; copyRoom() is for another task than the loop. */
+const char* storedRoom();
+const char* storedRoomName();
+void copyRoom(char* out, size_t out_len);
+void selectRoom(const char* area_id, const char* name);
 /** The player's own volume, 0..1, set when the remote switches a separate
  *  volume and power entity on; negative when that is off. What the portal
  *  stored, or config::kPlayerWakeVolume until it has stored one. The portal
@@ -377,19 +386,32 @@ bool callService(const char* service, const char* entity_id);
  *  is playing. */
 bool seek(const char* entity_id, float position_s);
 
+/** One of Home Assistant's areas, for the Room setting. */
+struct AreaEntry {
+  char id[config::kAreaIdMaxLen] = {};
+  char name[config::kFriendlyNameMaxLen] = {};
+};
+
+/** Home Assistant's areas, sorted by name: the count, or -1 when they
+ *  could not be had. */
+int fetchAreas(AreaEntry* out, int capacity);
+
 /** What switchArea() did. */
 enum class AreaSwitch : uint8_t {
   kDone,       // the call went through
-  kNoArea,     // the entity is in no area
+  kNoArea,     // no room chosen, and the entity is in no area
   kNoneThere,  // the area has none of the domain's entities
   kFailed,     // Home Assistant could not be asked, or refused
 };
 
-/** `domain`'s entities -- "light" or "fan" -- turned on or off in the
- *  area `entity_id` is in, its own or its device's: one call, with the
- *  area as its target. `area` gets the area's name, "Kitchen". */
-AreaSwitch switchArea(const char* domain, bool on, const char* entity_id,
-                      char* area, size_t area_len);
+/** `domain`'s entities -- "light" or "fan" -- turned on or off in area
+ *  `room` (the Room setting), or where that is empty or no longer an
+ *  area, in the area `entity_id` is in, its own or its device's: one
+ *  call, with the area as its target. `area` gets the area's name,
+ *  "Kitchen". */
+AreaSwitch switchArea(const char* domain, bool on, const char* room,
+                      const char* entity_id, char* area,
+                      size_t area_len);
 
 /** media_player.select_source for one entity. */
 bool selectSource(const char* entity_id, const char* source);
