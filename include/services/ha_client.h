@@ -12,6 +12,12 @@ struct PlayerEntry {
   char entity_id[config::kEntityIdMaxLen] = {};
   char name[config::kFriendlyNameMaxLen] = {};
   bool available = false;
+  /** Which lists offer it (see fetchPlayers()): 'p' the media player, 'c'
+   *  Volume & power, 'b' both. */
+  char role = 0;
+  /** It has inputs to switch between (kFeatureSelectSource): Volume &
+   *  power lists those first. */
+  bool inputs = false;
 };
 
 /** One Music Assistant library item, as shown in the swipe-up list. */
@@ -237,10 +243,26 @@ void saveAutoOffControl(bool on);
 int fetchSources(const char* entity_id,
                  char (*out)[config::kSourceNameMaxLen], int capacity);
 
-/** Fetch every media_player entity, sorted by friendly name.
+/** Fetch the media_player entities, sorted by friendly name, each tagged
+ *  with the lists that offer it (PlayerEntry::role) and whether it has
+ *  inputs (PlayerEntry::inputs). The media player offers every one. Volume
+ *  & power offers those whose volume can be set -- kVolumeDeviceFeatures,
+ *  or no features reported at all -- and `control` itself whatever it
+ *  supports, so a device chosen before stays on offer.
  *  Writes at most config::kMaxPlayers entries; returns the count, or -1 on a
  *  transport/auth failure (leaving `out` untouched). */
-int fetchPlayers(PlayerEntry* out, size_t capacity);
+int fetchPlayers(PlayerEntry* out, size_t capacity, const char* control);
+
+/** What makes a media_player a volume device for Volume & power: a volume
+ *  the remote can set. One that reports no features at all is offered
+ *  too, as the remote takes such a device to be able to (volumeAvailable()).
+ *  Inputs are not asked for -- an amplifier with one input is still the
+ *  room's volume and power, and the remote leaves its input alone -- but
+ *  the devices with them, a zone amplifier's zone, a receiver, a TV, a
+ *  soundbar, are listed first. Power is left out: an amplifier driven by
+ *  IR may switch only one way, or not at all, and the power controls go by
+ *  the device's own features anyway. */
+constexpr uint32_t kVolumeDeviceFeatures = kFeatureVolumeSet;
 
 /** Fetch the selected player's now-playing snapshot. False on failure. */
 bool fetchState(const char* entity_id, PlayerState& out);

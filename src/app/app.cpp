@@ -1227,13 +1227,14 @@ void showNeedsPlayer() {
   // Refused rather than unreachable, and nothing listed from before: no list
   // will come until the remote is linked again, which the card offers.
   if (!fetched && services::ha::tokenRejected() &&
-      services::players::entryCount() == 0) {
+      services::players::entryCount(services::players::Role::kPlayer) == 0) {
     ui::showHaTokenRejected();
     showMessageScreen();
     return;
   }
   g_screen = Screen::kPlayers;
-  ui::showPlayers(fetched || services::players::entryCount() > 0
+  ui::showPlayers(fetched || services::players::entryCount(
+                                 services::players::Role::kPlayer) > 0
                       ? ""
                       : "Could not load players");
   g_list_opened_ms = millis();
@@ -2222,12 +2223,17 @@ int g_source_count = 0;
 const char* const kRotationNames[4] = {"Upright", "+90 (clockwise)", "180",
                                        "-90 (counter-clockwise)"};
 
-/** `entity`'s name in the cached player list, or "" when it is not there. */
+/** `entity`'s name in the cached player lists, or "" when neither has it. */
 const char* listedName(const char* entity) {
-  for (int i = 0; i < services::players::entryCount(); ++i) {
-    const services::ha::PlayerEntry* entry = services::players::entryAt(i);
-    if (entry != nullptr && strcmp(entry->entity_id, entity) == 0) {
-      return entry->name;
+  constexpr services::players::Role kRoles[] = {
+      services::players::Role::kPlayer, services::players::Role::kControl};
+  for (const auto role : kRoles) {
+    for (int i = 0; i < services::players::entryCount(role); ++i) {
+      const services::ha::PlayerEntry* entry =
+          services::players::entryAt(role, i);
+      if (entry != nullptr && strcmp(entry->entity_id, entity) == 0) {
+        return entry->name;
+      }
     }
   }
   return "";
@@ -2568,8 +2574,11 @@ void openSettingChoices(Setting setting, int row) {
                         current[0] == '\0' ? ui::SettingStyle::kCurrent
                                            : ui::SettingStyle::kNormal);
       }
-      for (int i = 0; i < services::players::entryCount(); ++i) {
-        const services::ha::PlayerEntry* entry = services::players::entryAt(i);
+      const auto role = control ? services::players::Role::kControl
+                                : services::players::Role::kPlayer;
+      for (int i = 0; i < services::players::entryCount(role); ++i) {
+        const services::ha::PlayerEntry* entry =
+            services::players::entryAt(role, i);
         if (entry == nullptr) {
           continue;
         }
@@ -2720,7 +2729,8 @@ bool applySettingChoice(int row) {
   bool changed = false;
   switch (g_setting_open) {
     case Setting::kPlayer: {
-      const services::ha::PlayerEntry* entry = services::players::entryAt(row);
+      const services::ha::PlayerEntry* entry =
+          services::players::entryAt(services::players::Role::kPlayer, row);
       if (entry == nullptr) {
         return false;
       }
@@ -2737,7 +2747,9 @@ bool applySettingChoice(int row) {
     case Setting::kControl: {
       // Row 0 is the player itself; the players follow it.
       const services::ha::PlayerEntry* entry =
-          row > 0 ? services::players::entryAt(row - 1) : nullptr;
+          row > 0 ? services::players::entryAt(
+                        services::players::Role::kControl, row - 1)
+                  : nullptr;
       if (row > 0 && entry == nullptr) {
         return false;
       }

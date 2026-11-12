@@ -58,11 +58,26 @@ constexpr char kRecordSep = '\036';
 // which means a trimming tag silently eats any separator next to it. That is
 // not a theory: {%- endfor -%} ate every record separator here, and the fields
 // then shifted by one per record.
+// Every media_player, each tagged with the lists that offer it: the media
+// player list every one ('p'), and Volume & power as well ('b') the volume
+// devices -- every feature in `vf`, or no features reported at all, which
+// the remote takes as able to -- and the device already chosen, which stays
+// on offer whatever it supports. The last field is whether it has inputs
+// (`sf`), which lists it first in Volume & power. The %u are
+// kVolumeDeviceFeatures and kFeatureSelectSource, the %s the chosen
+// device's entity id, or nothing.
 constexpr char kPlayersTemplate[] =
-    "{% for s in states.media_player | sort(attribute='name') %}"
+    "{%% set vf=%u %%}"
+    "{%% set sf=%u %%}"
+    "{%% set c='%s' %%}"
+    "{%% for s in states.media_player | sort(attribute='name') %%}"
+    "{%% set f=s.attributes.supported_features|int(0) %%}"
+    "{%% set v=f==0 or f|bitwise_and(vf)==vf or s.entity_id==c %%}"
     "{{s.entity_id}}\037{{s.name}}\037"
-    "{{0 if s.state in ['unavailable','unknown'] else 1}}\036"
-    "{% endfor %}";
+    "{{0 if s.state in ['unavailable','unknown'] else 1}}\037"
+    "{{'b' if v else 'p'}}\037"
+    "{{1 if f|bitwise_and(sf) else 0}}\036"
+    "{%% endfor %%}";
 
 // %% escapes are for snprintf. The %s are the player entity, the control
 // entity -- the same string unless one was chosen separately -- and the
@@ -1544,9 +1559,24 @@ void selectEntity(const char* entity_id) {
   }
 }
 
-int fetchPlayers(PlayerEntry* out, size_t capacity) {
+int fetchPlayers(PlayerEntry* out, size_t capacity, const char* control) {
+  // Interpolated into a Jinja string literal: an id that is not one is
+  // taken as no device at all.
+  if (control == nullptr || !validEntityId(control)) {
+    control = "";
+  }
+  const size_t tmpl_len = sizeof(kPlayersTemplate) + 20 + strlen(control);
+  char* tmpl = static_cast<char*>(malloc(tmpl_len));
+  if (tmpl == nullptr) {
+    return -1;
+  }
+  snprintf(tmpl, tmpl_len, kPlayersTemplate,
+           static_cast<unsigned>(kVolumeDeviceFeatures),
+           static_cast<unsigned>(kFeatureSelectSource), control);
   String body;
-  if (!renderTemplate(kPlayersTemplate, body)) {
+  const bool rendered = renderTemplate(tmpl, body);
+  free(tmpl);
+  if (!rendered) {
     return -1;
   }
 
@@ -1560,8 +1590,12 @@ int fetchPlayers(PlayerEntry* out, size_t capacity) {
     }
     const String name = nextField(body, pos);
     const String available = nextField(body, pos);
+    const String role = nextField(body, pos);
+    const String inputs = nextField(body, pos);
 
     PlayerEntry& entry = out[count];
+    entry.role = role.length() > 0 ? role[0] : 0;
+    entry.inputs = inputs.toInt() != 0;
     copyField(entry.entity_id, sizeof(entry.entity_id), entity_id);
     if (name.length() > 0) {
       copyField(entry.name, sizeof(entry.name), name);

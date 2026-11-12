@@ -287,7 +287,7 @@ row a setting's name over its value:
 |---|---|
 | Wi-Fi network | [The network list](#choosing-wi-fi-on-the-device); backing out of it comes back here |
 | Media player | Home Assistant's media players, unavailable ones greyed |
-| Volume & power | The media player itself, or another of them |
+| Volume & power | The media player itself, or a device whose volume the remote can set: a zone amplifier's zone, a receiver, a TV or a soundbar -- the devices with inputs, listed first -- or an amplifier with one. One chosen before stays on offer |
 | Player's input | The volume device's inputs, or the one named after the player |
 | Player volume at switch-on | Off, or 10% to 100% |
 | Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |

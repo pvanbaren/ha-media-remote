@@ -132,6 +132,8 @@ struct EntitySelect {
    *  first entity as if it were chosen, and saving the page unchanged stores
    *  nothing, since the hidden value only follows a change. */
   const char* unset_option = nullptr;
+  /** Which of the player list's entries it offers. */
+  services::players::Role role = services::players::Role::kPlayer;
   String attrs;
   size_t capacity = 0;
   /** Constructed on first build, once `attrs` has its final buffer. */
@@ -144,7 +146,8 @@ EntitySelect s_player_select{"ha_player", "Media player", nullptr,
  *  serve: something streaming into an amplifier, where the amplifier owns the
  *  knob and the power. Defaults to following the player. */
 EntitySelect s_control_select{"ha_control", "Volume &amp; power",
-                              "Same as the media player"};
+                              "Same as the media player", nullptr,
+                              services::players::Role::kControl};
 
 WiFiManagerParameter s_param_ha_url("ha_url", "Home Assistant URL", "",
                                     kUrlParamLen, kUrlInputAttrs);
@@ -514,7 +517,7 @@ void appendHtmlEscaped(String& out, const char* text) {
  *  also means the stored value survives if the dropdown never fires. */
 void buildEntitySelect(EntitySelect& sel, const char* selected) {
   const bool have_list = services::players::ensureEntries();
-  const int count = services::players::entryCount();
+  const int count = services::players::entryCount(sel.role);
 
   // Nothing to offer yet -- no Wi-Fi or no HA settings at first boot. Leave
   // the parameter uncreated so the buffer is sized against a real list when
@@ -575,7 +578,8 @@ void buildEntitySelect(EntitySelect& sel, const char* selected) {
 
   bool selected_listed = selected[0] == '\0';
   for (int i = 0; i < count; ++i) {
-    const services::ha::PlayerEntry* entry = services::players::entryAt(i);
+    const services::ha::PlayerEntry* entry =
+        services::players::entryAt(sel.role, i);
     if (entry == nullptr) {
       continue;
     }

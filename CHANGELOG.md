@@ -16,6 +16,10 @@ GitHub release from that version's section, with
 
 - **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
 
+### Changed
+
+- **Volume & power offers the devices whose volume can be set,** on the device and in the portal, rather than every media player: the devices with inputs -- a zone amplifier's zone, a receiver, a TV, a soundbar -- first, then the rest that have a volume, such as an amplifier with one input. A device that reports no features at all is offered, as the remote takes it to have a volume, and one chosen before stays on offer whatever it supports.
+
 ### Fixed
 
 - **A player that plays with no title says "Playing",** not "Nothing playing": Music Assistant can lose its place in a queue -- after a restart, say -- and play on with no track to report, and the screen said nothing was playing over the music.
