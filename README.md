@@ -137,7 +137,9 @@ Details worth knowing:
 - **Between tracks the title area goes blank, not "Nothing playing".** A
   track change often passes through a second or so with no title. The screen
   only says "Nothing playing", "Idle", "Paused" and so on once there has been
-  no title for three seconds (`kUntitledLabelDelayMs`).
+  no title for three seconds (`kUntitledLabelDelayMs`); a player that plays on
+  with no title at all -- Music Assistant after losing its place in a queue --
+  says "Playing".
 - **An app that does not say what it is playing is titled with its name.**
   A Roku reports the show only on its TV tuner; in Apple TV, Netflix and the
   rest Home Assistant has the app's name and nothing more, so the title reads

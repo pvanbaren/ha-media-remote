@@ -79,6 +79,11 @@ bool isPlaying(const PlayerState& state) {
 /** Live state text for a player that has nothing to show. */
 const char* idleLabel(const PlayerState& state) {
   switch (state.playback) {
+    // Playing, with nothing to say what: Music Assistant, for one, plays
+    // on after losing its place in a queue, and "Nothing playing" over
+    // music that goes on is wrong.
+    case PlaybackState::kPlaying:
+      return "Playing";
     case PlaybackState::kPaused:
       return "Paused";
     case PlaybackState::kIdle:

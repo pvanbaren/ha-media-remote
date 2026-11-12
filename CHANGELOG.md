@@ -16,6 +16,10 @@ GitHub release from that version's section, with
 
 - **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
 
+### Fixed
+
+- **A player that plays with no title says "Playing",** not "Nothing playing": Music Assistant can lose its place in a queue -- after a restart, say -- and play on with no track to report, and the screen said nothing was playing over the music.
+
 ## [1.6.0] - 2026-11-10
 
 This release adds voice to the boards with a microphone, the AMOLED 1.75 and the P4 4B: a wake word, then Home Assistant's Assist, with play, pause, skip, volume and "play Khatia Buniatishvili" done on the remote's own player. A remote can now install a new release from GitHub itself, from its settings or its portal, and can download fonts from GitHub for Chinese, Japanese, Korean, Thai, Cyrillic, Greek, Vietnamese and symbols. Korean, and the other languages' Latin letters and the symbols 1.5.0 added, are now among those downloaded fonts rather than in the firmware, so a remote updated from 1.5.0 shows them as blanks until it has downloaded them. A power tap shows at once, short lists sit in the middle of a round panel, and the images are smaller -- about 400 KB on the boards without voice, and 0.9 MB on the P4 4B, voice and all. Fixed: a MaTouch loading pictures over HTTPS no longer runs out of internal RAM as it starts, and Korean scrolls as fast as Latin text.
