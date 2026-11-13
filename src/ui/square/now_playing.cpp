@@ -177,13 +177,58 @@ void drawSkipGlyph(lgfx::LGFXBase& gfx, int cx, int cy, bool forward,
   gfx.fillTriangle(base, cy - gh, base, cy + gh, apex, cy, color);
 }
 
+/** The frame under each transport button as a compose left it just before
+ *  drawing them: what a disc is laid over every time it is drawn, so one
+ *  pressed or repainted does not darken over itself. PSRAM, a square per
+ *  button, claimed on first use; good once a compose has saved them. */
+uint16_t* s_under[3] = {};
+bool s_under_valid = false;
+
+int buttonIndex(Action action) {
+  return action == Action::kPrevious ? 0
+         : action == Action::kPlayPause ? 1
+                                        : 2;
+}
+
+void saveUnderButtons(lgfx::LovyanGFX& gfx) {
+  s_under_valid = false;
+  if (&gfx != &ui::canvas()) {
+    return;
+  }
+  for (const Action action :
+       {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
+    const Button button = buttonFor(action);
+    const int side = 2 * button.radius + 1;
+    uint16_t*& under = s_under[buttonIndex(action)];
+    if (under == nullptr) {
+      under = static_cast<uint16_t*>(heap_caps_malloc(
+          static_cast<size_t>(side) * side * sizeof(uint16_t),
+          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    if (under == nullptr ||
+        !ui::canvasCopyRect(button.cx - button.radius,
+                            button.cy - button.radius, side, side, under)) {
+      return;
+    }
+  }
+  s_under_valid = true;
+}
+
 void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
                          const PlayerState& state, bool pressed, bool enabled) {
   const uint16_t fill = pressed ? theme::kSurfaceRaised : theme::kSurface;
   const uint16_t glyph = enabled ? theme::kTextPrimary : theme::kTextMuted;
   const int cy = button.cy;
 
-  gfx.fillCircle(button.cx, cy, button.radius, fill);
+  // The disc at kTransportFillAlpha over the frame under it, into the
+  // composed frame; solid where there is none to blend into.
+  const uint16_t* under =
+      s_under_valid ? s_under[buttonIndex(button.action)] : nullptr;
+  if (&gfx != &ui::canvas() ||
+      !ui::blendDisc(button.cx, cy, button.radius, fill,
+                     theme::kTransportFillAlpha, under)) {
+    gfx.fillCircle(button.cx, cy, button.radius, fill);
+  }
   gfx.drawCircle(button.cx, cy, button.radius,
                  pressed ? ui::cover::highlight(theme::kAccent)
                          : theme::kTextMuted);
@@ -582,6 +627,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
     drawVolumeBar(gfx, state, state.volume);
   }
 
+  saveUnderButtons(gfx);
   for (const Action action :
        {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
     drawTransportButton(gfx, buttonFor(action), state, false,
@@ -713,18 +759,19 @@ void showButtonPressed(Action action, bool pressed) {
   if (action == Action::kNone) {
     return;
   }
-  // The discs are opaque, so redrawing one over the composed frame needs
-  // nothing from the backdrop underneath it.
+  // Into the composed frame, where the disc is laid over the cover saved
+  // under it, then pushed: the panel itself has nothing to blend with.
+  // Straight to the panel only where there is no frame.
   const Button button = buttonFor(action);
-  drawTransportButton(ui::panel(), button, s_last_drawn, pressed,
+  const bool framed = ui::canvasReady();
+  drawTransportButton(framed ? ui::canvas() : ui::panel(), button,
+                      s_last_drawn, pressed,
                       enabledFor(action, s_last_drawn));
-
-  // ui::panel() is the composed frame here, so the disc is not on the glass
-  // until its square is pushed -- and a repaint the frame keeps to itself also
-  // leaves the two scan-out buffers disagreeing about it.
-  const int edge = button.radius * 2 + 1;
-  ui::canvasPresentRegion(button.cx - button.radius,
-                          button.cy - button.radius, edge, edge);
+  if (framed) {
+    const int edge = button.radius * 2 + 1;
+    ui::canvasPresentRegion(button.cx - button.radius,
+                            button.cy - button.radius, edge, edge);
+  }
 }
 
 void showPowerPending(bool pending) {

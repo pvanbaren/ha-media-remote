@@ -149,6 +149,9 @@ constexpr int kTransportRowY = px(181 - board::kTransportRowLiftPx240);
 constexpr int kTransportSpacing = px(58);
 constexpr int kTransportRadius = px(25);
 constexpr int kTransportPlayRadius = px(30);
+/** How much of the cover a transport button's disc hides: 70%, so the art
+ *  shows through. Its ring and its glyph are drawn solid. */
+constexpr uint8_t kTransportFillAlpha = 179;
 /** Hit radius is generous relative to the drawn disc -- fingers are blunt --
  *  but stays under half the spacing so neighbouring targets cannot overlap. */
 constexpr int kTransportHitRadius = px(28);

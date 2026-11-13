@@ -224,6 +224,73 @@ void dim(int x, int y, int w, int h, uint8_t alpha) {
   }
 }
 
+bool canvasCopyRect(int x, int y, int w, int h, uint16_t* out) {
+  if (!s_ready || out == nullptr || w <= 0 || h <= 0 || x < 0 || y < 0 ||
+      x + w > kSide || y + h > kSide) {
+    return false;
+  }
+  const uint16_t* buffer = frameBuffer();
+  if (buffer == nullptr) {
+    return false;
+  }
+  for (int row = 0; row < h; ++row) {
+    memcpy(out + static_cast<size_t>(row) * w,
+           buffer + static_cast<size_t>(y + row) * kSide + x,
+           static_cast<size_t>(w) * sizeof(uint16_t));
+  }
+  return true;
+}
+
+bool blendDisc(int cx, int cy, int r, uint16_t color, uint8_t alpha,
+               const uint16_t* under) {
+  if (!s_ready || r <= 0) {
+    return false;
+  }
+  uint16_t* buffer = frameBuffer();
+  if (buffer == nullptr) {
+    return false;
+  }
+  const uint32_t a = alpha;
+  const uint32_t keep = 255u - a;
+  const uint32_t cr = (color >> 11) & 0x1F;
+  const uint32_t cg = (color >> 5) & 0x3F;
+  const uint32_t cb = color & 0x1F;
+  const int side = 2 * r + 1;
+  // Inside where x^2 + y^2 <= r^2 + r: fillCircle()'s edge, near enough
+  // that its outline drawn after covers the seam.
+  const int reach = r * r + r;
+  for (int dy = -r; dy <= r; ++dy) {
+    const int row = cy + dy;
+    if (row < 0 || row >= kSide) {
+      continue;
+    }
+    int half = 0;
+    while ((half + 1) * (half + 1) + dy * dy <= reach) {
+      ++half;
+    }
+    uint16_t* line = buffer + static_cast<size_t>(row) * kSide;
+    for (int dx = -half; dx <= half; ++dx) {
+      const int x = cx + dx;
+      if (x < 0 || x >= kSide) {
+        continue;
+      }
+      const uint16_t below = hostOrder(
+          under != nullptr
+              ? under[static_cast<size_t>(dy + r) * side + (dx + r)]
+              : line[x]);
+      const uint32_t br = (below >> 11) & 0x1F;
+      const uint32_t bg = (below >> 5) & 0x3F;
+      const uint32_t bb = below & 0x1F;
+      const uint16_t out = static_cast<uint16_t>(
+          (((cr * a + br * keep) / 255u) << 11) |
+          (((cg * a + bg * keep) / 255u) << 5) |
+          ((cb * a + bb * keep) / 255u));
+      line[x] = bufferOrder(out);
+    }
+  }
+  return true;
+}
+
 void dimMask(int x, int y, int w, int h, const uint8_t* mask) {
   if (!s_ready || mask == nullptr || w <= 0 || h <= 0) {
     return;
