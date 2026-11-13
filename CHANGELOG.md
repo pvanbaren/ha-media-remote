@@ -21,6 +21,7 @@ GitHub release from that version's section, with
 ### Changed
 
 - **Volume & power offers the devices whose volume can be set,** on the device and in the portal, rather than every media player: the devices with inputs -- a zone amplifier's zone, a receiver, a TV, a soundbar -- first, then the rest that have a volume, such as an amplifier with one input. A device that reports no features at all is offered, as the remote takes it to have a volume, and one chosen before stays on offer whatever it supports.
+- **The words a voice request heard sit in the middle of a square screen too,** on up to two lines, as on a round one, where they were one line across the top.
 
 ### Fixed
 

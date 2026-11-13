@@ -4,7 +4,6 @@
 
 #include <cstdio>
 
-#include "board/board.h"
 #include "hardware/display_font.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -24,12 +23,12 @@ char s_text[120] = {};
 unsigned long s_until_ms = 0;
 bool s_showing = false;
 
-/** Where it sits. On a round panel, the middle of the glass, where it is
- *  widest, in up to two lines: up at the rooms chip the circle left room for
- *  about half of "play the Beatles in the kitchen". On a square one, one line
- *  at the rooms chip's height, which is as wide as anywhere. */
-constexpr int kToastY = board::kDisplayIsRound ? theme::kCenterY : theme::px(42);
-constexpr int kToastMaxLines = board::kDisplayIsRound ? 2 : 1;
+/** Where it sits: the middle of the glass, in up to two lines. On a round
+ *  panel that is where it is widest -- up at the rooms chip the circle left
+ *  room for about half of "play the Beatles in the kitchen" -- and a
+ *  square one shows it the same way. */
+constexpr int kToastY = theme::kCenterY;
+constexpr int kToastMaxLines = 2;
 /** Between a two-line toast's lines. */
 constexpr int kToastLineGap = theme::px(2);
 

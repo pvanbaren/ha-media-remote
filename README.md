@@ -685,7 +685,7 @@ the speech stop, or when the remote does (`config::kVoiceEndQuietMs` quiet
 after speech well above the room's level), whichever is first -- a word as
 short as "stop" can be too short for Home Assistant's detector. The wake word lights a dark screen, as a
 tap does, so what a request does can be seen, and the words it heard show over now playing for a
-few seconds -- in the middle of a round screen, on up to two lines, and at the top of a square one (`config::kVoiceToastMs`). A few requests are this remote's own, for its player, when they name no
+few seconds, in the middle of the screen on up to two lines (`config::kVoiceToastMs`). A few requests are this remote's own, for its player, when they name no
 player: "play", "pause", "skip" (or "next"), "previous", "volume up" and
 "volume down" (or "louder", "quieter", "turn it up"...) do what the buttons
 and the volume arc do -- play and pause whatever the player is doing, the
