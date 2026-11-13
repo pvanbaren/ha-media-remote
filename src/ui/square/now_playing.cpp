@@ -252,6 +252,55 @@ void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
   }
 }
 
+/** The frame under the elapsed chip as a compose left it before the
+ *  progress and the chip went on: what refreshElapsed() puts back each
+ *  second before laying them on again, so the translucent pill does not
+ *  darken over itself. Wide enough for the widest label, and as tall as
+ *  the pill. PSRAM, claimed on first use. */
+constexpr int kChipUnderW =
+    theme::px(170) < theme::kSize ? theme::px(170) : theme::kSize;
+constexpr int kChipUnderH = theme::px(28);
+constexpr int kChipUnderX = theme::kCenterX - kChipUnderW / 2;
+constexpr int kChipUnderY = theme::kElapsedY - kChipUnderH / 2;
+uint16_t* s_chip_under = nullptr;
+bool s_chip_under_valid = false;
+
+void saveUnderChip(lgfx::LovyanGFX& gfx) {
+  s_chip_under_valid = false;
+  if (&gfx != &ui::canvas()) {
+    return;
+  }
+  if (s_chip_under == nullptr) {
+    s_chip_under = static_cast<uint16_t*>(heap_caps_malloc(
+        static_cast<size_t>(kChipUnderW) * kChipUnderH * sizeof(uint16_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  s_chip_under_valid =
+      s_chip_under != nullptr &&
+      ui::canvasCopyRect(kChipUnderX, kChipUnderY, kChipUnderW, kChipUnderH,
+                         s_chip_under);
+}
+
+/** Lay on again any transport button the chip's rectangle reached -- the
+ *  play button's foot does -- over its own saved backdrop. The topmost
+ *  row redrawn, or `top` when none was. */
+int redrawButtonsUnderChip(lgfx::LovyanGFX& gfx, int top) {
+  for (const Action action :
+       {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
+    const Button button = buttonFor(action);
+    if (button.cy + button.radius < kChipUnderY ||
+        button.cy - button.radius >= kChipUnderY + kChipUnderH ||
+        button.cx + button.radius < kChipUnderX ||
+        button.cx - button.radius >= kChipUnderX + kChipUnderW) {
+      continue;
+    }
+    drawTransportButton(gfx, button, s_last_drawn, false,
+                        enabledFor(action, s_last_drawn));
+    top = std::min(top, button.cy - button.radius);
+  }
+  return top;
+}
+
 // --- Volume slider ----------------------------------------------------------
 // A bar across the top, where the round build has an arc round the bezel.
 // These live here rather than in ui/theme.h because they are the one piece of
@@ -455,8 +504,15 @@ int drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
                      w, h};
   }
 
-  gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
-                    h, theme::kElapsedPillRadius, theme::kSurface);
+  // The pill at kElapsedPillAlpha over the frame, into the composed frame;
+  // solid where there is none to blend into.
+  if (&gfx != &ui::canvas() ||
+      !ui::blendRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2,
+                          w, h, theme::kElapsedPillRadius, theme::kSurface,
+                          theme::kElapsedPillAlpha)) {
+    gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
+                      h, theme::kElapsedPillRadius, theme::kSurface);
+  }
   gfx.setTextColor(state.offline ? theme::kWarning : theme::kTextSecondary);
   gfx.drawString(label, theme::kCenterX, theme::kElapsedY);
   return w;
@@ -618,6 +674,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
       ui::canvasSaveBackdrop(ui::Backdrop::kArtAndText, with_text);
     }
   }
+  saveUnderChip(gfx);
   drawProgressBar(gfx, state);
   drawElapsedChip(gfx, state);
   // Whether or not the bar is shown now: volume can become available without
@@ -650,39 +707,39 @@ void draw(const PlayerState& state) {
 }
 
 void refreshElapsed(const PlayerState& state) {
-  // The chip carries its own opaque pill, so repainting it needs nothing from
-  // the cover art beneath -- which is the whole reason it is a chip and not
-  // bare text on the scrim. ui::panel() is the composed frame here, so the
-  // draw is followed by a present of just the chip's band.
-  //
-  // Only the chip's own columns, not the full width. Both ends of this copy
-  // live in PSRAM, on the same bus already carrying 24 MB/s of scan-out that
-  // the panel cannot be starved of, so the narrower the rectangle the less
-  // time it spends competing for that bus.
-  //
-  // Presented as the union with the previous width, which is not a detail:
-  // the pill is centred and changes width with the label -- "9:59" to "10:00"
-  // and back again -- so presenting only the narrower of the two would leave
-  // the wider one's ends on the glass.
-  // The progress bar first, under the chip: it is opaque and keeps its
-  // shape, so it too is painted over itself. Its thin band goes to the glass
-  // only once the chip is back over its middle, or the bar would show through
-  // the chip for the moment between.
-  const bool bar = drawProgressBar(ui::panel(), state);
-  static int s_last_w = 0;
-  const int w = drawElapsedChip(ui::panel(), state);
+  if (!ui::canvasReady()) {
+    // No frame: straight to the panel, the pill solid.
+    drawProgressBar(ui::panel(), state);
+    drawElapsedChip(ui::panel(), state);
+    return;
+  }
+  // In the composed frame: what was under the chip put back, the progress
+  // bar -- opaque, and always the same shape -- and the pill laid over
+  // them, then a button the rectangle reached. Then only what changed is
+  // pushed -- the bar's thin band and the chip's rectangle, which is as
+  // wide as the widest pill, so a label narrowing leaves nothing behind --
+  // as both ends of the copy are on the PSRAM bus the scan-out needs.
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  if (s_chip_under_valid) {
+    ui::canvasPasteRect(kChipUnderX, kChipUnderY, kChipUnderW, kChipUnderH,
+                        s_chip_under);
+  }
+  const bool bar = drawProgressBar(gfx, state);
+  drawElapsedChip(gfx, state);
   if (bar) {
     ui::canvasPresentRegion(kBarLeft, kProgressY, kBarWidth, kBarHeight);
   }
-  const int previous = s_last_w;
-  s_last_w = w;
-  if (w <= 0 && previous <= 0) {
-    return;  // nothing drawn now, and nothing left over to cover
+  int top = kChipUnderY;
+  if (s_chip_under_valid) {
+    top = redrawButtonsUnderChip(gfx, top);
   }
-  const int widest = std::max(w, previous) + 2 * theme::px(2);
-  ui::canvasPresentRegion(theme::kCenterX - widest / 2,
-                          theme::kElapsedY - theme::px(14), widest,
-                          theme::px(28));
+  if (top < kChipUnderY) {
+    ui::canvasPresentRegion(kChipUnderX, top, kChipUnderW,
+                            kChipUnderY + kChipUnderH - top);
+  } else {
+    ui::canvasPresentRegion(kChipUnderX, kChipUnderY, kChipUnderW,
+                            kChipUnderH);
+  }
 }
 
 void refreshVolume(const PlayerState& state, float level) {

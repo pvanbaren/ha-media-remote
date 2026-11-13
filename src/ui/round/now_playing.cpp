@@ -246,6 +246,55 @@ void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
   }
 }
 
+/** The frame under the elapsed chip as a compose left it before the
+ *  progress and the chip went on: what refreshElapsed() puts back each
+ *  second before laying them on again, so the translucent pill does not
+ *  darken over itself. Wide enough for the widest label, and as tall as
+ *  the pill. PSRAM, claimed on first use. */
+constexpr int kChipUnderW =
+    theme::px(170) < theme::kSize ? theme::px(170) : theme::kSize;
+constexpr int kChipUnderH = theme::px(28);
+constexpr int kChipUnderX = theme::kCenterX - kChipUnderW / 2;
+constexpr int kChipUnderY = theme::kElapsedY - kChipUnderH / 2;
+uint16_t* s_chip_under = nullptr;
+bool s_chip_under_valid = false;
+
+void saveUnderChip(lgfx::LovyanGFX& gfx) {
+  s_chip_under_valid = false;
+  if (&gfx != &ui::canvas()) {
+    return;
+  }
+  if (s_chip_under == nullptr) {
+    s_chip_under = static_cast<uint16_t*>(heap_caps_malloc(
+        static_cast<size_t>(kChipUnderW) * kChipUnderH * sizeof(uint16_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  s_chip_under_valid =
+      s_chip_under != nullptr &&
+      ui::canvasCopyRect(kChipUnderX, kChipUnderY, kChipUnderW, kChipUnderH,
+                         s_chip_under);
+}
+
+/** Lay on again any transport button the chip's rectangle reached -- the
+ *  play button's foot does -- over its own saved backdrop. The topmost
+ *  row redrawn, or `top` when none was. */
+int redrawButtonsUnderChip(lgfx::LovyanGFX& gfx, int top) {
+  for (const Action action :
+       {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
+    const Button button = buttonFor(action);
+    if (button.cy + button.radius < kChipUnderY ||
+        button.cy - button.radius >= kChipUnderY + kChipUnderH ||
+        button.cx + button.radius < kChipUnderX ||
+        button.cx - button.radius >= kChipUnderX + kChipUnderW) {
+      continue;
+    }
+    drawTransportButton(gfx, button, s_last_drawn, false,
+                        enabledFor(action, s_last_drawn));
+    top = std::min(top, button.cy - button.radius);
+  }
+  return top;
+}
+
 // --- Volume slider ----------------------------------------------------------
 
 /** Point on the arc's centreline at `fraction` along it, in frame coords. */
@@ -481,8 +530,15 @@ void drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
                      w, h};
   }
 
-  gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
-                    h, theme::kElapsedPillRadius, theme::kSurface);
+  // The pill at kElapsedPillAlpha over the frame, into the composed frame;
+  // solid where there is none to blend into.
+  if (&gfx != &ui::canvas() ||
+      !ui::blendRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2,
+                          w, h, theme::kElapsedPillRadius, theme::kSurface,
+                          theme::kElapsedPillAlpha)) {
+    gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
+                      h, theme::kElapsedPillRadius, theme::kSurface);
+  }
   gfx.setTextColor(state.offline ? theme::kWarning : theme::kTextSecondary);
   gfx.drawString(label, theme::kCenterX, theme::kElapsedY);
 }
@@ -633,6 +689,7 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
   }
   // Before the volume arc's backdrop is kept, so that copy agrees with it
   // wherever the two might meet.
+  saveUnderChip(gfx);
   drawProgressArc(gfx, state);
   drawElapsedChip(gfx, state);
   if (services::ha::volumeAvailable(state)) {
@@ -666,31 +723,29 @@ void draw(const PlayerState& state) {
 }
 
 void refreshElapsed(const PlayerState& state) {
-  // Straight to the panel. The chip carries its own opaque pill, so repainting
-  // it needs nothing from the cover art beneath -- which is the whole reason
-  // it is a chip and not bare text on the scrim. The progress arc is opaque
-  // too and keeps its shape, so it goes first, under the chip.
-  drawProgressArc(ui::panel(), state);
-  drawElapsedChip(ui::panel(), state);
-  if (!board::kPanelWritesDirect) {
-    // ui::panel() is the composed frame on a framebuffer panel, so the chip
-    // and the arc are not on the glass until their band is pushed: from the
-    // arc's ends to the foot of the panel, all of its width -- the pill is
-    // centred and changes width with its label, and a band a few dozen rows
-    // tall costs nothing worth narrowing.
-    const int top = std::min(progressArcTopY(),
-                             theme::kElapsedY - theme::px(14));
-    ui::canvasPresentRegion(0, top, theme::kSize, theme::kSize - top);
+  if (!ui::canvasReady()) {
+    // No frame: straight to the panel, the pill solid.
+    drawProgressArc(ui::panel(), state);
+    drawElapsedChip(ui::panel(), state);
     return;
   }
-  // And into the canvas, where that is not the panel, so it keeps up there
-  // too. A volume drag presents stretches of the canvas, and near either end
-  // of the arc a stretch reaches the chip -- which the canvas would otherwise
-  // still show at the time it was composed, torn against the live one.
-  if (ui::canvasReady()) {
-    drawProgressArc(ui::canvas(), state);
-    drawElapsedChip(ui::canvas(), state);
+  // In the composed frame: what was under the chip put back, the progress
+  // arc -- opaque, and always the same shape -- and the pill laid over
+  // them, then a button the rectangle reached, and the band pushed: from
+  // the arc's ends to the foot of the panel, all of its width, as the pill
+  // is centred and changes width with its label.
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  if (s_chip_under_valid) {
+    ui::canvasPasteRect(kChipUnderX, kChipUnderY, kChipUnderW, kChipUnderH,
+                        s_chip_under);
   }
+  drawProgressArc(gfx, state);
+  drawElapsedChip(gfx, state);
+  int top = std::min(progressArcTopY(), kChipUnderY);
+  if (s_chip_under_valid) {
+    top = redrawButtonsUnderChip(gfx, top);
+  }
+  ui::canvasPresentRegion(0, top, theme::kSize, theme::kSize - top);
 }
 
 void refreshVolume(const PlayerState& state, float level) {

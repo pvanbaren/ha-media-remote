@@ -99,6 +99,9 @@ constexpr int kElapsedTextPx = textPx(15);
 constexpr int kElapsedPillPadX = px(7);
 constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);
+/** How much of what is under it the elapsed chip's pill hides: 80%, so a
+ *  little of the cover shows through. Its text is drawn solid. */
+constexpr uint8_t kElapsedPillAlpha = 204;
 
 // --- Track progress, under the elapsed chip ---
 // How far through the track it is. A sideways drag that starts on it seeks
