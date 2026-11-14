@@ -250,8 +250,10 @@ after the address, with *charging* while it charges.
 
 The page refreshes every second. The **gear** at the top right, across the
 title row from the back button, opens
-[the settings](#settings-on-the-device), and a **swipe left** goes on to
-[the Wi-Fi networks](#choosing-wi-fi-on-the-device); any other tap or swipe
+[the settings](#settings-on-the-device), and so does a **swipe down** -- two
+swipes down from now playing reach them. A **swipe left** goes on to
+[the Wi-Fi networks](#choosing-wi-fi-on-the-device), a **swipe up** goes
+back to the screen the page was opened from, and any other tap or swipe
 goes back to now playing, and it goes back by itself after a minute untouched
 (`kListIdleReturnMs`), as the list does.
 
@@ -384,7 +386,7 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe right, lower half, or flick right, top half | The volume device's inputs |
 | Sources | Tap an input | Switch to it, and back to now playing |
 | Sources | Swipe right, or the back button | Back to now playing |
-| Status page | Tap the gear | Open the settings |
+| Status page | Tap the gear, or swipe down | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
 | Status page | Swipe up | Back to the screen it was opened from: now playing, a card, the settings or the network list |
 | Status page | Any other tap or swipe | Back to now playing |
@@ -449,7 +451,8 @@ when Home Assistant has the Music Assistant integration, so the swipe-up list
 and the search work straight away.
 
 The rest of what needs no typing is in [the settings](#settings-on-the-device),
-behind the gear on the status page (swipe down on now playing): a separate
+behind the gear on the status page (swipe down on now playing, then the
+gear or another swipe down): a separate
 **Volume & power** device -- an amplifier or receiver -- and the player's input
 on it, the player volume at switch-on, Auto-off, the Recent list, Voice
 (in a build with it), Wi-Fi transmit power, the search keyboard and the

@@ -75,7 +75,7 @@ enum class Intent : uint8_t {
   kWifiLeave,         // back out of the network list
   kChoosePlayer,      // store playerChosen() as the media player
   kPlayersRefresh,    // fetch the player list again
-  kOpenSettings,      // the gear on the status page
+  kOpenSettings,      // the gear on the status page, or a swipe down
   kSettingsTap,       // `index` is the settings row tapped
   kSettingsBack,      // a swipe right on the settings page or its choices
   kIsolateConfirm,    // Isolate on Isolate's card

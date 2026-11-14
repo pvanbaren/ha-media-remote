@@ -39,7 +39,8 @@ a press on a card counts as a tap on it.
 
 - A swipe up on the status page goes back to the screen it was opened from:
   now playing, the card, the settings or the network list.
-- Settings back goes to the status page. The status page's back button, and
+- A swipe down on the status page, like its gear, opens the settings, and
+  settings back goes to the status page. The status page's back button, and
   any other tap or swipe there, go to now playing.
 - Now playing first works out what should be up: No Wi-Fi when the network is
   lost, Link to HA or the QR code when not linked, the player list when none is
