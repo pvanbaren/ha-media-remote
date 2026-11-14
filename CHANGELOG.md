@@ -24,6 +24,7 @@ GitHub release from that version's section, with
 - **The words a voice request heard sit in the middle of a square screen too,** on up to two lines, as on a round one, where they were one line across the top.
 - **The previous, play and next buttons let the cover show through,** their discs 70% opaque where they were solid; their rings and symbols stay solid.
 - **A swipe down on the status page opens the settings,** as its gear does, where it went back to now playing: two swipes down from now playing reach the settings.
+- **Back from the settings goes to now playing,** a swipe right or the back button, where it went to the status page first. From a setting's choices it still goes back to the page.
 - **The elapsed time's pill lets a little of the cover show through,** 80% opaque where it was solid; its text stays solid.
 
 ### Fixed

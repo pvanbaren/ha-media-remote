@@ -308,7 +308,7 @@ choose it: it is stored at once, as a portal save would store it, and the page
 comes back showing it. The tapped row lights the moment the tap registers,
 since loading a list of players or inputs, or storing a choice, can take a
 second or two. **Swipe right**, or tap the **back button** at the top
-left, to back out without choosing, and again to go back to the status page.
+left, to back out without choosing, and again to go back to now playing.
 The status page and the Wi-Fi pages have the button too. Media player,
 Volume & power, Auto-off and Recent list are there once the remote is linked
 to Home Assistant, since the first two are chosen from its lists. Player's input and
@@ -388,11 +388,11 @@ wakes the screen leave it alone. Details in
 | Sources | Swipe right, or the back button | Back to now playing |
 | Status page | Tap the gear, or swipe down | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
-| Status page | Swipe up | Back to the screen it was opened from: now playing, a card, the settings or the network list |
+| Status page | Swipe up | Back to the screen it was opened from: now playing, a card or the network list |
 | Status page | Any other tap or swipe | Back to now playing |
 | Settings | Drag up / down, then tap a row | Its choices; the row lights at once |
 | Settings choices | Tap one | Choose it, and back to the settings |
-| Settings | Swipe right | Back one step |
+| Settings | Swipe right | From a setting's choices, back to the page; from the page, back to now playing |
 | Status, settings, Wi-Fi, search | Tap the back button, top left | As a swipe right: back one step |
 | Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
 | Not reachable, Token rejected, No Wi-Fi or Link to HA card | Swipe down | The status page; back returns to the card |

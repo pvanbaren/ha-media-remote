@@ -1149,14 +1149,11 @@ void openWifi(const char* note);
 
 /** A swipe up on the status page: back to the screen it was opened from.
  *  Now playing and the cards are both reached through showNowPlaying(),
- *  which picks whichever applies now; the settings page and the network
- *  list are opened afresh, as their back steps would; anything else is now
- *  playing. */
+ *  which picks whichever applies now; the network list -- whose back step
+ *  comes here -- is opened afresh; anything else is now playing. The
+ *  settings' back goes to now playing, so they never open it. */
 [[gnu::noinline]] void leaveStatus() {
   switch (g_status_from) {
-    case Screen::kSettings:
-      openSettings();
-      break;
     case Screen::kWifi:
       openWifi(nullptr);
       break;
@@ -3100,12 +3097,13 @@ struct ControlNow {
 }
 
 /** A swipe right: from a list of choices to the page, unchanged, and from
- *  the page back to the status page it was opened from. */
+ *  the page straight to now playing -- or the card that is up instead of
+ *  it -- not through the status page it was opened from. */
 [[gnu::noinline]] void handleSettingsBack() {
   if (g_settings_choosing) {
     showSettingsPage(g_setting_open_row);
   } else {
-    openStatus();
+    showNowPlaying();
   }
 }
 
