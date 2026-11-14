@@ -44,21 +44,24 @@ void draw(const services::ha::PlayerState* state, const struct tm& local) {
   gfx.setTextColor(theme::kTextMuted);
   gfx.drawString(hhmm, x, y);
 
+  // The song, and the artist on a line of its own under it, each cut to
+  // the width of the panel at its own height.
   if (state != nullptr && state->title[0] != '\0') {
-    char line[sizeof(state->title) + sizeof(state->artist) + 4];
-    if (state->artist[0] != '\0') {
-      snprintf(line, sizeof(line), "%s \xC2\xB7 %s", state->title,
-               state->artist);
-    } else {
-      snprintf(line, sizeof(line), "%s", state->title);
-    }
-    const int line_y = y + theme::kClockTextPx / 2 + theme::kElapsedTextPx;
     displayFontApplyHeight(gfx, theme::kElapsedTextPx);
+    const int line_gap = theme::kElapsedTextPx * 4 / 3;
+    const int title_y = y + theme::kClockTextPx / 2 + theme::kElapsedTextPx;
+    const char* const lines[2] = {state->title, state->artist};
     char shown[text::kMaxLineLen];
-    text::ellipsize(gfx, line,
-                    theme::usableWidthAt(line_y, theme::kTextEdgeInset), shown,
-                    sizeof(shown));
-    gfx.drawString(shown, x, line_y);
+    for (int i = 0; i < 2; ++i) {
+      if (lines[i][0] == '\0') {
+        continue;
+      }
+      const int line_y = title_y + i * line_gap;
+      text::ellipsize(gfx, lines[i],
+                      theme::usableWidthAt(line_y, theme::kTextEdgeInset),
+                      shown, sizeof(shown));
+      gfx.drawString(shown, x, line_y);
+    }
   }
   canvasPresent();
 }

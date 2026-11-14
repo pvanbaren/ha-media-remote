@@ -350,7 +350,7 @@ itself within a couple of seconds.
 
 After **15 seconds** untouched (`kDimAfterMs`), now playing rests as a
 **dimmed clock**: the time, large and dim, with the title and artist under
-it, on black. A touch brings now playing back and does nothing else. The
+it, a line each, on black. A touch brings now playing back and does nothing else. The
 time comes from SNTP once Wi-Fi is up, in the **Time zone** setting's zone
 -- Home Assistant's, unless another is chosen; until it has answered, the
 screen does not dim. The blanking below follows the
