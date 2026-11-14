@@ -160,7 +160,9 @@ its artwork; **tap a row to play it**. An artist plays as **radio**, an
 endless queue seeded from them, as from the search; an album plays as itself.
 The row stays on screen with "Starting radio..." or "Starting..." under it
 while Music Assistant builds the queue -- four seconds and more for an
-artist.
+artist. **Swipe right**, or tap the back button, to stop waiting and go
+back to now playing; a pick Home Assistant already has still starts. A
+**swipe down** goes to the status page, as from now playing.
 
 | Section | Shows |
 |---|---|
@@ -205,8 +207,8 @@ the portal, switches it to **QWERTY** -- QWERTYUIOP, ASDFGHJKL, ZXCVBNM with bac
 a space bar on its own row -- with narrower keys, since ten have to fit across
 the top.
 
-**Swipe right**, or the back button at the top left, backs out one step at a
-time: results to the keyboard (with
+**Swipe right** -- or left, the way that opened it -- or the back button at
+the top left, backs out one step at a time: results to the keyboard (with
 the query kept, so a near miss can be edited), then the keyboard to the list,
 or to now playing if that is where the search was opened.
 A tap on the results that misses every result does the same.
@@ -221,8 +223,8 @@ on first, if it is off; the remote goes straight back to now playing, which foll
 ([When the volume device is on another input](docs/internals.md#when-the-volume-device-is-on-another-input)).
 Where the player's input on the device is chosen by name, it becomes the new
 one too; left to follow the input named after the player, it is left alone.
-**Swipe right**, or tap the back button, to leave without switching. A device
-that cannot switch inputs has no list.
+**Swipe right** or left, or tap the back button, to leave without switching.
+A device that cannot switch inputs has no list.
 
 ### The status page
 
@@ -385,7 +387,7 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe left, lower half, or flick left, top half | Search |
 | Now playing | Swipe right, lower half, or flick right, top half | The volume device's inputs |
 | Sources | Tap an input | Switch to it, and back to now playing |
-| Sources | Swipe right, or the back button | Back to now playing |
+| Sources | Swipe right or left, or the back button | Back to now playing |
 | Status page | Tap the gear, or swipe down | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
 | Status page | Swipe up | Back to the screen it was opened from: now playing, a card or the network list |
@@ -406,10 +408,12 @@ wakes the screen leave it alone. Details in
 | List | Tap a row | Play it: an artist as radio, an album as itself |
 | List | Tap the title strip, or swipe right | Back to now playing |
 | List | Swipe left | Search |
+| Starting... (after a pick) | Swipe right, or the back button | Stop waiting: back to now playing |
+| Starting... (after a pick) | Swipe down | Open the status page |
 | Search | Tap keys, then SEARCH | Search |
 | Search keyboard | Tap the pill above the keys | Search for the next kind: artist, album, track, playlist, radio |
 | Search results | Tap a result | Play it: an artist as radio, anything else as itself |
-| Search | Swipe right | Back one step |
+| Search | Swipe right or left | Back one step |
 | Blank screen | Any touch | Wake it; the volume device is left as it is |
 | Knob (MaTouch 2.1") | Turn, on now playing | Volume, 2% a click; with the volume device off, the first turn switches it on, as play does, where it can be |
 | Knob (MaTouch 2.1") | Turn, on a list | Scroll a row a click |
