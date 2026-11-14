@@ -2,6 +2,7 @@
 
 #include <esp_heap_caps.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -124,29 +125,6 @@ int32_t get32(const uint8_t* at) {
                               static_cast<uint32_t>(at[1]) << 16 |
                               static_cast<uint32_t>(at[2]) << 8 | at[3]);
 }
-
-/** A VLW face of one glyph, the one being drawn: its record is a rendered
- *  glyph's, and its line the real face's, so VLWfont::drawChar() puts it on
- *  the baseline with the letters around it. Its tables are its own arrays,
- *  and given back before ~VLWfont() could free them. */
-struct OneGlyphFace : lgfx::VLWfont {
-  uint16_t unicode[1] = {};
-  uint32_t bitmap[1] = {kBitmapAt};
-  lgfx::PointerWrapper record;
-
-  OneGlyphFace() {
-    gCount = 1;
-    gUnicode = unicode;
-    gBitmap = bitmap;
-    _fontData = &record;
-    _fontLoaded = true;
-  }
-  ~OneGlyphFace() override {
-    gUnicode = nullptr;
-    gBitmap = nullptr;
-    _fontData = nullptr;
-  }
-};
 
 /** The character drawn last, of any face: what a Thai mark goes over. */
 uint16_t s_drawn_before = 0;
@@ -316,16 +294,144 @@ size_t OutlineFallback::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
   if (g == nullptr) {
     return face_->drawChar(gfx, x, y, c, style, metrics, filled_x);
   }
-  static OneGlyphFace one;
-  one.unicode[0] = c;
-  one.record.set(g->record);
-  one.yAdvance = face_->yAdvance;
-  one.spaceWidth = face_->spaceWidth;
-  one.ascent = face_->ascent;
-  one.descent = face_->descent;
-  one.maxAscent = face_->maxAscent;
-  one.maxDescent = face_->maxDescent;
-  return one.drawChar(gfx, x, y, c, style, metrics, filled_x);
+  return drawGlyph(gfx, x, y, g, style, metrics, filled_x);
+}
+
+namespace {
+
+/** A row of the canvas read back to blend a glyph into: PSRAM, grown as a
+ *  wider glyph needs and kept. Loop only, as all drawing is. */
+lgfx::rgb888_t* s_under = nullptr;
+size_t s_under_len = 0;
+
+lgfx::rgb888_t* underRow(size_t len) {
+  if (len > s_under_len) {
+    heap_caps_free(s_under);
+    s_under = static_cast<lgfx::rgb888_t*>(psram(len * sizeof(lgfx::rgb888_t)));
+    s_under_len = s_under != nullptr ? len : 0;
+  }
+  return s_under;
+}
+
+/** `a` of 256 of `fore` over `back`, a channel. */
+inline uint8_t mix(uint32_t fore, uint32_t back, uint32_t a) {
+  return static_cast<uint8_t>((fore * a + back * (257 - a)) >> 8);
+}
+
+}  // namespace
+
+size_t OutlineFallback::drawGlyph(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
+                                  const Glyph* g,
+                                  const lgfx::TextStyle* style,
+                                  lgfx::FontMetrics* metrics,
+                                  int32_t& filled_x) const {
+  // As VLWfont::drawChar() places, scales and clips a glyph, with the
+  // bitmap read where it is kept rather than copied onto the stack.
+  const uint8_t* header = g->record + kHeaderAt;
+  const int32_t h = get32(header);
+  const int32_t w = get32(header + 4);
+  const int32_t top = get32(header + 12);  // above the baseline
+  const uint8_t* pixels = g->record + kBitmapAt;
+  const int32_t sx = static_cast<int32_t>(65536 * style->size_x);
+  const int32_t sy = static_cast<int32_t>(65536 * style->size_y);
+  y += (metrics->y_offset * sy) >> 16;
+  const int32_t x_advance = (g->advance * sx) >> 16;
+  const int32_t x_offset = (g->offset * sx) >> 16;
+  const int32_t y_offset = face_->maxAscent - top;
+
+  gfx->startWrite();
+  const bool fill = style->back_rgb888 != style->fore_rgb888;
+  if (fill) {
+    // The background, from what the last glyph filled to this one's end,
+    // the line's height; the glyph is then blended over it.
+    const int32_t left = std::max(filled_x, x + std::min<int32_t>(x_offset, 0));
+    const int32_t right =
+        x + std::max<int32_t>(((w * sx) >> 16) + x_offset, x_advance);
+    filled_x = right;
+    if (left < right) {
+      gfx->fillRect(left, y, right - left, (metrics->height * sy) >> 16,
+                    static_cast<uint32_t>(style->back_rgb888));
+    }
+  }
+  x += x_offset;
+
+  int32_t clip_x = 0;
+  int32_t clip_y = 0;
+  int32_t clip_w = 0;
+  int32_t clip_h = 0;
+  gfx->getClipRect(&clip_x, &clip_y, &clip_w, &clip_h);
+  const int32_t clip_r = clip_x + clip_w;  // exclusive
+  const int32_t clip_b = clip_y + clip_h;
+  const uint32_t fore = style->fore_rgb888;
+  // Into what is there where it can be read; else over the background
+  // colour, or the panel's base colour, as the VLW code does.
+  const bool read_back = !fill && gfx->isReadable() && !gfx->hasPalette();
+  const uint32_t back = fill ? style->back_rgb888 : gfx->getBaseColor();
+
+  for (int32_t i = 0; i < h && w > 0; ++i) {
+    const uint8_t* row = pixels + static_cast<size_t>(i) * w;
+    int32_t y0 = y + (((y_offset + i) * sy) >> 16);
+    int32_t y1 = y + (((y_offset + i + 1) * sy) >> 16);
+    y0 = std::max(y0, clip_y);
+    y1 = std::min(y1, clip_b);
+    if (y0 >= y1) {
+      continue;
+    }
+    int32_t j0 = 0;
+    int32_t j1 = w;
+    while (j0 < j1 && row[j0] == 0) {
+      ++j0;
+    }
+    while (j1 > j0 && row[j1 - 1] == 0) {
+      --j1;
+    }
+    if (j0 == j1) {
+      continue;
+    }
+    const int32_t span_l = std::max(x + ((j0 * sx) >> 16), clip_x);
+    const int32_t span_r = std::min(x + ((j1 * sx) >> 16), clip_r);
+    if (span_l >= span_r) {
+      continue;
+    }
+    const int32_t span_w = span_r - span_l;
+    const int32_t rows = y1 - y0;
+    lgfx::rgb888_t* under =
+        read_back ? underRow(static_cast<size_t>(span_w) * rows) : nullptr;
+    if (under != nullptr) {
+      gfx->readRect(span_l, y0, span_w, rows, under);
+    }
+    for (int32_t j = j0; j < j1; ++j) {
+      if (row[j] == 0) {
+        continue;
+      }
+      const int32_t px0 = std::max(x + ((j * sx) >> 16), span_l);
+      const int32_t px1 = std::min(x + (((j + 1) * sx) >> 16), span_r);
+      if (px0 >= px1) {
+        continue;
+      }
+      const uint32_t a = 1u + row[j];
+      if (under != nullptr) {
+        for (int32_t yy = 0; yy < rows; ++yy) {
+          lgfx::rgb888_t* p = under + yy * span_w + (px0 - span_l);
+          for (int32_t xx = px0; xx < px1; ++xx, ++p) {
+            p->r = mix((fore >> 16) & 0xFF, p->r, a);
+            p->g = mix((fore >> 8) & 0xFF, p->g, a);
+            p->b = mix(fore & 0xFF, p->b, a);
+          }
+        }
+      } else {
+        gfx->setColor(lgfx::color888(mix((fore >> 16) & 0xFF, (back >> 16) & 0xFF, a),
+                                     mix((fore >> 8) & 0xFF, (back >> 8) & 0xFF, a),
+                                     mix(fore & 0xFF, back & 0xFF, a)));
+        gfx->fillRect(px0, y0, px1 - px0, rows);
+      }
+    }
+    if (under != nullptr) {
+      gfx->pushImage(span_l, y0, span_w, rows, under);
+    }
+  }
+  gfx->endWrite();
+  return x_advance;
 }
 
 void outlineFontsDescribe(char* out, size_t len) {

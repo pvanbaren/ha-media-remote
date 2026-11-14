@@ -26,10 +26,13 @@
  * higher, clear of it -- what a font's layout tables would do, which
  * stb_truetype does not read.
  *
- * The rendered glyph is drawn by the VLW code itself, through a face holding
- * just that glyph, so it blends, clips and fills its background exactly as
- * the letters around it do. With no outline font, those characters are
- * blanks, as they always were.
+ * The rendered glyph is drawn here, as the VLW code draws a face's: blended
+ * into what is underneath where the canvas can be read, over the text's
+ * background colour where it has one, clipped and scaled alike. Not
+ * through the VLW code itself, which copies each glyph's bitmap onto the
+ * stack first -- a few KB for a large glyph, more than the loop task
+ * has. With no outline font, those characters are blanks, as they always
+ * were.
  *
  * Drawn from the loop only, like the faces themselves.
  */
@@ -56,6 +59,11 @@ class OutlineFallback : public lgfx::IFont {
   const Glyph* outline(uint16_t c, bool raised) const;
   /** Let go of what was rendered from fonts that have changed. */
   void refresh() const;
+  /** Draw `g` as VLWfont::drawChar() draws a glyph, and return its
+   *  advance. */
+  size_t drawGlyph(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
+                   const Glyph* g, const lgfx::TextStyle* style,
+                   lgfx::FontMetrics* metrics, int32_t& filled_x) const;
 
   const lgfx::VLWfont* face_ = nullptr;
   int32_t em_px_ = 0;
