@@ -33,7 +33,7 @@ struct Font {
 };
 
 struct Info {
-  /** The release it came from: "fonts-1". */
+  /** The release it came from: "fonts-2". */
   char tag[24];
   uint32_t bytes;
   int count;

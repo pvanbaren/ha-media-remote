@@ -233,14 +233,15 @@ It is the asset `fonts.bin` of the pre-release `config::kFontPackTag`
 Latin faces' family -- at the Regular weight, cut down to KS X 1001's Hangul,
 GB2312, JIS X 0208, the common Traditional characters those two lack, and the
 Thai block; Noto Sans itself for Cyrillic, Greek, the rest of Latin, the
-combining accents, punctuation, currency and letterlike signs; and Noto Sans
+combining accents, punctuation, currency and letterlike signs, and ASCII --
+which the faces have, but not at every size; and Noto Sans
 Math, Symbols and Symbols 2 for arrows, mathematics, the miscellaneous
 symbols and dingbats. Build it from Google Fonts' fonts
 ([google/fonts](https://github.com/google/fonts/tree/main/ofl), SIL Open Font
 License, `assets/fonts/*-OFL.txt`):
 
 ```bash
-python scripts/build_font_pack.py --tag fonts-1 --out data/fonts.bin \
+python scripts/build_font_pack.py --tag fonts-2 --out data/fonts.bin \
     Kore="NotoSansKR[wght].ttf" \
     Latn=assets/fonts/NotoSans-Regular.ttf \
     Grek=assets/fonts/NotoSans-Regular.ttf \
@@ -258,7 +259,7 @@ under a new tag, as a pre-release -- never the latest release, which is what
 the firmware update takes -- with `kFontPackTag` moved to it:
 
 ```bash
-gh release create fonts-2 data/fonts.bin assets/fonts/*-OFL.txt --prerelease --latest=false
+gh release create fonts-3 data/fonts.bin assets/fonts/*-OFL.txt --prerelease --latest=false
 ```
 
 Korean, too, comes only from the pack: a remote that has not downloaded it

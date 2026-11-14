@@ -37,7 +37,7 @@ constexpr uint32_t kFirmwareTimeoutMs = 15000;
  *  downloads (services::fonts), as kFontPackAsset: a pre-release, so that it
  *  is never the latest release the firmware update looks for. A new pack goes
  *  up under a new tag, and the firmware that reads it names it here. */
-constexpr char kFontPackTag[] = "fonts-1";
+constexpr char kFontPackTag[] = "fonts-2";
 constexpr char kFontPackAsset[] = "fonts.bin";
 /** What the pack holds and weighs, for the remote and the portal to say
  *  before it is downloaded. */

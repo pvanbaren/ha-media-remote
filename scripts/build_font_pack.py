@@ -27,7 +27,9 @@ the Regular weight, with no hinting and no layout tables, cut down to:
         symbols     Extended-B, IPA, the combining accents a title may spell
                     letters with (an e and a combining acute) -- and the
                     punctuation, currency, letterlike signs and fractions the
-                    faces lack: (TM), (P), one quarter, dagger (Noto Sans)
+                    faces lack: (TM), (P), one quarter, dagger; and ASCII,
+                    which the faces have too, for text drawn at a size no
+                    face is, such as the clock's (Noto Sans)
   Grek  Greek       the Greek blocks, monotonic and polytonic (Noto Sans)
   Cyrl  Cyrillic    the Cyrillic block (Noto Sans)
   Zmth  Arrows &    arrows and mathematical operators (Noto Sans Math)
@@ -59,7 +61,7 @@ Their licence, the SIL Open Font License 1.1, goes on the release with the
 pack.
 
 Usage:
-    python scripts/build_font_pack.py --tag fonts-1 --out data/fonts.bin \\
+    python scripts/build_font_pack.py --tag fonts-2 --out data/fonts.bin \\
         Kore="NotoSansKR[wght].ttf" \\
         Latn=assets/fonts/NotoSans-Regular.ttf \\
         Grek=assets/fonts/NotoSans-Regular.ttf \\
@@ -166,8 +168,10 @@ def latin():
     combining accents, Latin Extended Additional (Vietnamese among it),
     Extended-C and -D; general punctuation, super- and subscripts,
     currency, letterlike signs and number forms. The faces have much of
-    the first blocks, and draw what they have themselves."""
-    return _blocks((0x00A0, 0x036F), (0x1E00, 0x1EFF), (0x2C60, 0x2C7F),
+    the first blocks, and draw what they have themselves. And ASCII,
+    which every face has, for text drawn straight from the pack at a
+    size no face is."""
+    return _blocks((0x0020, 0x007E), (0x00A0, 0x036F), (0x1E00, 0x1EFF), (0x2C60, 0x2C7F),
                    (0xA720, 0xA7FF), (0x2000, 0x218F))
 
 
@@ -231,7 +235,7 @@ def cut(source, wanted):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tag", required=True,
-                        help="the release the pack goes on: fonts-1")
+                        help="the release the pack goes on: fonts-2")
     parser.add_argument("--out", required=True, help="data/fonts.bin")
     parser.add_argument("fonts", nargs="+", metavar="SCRIPT=SOURCE",
                         help="Kore, Hans, Jpan or Thai, and its source font")
