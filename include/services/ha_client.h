@@ -396,6 +396,12 @@ struct AreaEntry {
  *  could not be had. */
 int fetchAreas(AreaEntry* out, int capacity);
 
+/** Home Assistant's time zone: its IANA name ("America/New_York") and
+ *  its present UTC offset as %z gives it ("-0500"). False when it could
+ *  not be had. */
+bool fetchTimeZone(char* zone, size_t zone_len, char* offset,
+                   size_t offset_len);
+
 /** What switchArea() did. */
 enum class AreaSwitch : uint8_t {
   kDone,       // the call went through

@@ -477,10 +477,12 @@ constexpr unsigned long kIdleTimeoutMs = 300000;
  *  a blanked panel. Blanking still follows kIdleTimeoutMs, from the clock as
  *  from now playing. */
 constexpr unsigned long kDimAfterMs = 15000;
-/** The clock face's zone, as a POSIX TZ string.
- *  shortcut: Berlin only, right for this fork; a build for anyone else wants
- *  it a setting, or taken from Home Assistant's time_zone. */
-constexpr char kTimeZone[] = "CET-1CEST,M3.5.0,M10.5.0/3";
+/** The clock face's zone is the Time zone setting
+ *  (services::time_zone): Home Assistant's by default. How often Home
+ *  Assistant is asked for its zone, and how soon again when it does not
+ *  answer. */
+constexpr unsigned long kHaTimeZoneRefreshMs = 6UL * 60 * 60 * 1000;
+constexpr unsigned long kHaTimeZoneRetryMs = 60000;
 constexpr char kNtpServer[] = "pool.ntp.org";
 /** Earlier than this, the clock has not been set: the board has no RTC and
  *  starts at 1970 until SNTP answers. */

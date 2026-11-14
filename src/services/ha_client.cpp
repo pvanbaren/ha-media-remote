@@ -2074,6 +2074,26 @@ int fetchAreas(AreaEntry* out, int capacity) {
   return count;
 }
 
+bool fetchTimeZone(char* zone, size_t zone_len, char* offset,
+                   size_t offset_len) {
+  String body;
+  if (!renderTemplate("{{ now().tzinfo }}\037{{ now().strftime('%z') }}",
+                      body)) {
+    LOG_WARN("HA: time zone -> %s", s_last_error);
+    return false;
+  }
+  body.trim();
+  int pos = 0;
+  const String name = nextField(body, pos);
+  const String off = nextField(body, pos);
+  if (name.length() == 0 || name.length() >= zone_len) {
+    return false;
+  }
+  copyField(zone, zone_len, name);
+  copyField(offset, offset_len, off);
+  return true;
+}
+
 float playerWakeVolume() {
   return s_wake_volume_pct >= 0 ? s_wake_volume_pct / 100.0f : -1.0f;
 }

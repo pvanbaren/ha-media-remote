@@ -44,6 +44,7 @@
 #include "services/recommend.h"
 #include "services/ha_client.h"
 #include "services/search.h"
+#include "services/time_zone.h"
 #include "services/voice.h"
 #include "services/wake_word.h"
 #include "services/wifi_setup.h"
@@ -2275,13 +2276,14 @@ enum class Setting : uint8_t {
   kTxPower,
   kKeyboard,
   kRotation,
+  kTimeZone,
   kFirmware,
   kFonts,
   kRestart,
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 16;
+constexpr int kMaxSettingRows = 17;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -2441,6 +2443,19 @@ void showSettingsPage(int focus) {
                     : "Alphabetical");
   addSettingRow(Setting::kRotation, "Screen rotation",
                 kRotationNames[services::display::rotation() & 3]);
+  {
+    const services::time_zone::Zone* zone =
+        services::time_zone::find(services::time_zone::chosen());
+    char ha[48];
+    services::time_zone::homeAssistantName(ha, sizeof(ha));
+    if (zone == nullptr && ha[0] != '\0') {
+      snprintf(value, sizeof(value), "%s (Home Assistant's)", ha);
+    }
+    addSettingRow(Setting::kTimeZone, "Time zone",
+                  zone != nullptr  ? zone->name
+                  : ha[0] != '\0' ? value
+                                  : "Home Assistant's");
+  }
   addSettingRow(Setting::kFirmware, "Firmware",
                 services::update::currentVersion());
   {
@@ -2817,6 +2832,25 @@ void openSettingChoices(Setting setting, int row) {
       break;
     }
 
+    case Setting::kTimeZone: {
+      ui::settingsBegin("Time zone", "The clock's");
+      const char* current = services::time_zone::chosen();
+      char ha[48];
+      services::time_zone::homeAssistantName(ha, sizeof(ha));
+      ui::settingsAdd("Home Assistant's",
+                      ha[0] != '\0' ? ha : "not heard from yet",
+                      current[0] == '\0' ? ui::SettingStyle::kCurrent
+                                         : ui::SettingStyle::kNormal);
+      for (int i = 0; i < services::time_zone::count(); ++i) {
+        const services::time_zone::Zone* zone = services::time_zone::at(i);
+        ui::settingsAdd(zone->name, "",
+                        strcmp(zone->id, current) == 0
+                            ? ui::SettingStyle::kCurrent
+                            : ui::SettingStyle::kNormal);
+      }
+      break;
+    }
+
     case Setting::kRestart:
       ui::settingsBegin("Restart?", "");
       addChoice("Restart now", 1, false);
@@ -2941,6 +2975,19 @@ bool applySettingChoice(int row) {
       if (chosen != services::display::keyboardLayout()) {
         services::display::saveKeyboardLayout(chosen);
         changed = true;
+      }
+      break;
+    }
+    case Setting::kTimeZone: {
+      // Row 0 is Home Assistant's; the list follows it.
+      const services::time_zone::Zone* zone =
+          row > 0 ? services::time_zone::at(row - 1) : nullptr;
+      if (row < 0 || (row > 0 && zone == nullptr)) {
+        return false;
+      }
+      const char* id = zone != nullptr ? zone->id : "";
+      if (strcmp(id, services::time_zone::chosen()) != 0) {
+        changed = services::time_zone::choose(id);
       }
       break;
     }
@@ -3439,6 +3486,29 @@ constexpr uint32_t kStreamSliceMs = 250;
  *  a template it rejected -- counts as a failure to open, and backs off. */
 constexpr unsigned long kStreamHealthyMs = 60000;
 
+/** Ask Home Assistant for its time zone, for the Time zone setting's
+ *  default: soon after it is first reachable, then every
+ *  kHaTimeZoneRefreshMs, and again a minute after it does not answer.
+ *  Not during a voice request, which this task carries. Poll task. */
+void refreshTimeZone() {
+  static unsigned long s_next_ms = 0;
+  static bool s_asked = false;
+  if ((s_asked && static_cast<long>(millis() - s_next_ms) < 0) ||
+      services::voice::busy()) {
+    return;
+  }
+  s_asked = true;
+  char zone[services::time_zone::kIdMaxLen] = {};
+  char offset[8] = {};
+  if (services::ha::fetchTimeZone(zone, sizeof(zone), offset,
+                                  sizeof(offset))) {
+    services::time_zone::noteHomeAssistant(zone, offset);
+    s_next_ms = millis() + config::kHaTimeZoneRefreshMs;
+  } else {
+    s_next_ms = millis() + config::kHaTimeZoneRetryMs;
+  }
+}
+
 /** All network work lives here so a blocking request never stalls the touch
  *  loop.
  *
@@ -3523,6 +3593,7 @@ void haPollTask(void*) {
       turnOffForVoice();
       switchForVoice();
       restoreAfterVoice();
+      refreshTimeZone();
 
       // Load the browse list ahead of anyone asking for it, so a swipe up
       // lands on a list rather than on a loading card. Cheap to call: it only
@@ -3681,9 +3752,21 @@ void haPollTask(void*) {
       return;
     }
     s_asked = true;
-    configTzTime(config::kTimeZone, config::kNtpServer);
-    LOG_INFO("Clock: asking %s for the time", config::kNtpServer);
+    services::time_zone::takeChange();  // what is in force now, below
+    char rule[services::time_zone::kPosixMaxLen];
+    services::time_zone::posix(rule, sizeof(rule));
+    configTzTime(rule, config::kNtpServer);
+    LOG_INFO("Clock: asking %s for the time, zone %s", config::kNtpServer,
+             rule);
     return;
+  }
+  if (services::time_zone::takeChange()) {
+    char rule[services::time_zone::kPosixMaxLen];
+    services::time_zone::posix(rule, sizeof(rule));
+    setenv("TZ", rule, 1);
+    tzset();
+    LOG_INFO("Clock: zone now %s", rule);
+    g_dim_minute = -1;  // a clock face up shows it at once
   }
   const time_t t = time(nullptr);
   if (!s_set && t >= config::kClockSetAfter) {
@@ -3784,6 +3867,7 @@ void setup() {
   // Claimed before Wi-Fi, while the heap is still unfragmented, and never
   // freed -- so it cannot fail later and cannot leave a hole.
   services::browse::init();
+  services::time_zone::init();
   services::history::init();
 
   if (wifiShowsSetupScreenOnBoot()) {
