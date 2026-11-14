@@ -6,7 +6,7 @@
 #include "log.h"
 
 // Embedded compressed (scripts/deflate_embeds.py), and inflated into PSRAM
-// on first use: the seven faces are 1.10 MB as they are and 0.23 MB
+// on first use: the six faces are 1.03 MB as they are and 0.21 MB
 // compressed, and in a 4 MB app slot that is the difference between an image
 // that fits comfortably and one that barely does.
 extern "C" {
@@ -17,7 +17,6 @@ VLW_SYM(data_deflated_ui_font_34_vlw_z);
 VLW_SYM(data_deflated_ui_font_38_vlw_z);
 VLW_SYM(data_deflated_ui_font_45_vlw_z);
 VLW_SYM(data_deflated_ui_font_54_vlw_z);
-VLW_SYM(data_deflated_ui_font_23_vlw_z);
 VLW_SYM(data_deflated_ui_font_26_vlw_z);
 VLW_SYM(data_deflated_ui_font_30_vlw_z);
 #undef VLW_SYM
@@ -38,14 +37,16 @@ struct Packed {
  *  natively at those heights rather than scaled from another set, because
  *  LovyanGFX's VLW scaler is nearest-neighbour and enlarged text shows it.
  *
- *  The 38 px face measures 39, and the 23 px list face 24 -- the generator
- *  cannot land those exactly -- which is inside the pixel of slack
- *  display_font.cpp allows before it rescales, so both are still drawn at
- *  size 1.0.
+ *  The 38 px face measures 39 -- the generator cannot land it exactly --
+ *  which is inside the pixel of slack display_font.cpp allows before it
+ *  rescales, so it is still drawn at size 1.0.
  *
- *  Then three more for the browse and search lists, which kListScale sets
- *  smaller still: theme::listTextPx() turns 15/17/20 into 23/26/30, the same
- *  faces the round 360 px board embeds. They go last, not in height order,
+ *  Then two more for the browse and search lists, which kListScale sets
+ *  smaller still: theme::listTextPx() turns 17/20 into 26/30 -- the title
+ *  strip and the rows, and the section headers, which kListHeaderTextPx240
+ *  sets at 20 too -- the same faces the round 360 px board embeds. No 23:
+ *  nothing asks for a size near it since the headers went to 20. They go
+ *  last, not in height order,
  *  because display_font.cpp's kDefaultFont is an index -- the third entry, the
  *  20 px body size -- and the search is by measured height anyway. */
 const Packed kPacked[] = {
@@ -53,7 +54,6 @@ const Packed kPacked[] = {
     VLW(data_deflated_ui_font_38_vlw_z),
     VLW(data_deflated_ui_font_45_vlw_z),
     VLW(data_deflated_ui_font_54_vlw_z),
-    VLW(data_deflated_ui_font_23_vlw_z),
     VLW(data_deflated_ui_font_26_vlw_z),
     VLW(data_deflated_ui_font_30_vlw_z),
 };

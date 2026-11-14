@@ -54,7 +54,7 @@ constexpr float kUiScale = static_cast<float>(kDisplayWidth) / kUiBaseSize;
 constexpr float kTextScale = 0.75f;
 
 /** The lists at two thirds, about six rows on the glass, their text on the
- *  round 360 px board's 23/26/30. */
+ *  round 360 px board's 26/30. */
 constexpr float kListScale = 2.0f / 3.0f;
 
 constexpr int kListHeaderTextPx240 = 20;

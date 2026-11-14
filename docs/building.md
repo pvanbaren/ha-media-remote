@@ -192,8 +192,8 @@ its env, and `kFonts[]` in its `src/hardware/<board>/font_table.cpp`.
 An env can embed a file compressed instead: list `data/deflated/<name>.z` for
 `data/<name>`, and `scripts/deflate_embeds.py` (a `pre:` script of that env)
 writes it before the build. At run time `hw::inflateEmbedded()` puts the
-original back in PSRAM. The P4 4B does this for its faces -- 1.10 MB as they
-are, 0.23 MB compressed -- which keeps its image well inside a 4 MB app
+original back in PSRAM. The P4 4B does this for its faces -- 1.03 MB as they
+are, 0.21 MB compressed -- which keeps its image well inside a 4 MB app
 slot; they are inflated at boot, in a few tens of milliseconds.
 
 | Board | Faces |

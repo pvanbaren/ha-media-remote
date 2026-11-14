@@ -42,7 +42,7 @@ constexpr float kUiScale = static_cast<float>(kDisplayWidth) / kUiBaseSize;
 
 /** The Qualia's proportions, on glass the Qualia's size with two thirds of
  *  its pixels: text at three quarters of the layout's scale lands on
- *  23/26/30/36 px, and the lists at two thirds of that again on 15/17/20 --
+ *  23/26/30/36 px, and the lists at two thirds of that again on 17/20 --
  *  the Qualia's millimetres both. Keep these, platformio.ini's
  *  board_build.embed_files and font_table.cpp in step. */
 constexpr float kTextScale = 0.75f;
