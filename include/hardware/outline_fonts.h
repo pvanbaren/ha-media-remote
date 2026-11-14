@@ -30,9 +30,12 @@
  * into what is underneath where the canvas can be read, over the text's
  * background colour where it has one, clipped and scaled alike. Not
  * through the VLW code itself, which copies each glyph's bitmap onto the
- * stack first -- a few KB for a large glyph, more than the loop task
+ * stack first -- a few KB at the clock's size, more than the loop task
  * has. With no outline font, those characters are blanks, as they always
  * were.
+ *
+ * Or with no face at all (attachAtHeight()): every character from the
+ * outline fonts, at a size no face is -- the clock's.
  *
  * Drawn from the loop only, like the faces themselves.
  */
@@ -41,6 +44,14 @@ class OutlineFallback : public lgfx::IFont {
   /** Put the outline fonts behind `face`, whose em -- read from its header
    *  -- they are rendered at. `face_data` is its VLW blob. */
   void attach(const lgfx::VLWfont* face, const uint8_t* face_data);
+
+  /** Stand alone, with no face: every character from the outline fonts,
+   *  the line `height_px` tall -- ascent and descent, as a face's
+   *  fontHeight() is -- in the first font that has every character of
+   *  `sample`. False, leaving it as it was, when none has, or there are
+   *  no outline fonts. Cheap to call again with the same: what was
+   *  rendered is kept until the size or the fonts change. */
+  bool attachAtHeight(float height_px, const char* sample);
 
   font_type_t getType() const override { return ft_vlw; }
   void getDefaultMetric(lgfx::FontMetrics* metrics) const override;
@@ -64,9 +75,15 @@ class OutlineFallback : public lgfx::IFont {
   size_t drawGlyph(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
                    const Glyph* g, const lgfx::TextStyle* style,
                    lgfx::FontMetrics* metrics, int32_t& filled_x) const;
+  /** The line, the face's or attachAtHeight()'s. */
+  int32_t maxAscent() const;
 
   const lgfx::VLWfont* face_ = nullptr;
   int32_t em_px_ = 0;
+  /** With no face: the line, and what a character no font has advances. */
+  int32_t max_ascent_ = 0;
+  int32_t y_advance_ = 0;
+  int32_t space_ = 0;
   /** Each outline font's scale at em_px_, for the fonts as they were at
    *  `generation_`. */
   mutable float* scales_ = nullptr;

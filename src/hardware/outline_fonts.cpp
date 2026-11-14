@@ -178,13 +178,70 @@ void OutlineFallback::refresh() const {
   }
 }
 
+bool OutlineFallback::attachAtHeight(float height_px, const char* sample) {
+  if (height_px <= 0.0f || sample == nullptr) {
+    return false;
+  }
+  const int count = sources();
+  const stbtt_fontinfo* info = nullptr;
+  for (int i = 0; i < count && info == nullptr; ++i) {
+    bool all = true;
+    for (const char* p = sample; *p != '\0' && all; ++p) {
+      all = stbtt_FindGlyphIndex(&s_sources[i].info,
+                                 static_cast<unsigned char>(*p)) != 0;
+    }
+    if (all) {
+      info = &s_sources[i].info;
+    }
+  }
+  if (info == nullptr) {
+    return false;
+  }
+  // The em that makes that font's line height_px: what outline() renders
+  // every font at, as a face's em is.
+  const float scale = stbtt_ScaleForPixelHeight(info, height_px);
+  const int32_t em = static_cast<int32_t>(
+      lroundf(scale / stbtt_ScaleForMappingEmToPixels(info, 1.0f)));
+  int ascent = 0;
+  int descent = 0;
+  int gap = 0;
+  stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
+  int space = 0;
+  int bearing = 0;
+  stbtt_GetCodepointHMetrics(info, ' ', &space, &bearing);
+  const int32_t max_ascent = static_cast<int32_t>(lroundf(ascent * scale));
+  const int32_t y_advance =
+      max_ascent + static_cast<int32_t>(lroundf(-descent * scale));
+  const int32_t space_px = space > 0
+                               ? static_cast<int32_t>(lroundf(space * scale))
+                               : em / 4;
+  if (face_ == nullptr && em == em_px_ && max_ascent == max_ascent_ &&
+      y_advance == y_advance_ && generation_ == s_sources_of) {
+    return true;  // as it was: the glyphs rendered stay
+  }
+  face_ = nullptr;
+  em_px_ = em;
+  max_ascent_ = max_ascent;
+  y_advance_ = y_advance;
+  space_ = space_px;
+  generation_ = 0;  // refresh() lets go of what was rendered
+  return true;
+}
+
+int32_t OutlineFallback::maxAscent() const {
+  return face_ != nullptr ? face_->maxAscent : max_ascent_;
+}
+
 const OutlineFallback::Glyph* OutlineFallback::outline(uint16_t c,
                                                        bool raised) const {
-  if (em_px_ <= 0 || c < 0x80) {
+  // With a face, only what it lacks; it has ASCII. Standing alone,
+  // everything.
+  if (em_px_ <= 0 || (face_ != nullptr && c < 0x80)) {
     return nullptr;
   }
   uint16_t index = 0;
-  if (face_->gCount > 0 && face_->getUnicodeIndex(c, &index)) {
+  if (face_ != nullptr && face_->gCount > 0 &&
+      face_->getUnicodeIndex(c, &index)) {
     return nullptr;  // the face's own
   }
   refresh();
@@ -269,14 +326,30 @@ const OutlineFallback::Glyph* OutlineFallback::outline(uint16_t c,
 }
 
 void OutlineFallback::getDefaultMetric(lgfx::FontMetrics* metrics) const {
-  face_->getDefaultMetric(metrics);
+  if (face_ != nullptr) {
+    face_->getDefaultMetric(metrics);
+    return;
+  }
+  // As VLWfont's, from the line attachAtHeight() measured.
+  metrics->x_offset = 0;
+  metrics->y_offset = 0;
+  metrics->baseline = max_ascent_;
+  metrics->y_advance = y_advance_;
+  metrics->height = y_advance_;
 }
 
 bool OutlineFallback::updateFontMetric(lgfx::FontMetrics* metrics,
                                        uint16_t uniCode) const {
   const Glyph* g = outline(uniCode, false);
-  if (g == nullptr) {
+  if (g == nullptr && face_ != nullptr) {
     return face_->updateFontMetric(metrics, uniCode);
+  }
+  if (g == nullptr) {
+    // Standing alone, in no font: a gap, as a face leaves.
+    metrics->width = 0;
+    metrics->x_advance = space_;
+    metrics->x_offset = 0;
+    return true;
   }
   metrics->width = g->width;
   metrics->x_advance = g->advance;
@@ -291,8 +364,11 @@ size_t OutlineFallback::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
   const bool raised = thaiToneMark(c) && thaiUpperVowel(s_drawn_before);
   s_drawn_before = c;
   const Glyph* g = outline(c, raised);
-  if (g == nullptr) {
+  if (g == nullptr && face_ != nullptr) {
     return face_->drawChar(gfx, x, y, c, style, metrics, filled_x);
+  }
+  if (g == nullptr) {
+    return static_cast<size_t>((space_ * 65536 * style->size_x)) >> 16;
   }
   return drawGlyph(gfx, x, y, g, style, metrics, filled_x);
 }
@@ -337,7 +413,7 @@ size_t OutlineFallback::drawGlyph(lgfx::LGFXBase* gfx, int32_t x, int32_t y,
   y += (metrics->y_offset * sy) >> 16;
   const int32_t x_advance = (g->advance * sx) >> 16;
   const int32_t x_offset = (g->offset * sx) >> 16;
-  const int32_t y_offset = face_->maxAscent - top;
+  const int32_t y_offset = maxAscent() - top;
 
   gfx->startWrite();
   const bool fill = style->back_rgb888 != style->fore_rgb888;

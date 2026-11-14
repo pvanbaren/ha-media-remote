@@ -181,14 +181,6 @@ python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
     --out-dir data --heights 23,26,30,36
 ```
 
-The clock face's digits are a face of their own, of only the characters it
-draws -- 369 glyphs at 101 px would not fit in an app slot:
-
-```bash
-python scripts/build_ui_font.py assets/fonts/NotoSans-Regular.ttf \
-    --out-dir data --heights 101 --chars '0123456789:' --prefix clock_font
-```
-
 The generator solves a whole-pixel size for each height, and five land a
 pixel high: 15, 23, 33, 36 and 38 measure 16, 24, 34, 37 and 39. That is inside the
 pixel `display_font.cpp` allows before it rescales, so they are still drawn

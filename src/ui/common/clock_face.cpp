@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "hardware/display_font.h"
+#include "hardware/outline_fonts.h"
 #include "ui/canvas.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -39,7 +40,16 @@ void draw(const services::ha::PlayerState* state, const struct tm& local) {
 
   char hhmm[8];
   strftime(hhmm, sizeof(hhmm), "%H:%M", &local);
-  displayFontApplyHeight(gfx, theme::kClockTextPx);
+  // From the font pack at the clock's size, where it has the digits --
+  // the outline fonts standing alone, no face behind them, their digits
+  // rendered once and kept; else the largest face, scaled up to it.
+  static OutlineFallback s_clock_font;
+  if (s_clock_font.attachAtHeight(theme::kClockTextPx, "0123456789:")) {
+    gfx.setFont(&s_clock_font);
+    gfx.setTextSize(1.0f);
+  } else {
+    displayFontApplyHeight(gfx, theme::kClockTextPx);
+  }
   gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setTextColor(theme::kTextMuted);
   gfx.drawString(hhmm, x, y);
