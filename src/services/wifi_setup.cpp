@@ -26,6 +26,7 @@
 #include "services/ha_link.h"
 #include "services/ma_api.h"
 #include "services/player_list.h"
+#include "services/time_zone.h"
 #include "services/voice.h"
 #include "services/wake_word.h"
 
@@ -331,6 +332,56 @@ void buildRecentHereSelect() {
            "<option value=\"0\"%s>Music Assistant</option></select",
            room ? " selected" : "", room ? "" : " selected");
   s_param_recent_here.setValue(room ? "1" : "0", 2);
+}
+
+/** Time zone: Home Assistant's, or one from the list, a dropdown over a
+ *  hidden input as Auto-off's is. The hidden input holds the zone's id,
+ *  "" for Home Assistant's. The markup is PSRAM, claimed the first time
+ *  it is built and never moved, as WiFiManagerParameter keeps the
+ *  pointer. */
+constexpr size_t kTimeZoneAttrsBytes = 4096;
+char s_time_zone_none[] = " type=\"hidden\"";
+char* s_time_zone_attrs = nullptr;
+WiFiManagerParameter* s_param_time_zone = nullptr;
+
+void buildTimeZoneSelect() {
+  if (s_time_zone_attrs == nullptr) {
+    s_time_zone_attrs = static_cast<char*>(heap_caps_calloc(
+        1, kTimeZoneAttrsBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  const char* current = services::time_zone::chosen();
+  if (s_time_zone_attrs != nullptr) {
+    char ha[48];
+    services::time_zone::homeAssistantName(ha, sizeof(ha));
+    int n = snprintf(
+        s_time_zone_attrs, kTimeZoneAttrsBytes,
+        " type=\"hidden\"><select id=\"time_zone_sel\" "
+        "onchange='document.getElementById(\"time_zone\").value="
+        "this.value'><option value=\"\"%s>Home Assistant's%s%s%s</option>",
+        current[0] == '\0' ? " selected" : "", ha[0] != '\0' ? " (" : "",
+        ha, ha[0] != '\0' ? ")" : "");
+    for (int i = 0; i < services::time_zone::count() && n > 0 &&
+                    static_cast<size_t>(n) < kTimeZoneAttrsBytes;
+         ++i) {
+      const services::time_zone::Zone* zone = services::time_zone::at(i);
+      n += snprintf(s_time_zone_attrs + n, kTimeZoneAttrsBytes - n,
+                    "<option value=\"%s\"%s>%s</option>", zone->id,
+                    strcmp(zone->id, current) == 0 ? " selected" : "",
+                    zone->name);
+    }
+    if (n > 0 && static_cast<size_t>(n) < kTimeZoneAttrsBytes) {
+      snprintf(s_time_zone_attrs + n, kTimeZoneAttrsBytes - n, "</select");
+    }
+  }
+  if (s_param_time_zone == nullptr) {
+    s_param_time_zone = new WiFiManagerParameter(
+        "time_zone", "Time zone: the clock's", current,
+        static_cast<int>(services::time_zone::kIdMaxLen) - 1,
+        s_time_zone_attrs != nullptr ? s_time_zone_attrs
+                                     : s_time_zone_none);
+  }
+  s_param_time_zone->setValue(
+      current, static_cast<int>(services::time_zone::kIdMaxLen) - 1);
 }
 
 /** Voice: Disabled, or the wake word the remote listens for. A dropdown as
@@ -905,6 +956,7 @@ void refreshPortalParamDefaults() {
   refreshMaTokenField();
   buildRecentHereSelect();
   buildRotationSelect();
+  buildTimeZoneSelect();
   buildKeyboardSelect();
   buildAutoOffSelect();
   buildVoiceSelect();
@@ -1226,6 +1278,17 @@ void onPortalParamsSaved() {
   }
   buildTxPowerSelect();  // the choice just saved, marked
 
+  // Time zone: a zone on the list, or "" for Home Assistant's; anything
+  // else is not stored.
+  if (s_param_time_zone != nullptr && submitted("time_zone")) {
+    const char* zone = s_param_time_zone->getValue();
+    if (zone != nullptr &&
+        strcmp(zone, services::time_zone::chosen()) != 0) {
+      services::time_zone::choose(zone);
+    }
+  }
+  buildTimeZoneSelect();  // the choice just saved, marked
+
   const char* rotation = s_param_rotation.getValue();
   if (rotation != nullptr && rotation[0] >= '0' && rotation[0] <= '3' &&
       rotation[1] == '\0') {
@@ -1290,6 +1353,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_ma_forget);
   wm.addParameter(&s_param_recent_here);
   wm.addParameter(&s_param_rotation);
+  wm.addParameter(s_param_time_zone);
   wm.addParameter(&s_param_keyboard);
   wm.addParameter(&s_param_auto_off);
   if (services::voice::built()) {

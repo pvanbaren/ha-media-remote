@@ -301,6 +301,7 @@ row a setting's name over its value:
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
+| Time zone | The clock's: Home Assistant's, or one of a list of zones from Honolulu to Auckland |
 | Firmware | The version running. A tap asks GitHub for the latest release: install it when it is newer, with the download's progress on screen, and the remote restarts into it |
 | Restart | Restart now, or cancel |
 | More at | The portal's address, `<name>.local`; not a choice |
@@ -346,6 +347,14 @@ rest are waited out, or fixed in the portal; the device notices the fix by
 itself within a couple of seconds.
 
 ### Blanking, and the amplifier
+
+After **15 seconds** untouched (`kDimAfterMs`), now playing rests as a
+**dimmed clock**: the time, large and dim, with the title and artist under
+it, a line each, on black. A touch brings now playing back and does nothing else. The
+time comes from SNTP once Wi-Fi is up, in the **Time zone** setting's zone
+-- Home Assistant's, unless another is chosen; until it has answered, the
+screen does not dim. The blanking below follows the
+same timer as before, from the clock as from now playing.
 
 After **five minutes** with the player paused, idle, off or unavailable
 (`kIdleTimeoutMs`, `kBlankWhenPaused`), the screen blanks -- backlight off,
@@ -666,6 +675,13 @@ or −90°, for a panel mounted any way up. The touch turns with the picture.
 
 **Search keyboard** -- alphabetical or QWERTY. Takes effect the next time the
 search opens.
+
+**Time zone** -- the dimmed clock's. *Home Assistant's*, the default, is the
+zone Home Assistant is set to, asked for when the remote first reaches it
+and every six hours, and kept for the next start; a zone missing from the
+list gets its present UTC offset, without summer time. Or one of the list,
+for a remote in another zone from its Home Assistant. The same setting as
+on the settings page; it takes effect at once.
 
 **Auto-off** -- *Enabled*, the default, switches the volume device off when the
 screen blanks after five minutes with the player paused, idle or off;

@@ -153,6 +153,11 @@ void blank() {
   }
 }
 
+// No screen, so no clock face: now playing never rests.
+bool dim(const services::ha::PlayerState*) { return false; }
+bool isDimmed() { return false; }
+void undim() {}
+
 void wake() {
   if (s_blanked) {
     s_blanked = false;

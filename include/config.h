@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <ctime>
 
 /**
  * How the remote behaves, not what it runs on.
@@ -471,6 +472,21 @@ constexpr unsigned long kHaPlayerListTtlMs = 300000;
  *  wakes it, as does playback resuming; polling carries on while blanked,
  *  which is what notices. */
 constexpr unsigned long kIdleTimeoutMs = 300000;
+/** Now playing rests as the dimmed clock face after this long untouched; 0
+ *  never does. A touch brings now playing back and does nothing else, as on
+ *  a blanked panel. Blanking still follows kIdleTimeoutMs, from the clock as
+ *  from now playing. */
+constexpr unsigned long kDimAfterMs = 15000;
+/** The clock face's zone is the Time zone setting
+ *  (services::time_zone): Home Assistant's by default. How often Home
+ *  Assistant is asked for its zone, and how soon again when it does not
+ *  answer. */
+constexpr unsigned long kHaTimeZoneRefreshMs = 6UL * 60 * 60 * 1000;
+constexpr unsigned long kHaTimeZoneRetryMs = 60000;
+constexpr char kNtpServer[] = "pool.ntp.org";
+/** Earlier than this, the clock has not been set: the board has no RTC and
+ *  starts at 1970 until SNTP answers. */
+constexpr time_t kClockSetAfter = 1700000000;
 /** Whether paused counts as idle for standing down.
  *
  *  On, which it was not originally. A paused player is often one you are about

@@ -200,7 +200,7 @@ slot; they are inflated at boot, in a few tens of milliseconds.
 |---|---|
 | Waveshare | 15, 17, 20, 24 |
 | DFR1221 | 23, 26, 30, 36 |
-| AMOLED 1.75 | 29, 33, 39, 47 |
+| AMOLED 1.75 | 29, 33, 39, 47, and 101 for the clock: digits and a colon only |
 | Qualia | 34, 38, 45, 54, and 23, 26, 30 for the lists |
 | 2.8C | 23, 26, 30, 36 -- the DFR1221's, at a text scale of 0.75 |
 | MaTouch 2.1" | 23, 26, 30, 36 -- the 2.8C's |

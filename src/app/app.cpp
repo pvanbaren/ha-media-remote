@@ -44,6 +44,7 @@
 #include "services/recommend.h"
 #include "services/ha_client.h"
 #include "services/search.h"
+#include "services/time_zone.h"
 #include "services/voice.h"
 #include "services/wake_word.h"
 #include "services/wifi_setup.h"
@@ -114,6 +115,13 @@ unsigned long g_last_elapsed_ms = 0;
 /** When the browse list or search screen was last opened, for
  *  kListIdleReturnMs. Loop only. */
 unsigned long g_list_opened_ms = 0;
+/** When now playing last came up -- from another screen, or the panel
+ *  waking -- for kDimAfterMs, which counts from this or the last touch,
+ *  whichever is later. Loop only. */
+unsigned long g_np_since_ms = 0;
+/** The minute the clock face last drew, so the next one draws again. Loop
+ *  only. */
+long g_dim_minute = -1;
 
 /** A volume gesture is in progress somewhere on the panel, so a poll must not
  *  contradict it. The display owns the gesture; this is a copy of
@@ -413,6 +421,15 @@ void showNowPlaying() {
   }
   snapshot.power_pending = g_power_pending_ms != 0;
 
+  // Resting on the clock: what changed shows there, under the time.
+  if (ui::isDimmed()) {
+    ui::dim(&snapshot);
+    g_screen = Screen::kNowPlaying;
+    return;
+  }
+  if (g_screen != Screen::kNowPlaying) {
+    g_np_since_ms = millis();
+  }
   LOG_DEBUG("UI: now playing \"%s\"", snapshot.title);
   ui::showNowPlaying(snapshot);
   g_screen = Screen::kNowPlaying;
@@ -469,6 +486,7 @@ void wakeDisplay() {
   ui::wake();
   g_control_off_sent = false;
   g_state_dirty = true;
+  g_np_since_ms = millis();
 }
 
 /** A tap landed on a dark panel: the idle clock starts again. It powers
@@ -478,6 +496,7 @@ void wakeDisplay() {
  *  task has not yet sent is called off, since someone is here after all. */
 void noteTouchWake() {
   g_idle_since = 0;
+  g_np_since_ms = millis();
   g_control_off_sent = false;
   g_turn_off_control = false;
   g_state_dirty = true;
@@ -2257,13 +2276,14 @@ enum class Setting : uint8_t {
   kTxPower,
   kKeyboard,
   kRotation,
+  kTimeZone,
   kFirmware,
   kFonts,
   kRestart,
   kPortal,  // where the rest is set: a hint, and a tap does nothing
 };
 
-constexpr int kMaxSettingRows = 16;
+constexpr int kMaxSettingRows = 17;
 /** What each row of the page on screen is. Loop only, as is all of this. */
 Setting g_setting_rows[kMaxSettingRows];
 int g_setting_row_count = 0;
@@ -2423,6 +2443,19 @@ void showSettingsPage(int focus) {
                     : "Alphabetical");
   addSettingRow(Setting::kRotation, "Screen rotation",
                 kRotationNames[services::display::rotation() & 3]);
+  {
+    const services::time_zone::Zone* zone =
+        services::time_zone::find(services::time_zone::chosen());
+    char ha[48];
+    services::time_zone::homeAssistantName(ha, sizeof(ha));
+    if (zone == nullptr && ha[0] != '\0') {
+      snprintf(value, sizeof(value), "%s (Home Assistant's)", ha);
+    }
+    addSettingRow(Setting::kTimeZone, "Time zone",
+                  zone != nullptr  ? zone->name
+                  : ha[0] != '\0' ? value
+                                  : "Home Assistant's");
+  }
   addSettingRow(Setting::kFirmware, "Firmware",
                 services::update::currentVersion());
   {
@@ -2799,6 +2832,25 @@ void openSettingChoices(Setting setting, int row) {
       break;
     }
 
+    case Setting::kTimeZone: {
+      ui::settingsBegin("Time zone", "The clock's");
+      const char* current = services::time_zone::chosen();
+      char ha[48];
+      services::time_zone::homeAssistantName(ha, sizeof(ha));
+      ui::settingsAdd("Home Assistant's",
+                      ha[0] != '\0' ? ha : "not heard from yet",
+                      current[0] == '\0' ? ui::SettingStyle::kCurrent
+                                         : ui::SettingStyle::kNormal);
+      for (int i = 0; i < services::time_zone::count(); ++i) {
+        const services::time_zone::Zone* zone = services::time_zone::at(i);
+        ui::settingsAdd(zone->name, "",
+                        strcmp(zone->id, current) == 0
+                            ? ui::SettingStyle::kCurrent
+                            : ui::SettingStyle::kNormal);
+      }
+      break;
+    }
+
     case Setting::kRestart:
       ui::settingsBegin("Restart?", "");
       addChoice("Restart now", 1, false);
@@ -2923,6 +2975,19 @@ bool applySettingChoice(int row) {
       if (chosen != services::display::keyboardLayout()) {
         services::display::saveKeyboardLayout(chosen);
         changed = true;
+      }
+      break;
+    }
+    case Setting::kTimeZone: {
+      // Row 0 is Home Assistant's; the list follows it.
+      const services::time_zone::Zone* zone =
+          row > 0 ? services::time_zone::at(row - 1) : nullptr;
+      if (row < 0 || (row > 0 && zone == nullptr)) {
+        return false;
+      }
+      const char* id = zone != nullptr ? zone->id : "";
+      if (strcmp(id, services::time_zone::chosen()) != 0) {
+        changed = services::time_zone::choose(id);
       }
       break;
     }
@@ -3421,6 +3486,29 @@ constexpr uint32_t kStreamSliceMs = 250;
  *  a template it rejected -- counts as a failure to open, and backs off. */
 constexpr unsigned long kStreamHealthyMs = 60000;
 
+/** Ask Home Assistant for its time zone, for the Time zone setting's
+ *  default: soon after it is first reachable, then every
+ *  kHaTimeZoneRefreshMs, and again a minute after it does not answer.
+ *  Not during a voice request, which this task carries. Poll task. */
+void refreshTimeZone() {
+  static unsigned long s_next_ms = 0;
+  static bool s_asked = false;
+  if ((s_asked && static_cast<long>(millis() - s_next_ms) < 0) ||
+      services::voice::busy()) {
+    return;
+  }
+  s_asked = true;
+  char zone[services::time_zone::kIdMaxLen] = {};
+  char offset[8] = {};
+  if (services::ha::fetchTimeZone(zone, sizeof(zone), offset,
+                                  sizeof(offset))) {
+    services::time_zone::noteHomeAssistant(zone, offset);
+    s_next_ms = millis() + config::kHaTimeZoneRefreshMs;
+  } else {
+    s_next_ms = millis() + config::kHaTimeZoneRetryMs;
+  }
+}
+
 /** All network work lives here so a blocking request never stalls the touch
  *  loop.
  *
@@ -3505,6 +3593,7 @@ void haPollTask(void*) {
       turnOffForVoice();
       switchForVoice();
       restoreAfterVoice();
+      refreshTimeZone();
 
       // Load the browse list ahead of anyone asking for it, so a swipe up
       // lands on a list rather than on a loading card. Cheap to call: it only
@@ -3652,9 +3741,81 @@ void haPollTask(void*) {
   }
 }
 
+/** Ask SNTP for the time the first time Wi-Fi is up -- the board has no RTC
+ *  -- and say when it has answered. SNTP keeps the clock in step by itself
+ *  from then on, across reconnects. Loop only. */
+[[gnu::noinline]] void handleClock() {
+  static bool s_asked = false;
+  static bool s_set = false;
+  if (!s_asked) {
+    if (WiFi.status() != WL_CONNECTED) {
+      return;
+    }
+    s_asked = true;
+    services::time_zone::takeChange();  // what is in force now, below
+    char rule[services::time_zone::kPosixMaxLen];
+    services::time_zone::posix(rule, sizeof(rule));
+    configTzTime(rule, config::kNtpServer);
+    LOG_INFO("Clock: asking %s for the time, zone %s", config::kNtpServer,
+             rule);
+    return;
+  }
+  if (services::time_zone::takeChange()) {
+    char rule[services::time_zone::kPosixMaxLen];
+    services::time_zone::posix(rule, sizeof(rule));
+    setenv("TZ", rule, 1);
+    tzset();
+    LOG_INFO("Clock: zone now %s", rule);
+    g_dim_minute = -1;  // a clock face up shows it at once
+  }
+  const time_t t = time(nullptr);
+  if (!s_set && t >= config::kClockSetAfter) {
+    s_set = true;
+    struct tm local;
+    localtime_r(&t, &local);
+    LOG_INFO("Clock: set, %02d:%02d local", local.tm_hour, local.tm_min);
+  }
+}
+
+/** Rest now playing as the clock face once nobody has touched it for
+ *  kDimAfterMs, and keep the face's minute current while it is up. Blanking
+ *  is handleIdleBlanking()'s, from the clock as from now playing. Loop only. */
+[[gnu::noinline]] void handleDimming() {
+  if (ui::isDimmed()) {
+    // A card or a list has the screen now.
+    if (g_screen != Screen::kNowPlaying || ui::isBlanked()) {
+      ui::undim();
+      return;
+    }
+    const long minute = static_cast<long>(time(nullptr) / 60);
+    if (minute != g_dim_minute) {
+      g_dim_minute = minute;
+      g_state_dirty = true;  // drawn again by showNowPlaying()
+    }
+    return;
+  }
+  if (config::kDimAfterMs == 0 || g_screen != Screen::kNowPlaying ||
+      ui::isBlanked() || g_volume_dragging ||
+      time(nullptr) < config::kClockSetAfter) {
+    return;
+  }
+  unsigned long since = ui::lastInteractionMs();
+  if (static_cast<long>(g_np_since_ms - since) > 0) {
+    since = g_np_since_ms;  // the later of the two, wrap-safe
+  }
+  if (millis() - since < config::kDimAfterMs) {
+    return;
+  }
+  PlayerState snapshot;
+  if (snapshotState(snapshot) && ui::dim(&snapshot)) {
+    g_dim_minute = static_cast<long>(time(nullptr) / 60);
+    LOG_INFO("UI: resting on the clock");
+  }
+}
+
 /** The elapsed chip, once a second while something plays. */
 [[gnu::noinline]] void handleElapsedTick() {
-  if (ui::isBlanked() || g_screen != Screen::kNowPlaying ||
+  if (ui::isBlanked() || ui::isDimmed() || g_screen != Screen::kNowPlaying ||
       g_volume_dragging || millis() - g_last_elapsed_ms < 1000) {
     return;
   }
@@ -3706,6 +3867,7 @@ void setup() {
   // Claimed before Wi-Fi, while the heap is still unfragmented, and never
   // freed -- so it cannot fail later and cannot leave a hole.
   services::browse::init();
+  services::time_zone::init();
   services::history::init();
 
   if (wifiShowsSetupScreenOnBoot()) {
@@ -3835,6 +3997,8 @@ void loop() {
   ui::idleWork(g_screen);
   handleStatusRefresh();
 
+  handleClock();
+  handleDimming();
   handleElapsedTick();
 
   delay(5);

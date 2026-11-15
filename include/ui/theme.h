@@ -96,6 +96,9 @@ constexpr int kVolumeKnobRadius = px(6);
 // to the panel, without recomposing the cover art underneath it.
 constexpr int kElapsedY = px(222);
 constexpr int kElapsedTextPx = textPx(15);
+/** The clock face's time: drawn from the font pack at this size, or the
+ *  largest face scaled up to it. No face is made for it. */
+constexpr int kClockTextPx = textPx(52);
 constexpr int kElapsedPillPadX = px(7);
 constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);
