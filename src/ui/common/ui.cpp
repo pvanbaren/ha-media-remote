@@ -8,6 +8,7 @@
 #include "board/board.h"
 #include "config.h"
 #include "log.h"
+#include "hardware/battery.h"
 #include "hardware/display.h"
 #include "hardware/encoder.h"
 #include "hardware/touch.h"
@@ -160,15 +161,7 @@ constexpr unsigned long kFlickMaxMs = 250;
 /** About a fifth of the panel, at the 240 px design size. */
 constexpr int kFlickMinPx = static_cast<int>(48 * board::kUiScale + 0.5f);
 
-/** Whether a volume swipe or a turn of the knob should switch the volume
- *  device on rather than set its level: it is off, and it can be switched on
- *  -- a device reporting no features at all counting as one that can, as
- *  everywhere else. One that cannot gets the level as it is, as before. */
-bool powerOnForVolume(const PlayerState& state) {
-  return state.control_off &&
-         (state.control_features == 0 ||
-          (state.control_features & services::ha::kFeatureTurnOn) != 0);
-}
+using services::ha::powerOnForVolume;
 
 /** Drive the volume arc from a horizontal swipe across the top of the panel.
  *
@@ -257,7 +250,7 @@ bool driveVolume(Screen screen, const PlayerState* state, Input& out) {
       out.intent = Intent::kPowerOnForVolume;
       return true;
     }
-    if (state == nullptr || !now_playing::volumeAvailable(*state)) {
+    if (state == nullptr || !services::ha::volumeAvailable(*state)) {
       return false;
     }
 
@@ -571,7 +564,7 @@ bool driveKnob(Screen screen, const PlayerState* state, Input& out) {
         return false;
       }
       s_knob_power_ms = 0;
-      if (state == nullptr || !now_playing::volumeAvailable(*state)) {
+      if (state == nullptr || !services::ha::volumeAvailable(*state)) {
         return false;
       }
       if (!s_knob_adjusting) {
@@ -909,6 +902,7 @@ bool init(uint8_t rotation) {
   artwork::init();
   hw::touchInit();
   hw::encoderInit();
+  hw::batteryInit();
   return true;
 }
 
@@ -1032,13 +1026,15 @@ Input poll(Screen screen, const PlayerState* state) {
     return out;
   }
   if (screen == Screen::kStatus) {
-    // The gear opens the settings, and a swipe left goes on to the Wi-Fi
-    // networks, as one does from the list to the search. A swipe up undoes
-    // the swipe down that opened it, back to whatever screen that was; any
-    // other tap or swipe goes back to now playing -- the back button among
-    // them, which is there to say so.
-    if (report.event == hw::TouchEvent::kTap &&
-        statusScreenGearHit(report.x, report.y)) {
+    // The gear opens the settings, and so does a swipe down, going on the
+    // way the one that opened this page came. A swipe left goes on to the
+    // Wi-Fi networks, as one does from the list to the search. A swipe up
+    // undoes the swipe down that opened it, back to whatever screen that
+    // was; any other tap or swipe goes back to now playing -- the back
+    // button among them, which is there to say so.
+    if ((report.event == hw::TouchEvent::kTap &&
+         statusScreenGearHit(report.x, report.y)) ||
+        report.event == hw::TouchEvent::kSwipeDown) {
       out.intent = Intent::kOpenSettings;
     } else if (report.event == hw::TouchEvent::kSwipeLeft) {
       out.intent = Intent::kOpenWifi;
@@ -1181,6 +1177,19 @@ void showRestarting(const char* why) {
                       theme::kStatusPlainText);
 }
 
+void showUpdating(const char* version, int percent) {
+  hw::touchCancel();
+  char line[16];
+  snprintf(line, sizeof(line), "%d%%", percent);
+  statusScreenMessage("Updating", version, line, theme::kStatusPlain,
+                      theme::kStatusPlainText);
+}
+
+void showUpdateFailed(const char* why) {
+  statusScreenMessage("Not updated", why, "", theme::kStatusPlain,
+                      theme::kWarning);
+}
+
 const char* wifiChosenSsid() { return wifi_join::chosenSsid(); }
 
 const char* wifiPassword() { return wifi_join::password(); }
@@ -1196,6 +1205,7 @@ void showSearch() {
 void showSearchResults() { search::draw(); }
 
 void showSearching() { search::showSearching(); }
+void showVoiceStarting(const char* words) { search::showStartingWords(words); }
 
 void showLoading(const char* what) {
   statusScreenMessage("Loading", what, "", theme::kStatusPlain,
@@ -1212,6 +1222,9 @@ void showCommandPending(Intent intent, bool pending) {
       break;
     case Intent::kNext:
       now_playing::showButtonPressed(Action::kNext, pending);
+      break;
+    case Intent::kTogglePower:
+      now_playing::showPowerPending(pending);
       break;
     default:
       break;

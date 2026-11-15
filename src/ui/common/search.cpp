@@ -585,6 +585,29 @@ void showStarting(int index) {
   ui::canvasPresent();
 }
 
+void showStartingWords(const char* words) {
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  beginFrame(gfx);
+
+  displayFontApplyHeight(gfx, theme::kSearchQueryTextPx);
+  gfx.setTextDatum(textdatum_t::middle_center);
+  gfx.setTextColor(theme::kAccent);
+  char line[text::kMaxLineLen];
+  text::ellipsize(gfx, words,
+                  theme::usableWidthAt(theme::kCenterY, theme::kTextEdgeInset),
+                  line, sizeof(line));
+  gfx.drawString(line, theme::kCenterX,
+                 theme::kCenterY - theme::kListRowHeight / 2);
+
+  displayFontApplyHeight(gfx, theme::kListHeaderTextPx);
+  gfx.setTextColor(theme::kTextMuted);
+  gfx.drawString("Starting...", theme::kCenterX,
+                 theme::kCenterY + theme::kListRowGap);
+  back_button::draw(gfx);
+
+  ui::canvasPresent();
+}
+
 Result handleTap(int x, int y, int& index) {
   index = -1;
 

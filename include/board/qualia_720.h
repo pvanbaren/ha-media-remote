@@ -63,7 +63,7 @@ constexpr float kTextScale = 0.75f;
  *
  *  Rows come out 92 px, about 9 mm on this glass, still taller than the round
  *  panel's, so nothing gets harder to hit. And the list's text lands on
- *  23/26/30 px -- the round 360 px board's own faces, embedded here too. */
+ *  26/30 px -- the round 360 px board's own faces, embedded here too. */
 constexpr float kListScale = 2.0f / 3.0f;
 
 /** Section headers in the browse list, at the 240 px design size, so they
@@ -74,9 +74,9 @@ constexpr float kListScale = 2.0f / 3.0f;
  *  for the list rather than as part of it. They stay distinguishable by
  *  colour, which is what kAccent was already doing.
  *
- *  It also happens to leave the 23 px face with no user on this board. Still
- *  embedded, and harmless -- displayFontApplyHeight() picks by nearest size,
- *  so nothing reaches for it -- but it is 41 KB of flash doing nothing. */
+ *  It also leaves the 23 px face with no user on this board --
+ *  displayFontApplyHeight() picks by nearest size, and nothing is near it
+ *  -- so it is not embedded. */
 constexpr int kListHeaderTextPx240 = 20;
 
 /** How far the transport row sits above the 240 px design's, in design

@@ -26,6 +26,8 @@
 #include "services/ha_link.h"
 #include "services/ma_api.h"
 #include "services/player_list.h"
+#include "services/voice.h"
+#include "services/wake_word.h"
 
 bool s_long_press_handled = false;
 
@@ -54,7 +56,7 @@ struct WebPage {
   const char* path = nullptr;
   void (*handler)(WebServer& server) = nullptr;
 };
-WebPage s_web_pages[4];
+WebPage s_web_pages[8];
 
 /** True while wifiSetupConnect() waits in the setup portal. */
 bool s_in_setup_portal = false;
@@ -130,6 +132,8 @@ struct EntitySelect {
    *  first entity as if it were chosen, and saving the page unchanged stores
    *  nothing, since the hidden value only follows a change. */
   const char* unset_option = nullptr;
+  /** Which of the player list's entries it offers. */
+  services::players::Role role = services::players::Role::kPlayer;
   String attrs;
   size_t capacity = 0;
   /** Constructed on first build, once `attrs` has its final buffer. */
@@ -142,7 +146,8 @@ EntitySelect s_player_select{"ha_player", "Media player", nullptr,
  *  serve: something streaming into an amplifier, where the amplifier owns the
  *  knob and the power. Defaults to following the player. */
 EntitySelect s_control_select{"ha_control", "Volume &amp; power",
-                              "Same as the media player"};
+                              "Same as the media player", nullptr,
+                              services::players::Role::kControl};
 
 WiFiManagerParameter s_param_ha_url("ha_url", "Home Assistant URL", "",
                                     kUrlParamLen, kUrlInputAttrs);
@@ -328,6 +333,38 @@ void buildRecentHereSelect() {
   s_param_recent_here.setValue(room ? "1" : "0", 2);
 }
 
+/** Voice: Disabled, or the wake word the remote listens for. A dropdown as
+ *  Auto-off's is, of every word this build has, and on the page only in a
+ *  build with voice. */
+char s_voice_attrs[512] = " type=\"hidden\"";
+WiFiManagerParameter s_param_voice(
+    "voice", "Voice: listen for a wake word, and answer through Assist", "0",
+    2, s_voice_attrs);
+
+void buildVoiceSelect() {
+  const int voice = services::voice::setting();
+  size_t at = snprintf(
+      s_voice_attrs, sizeof(s_voice_attrs),
+      " type=\"hidden\"><select id=\"voice_sel\" "
+      "onchange='document.getElementById(\"voice\").value=this.value'>"
+      "<option value=\"0\"%s>Disabled</option>",
+      voice == 0 ? " selected" : "");
+  for (int i = 0; i < services::wake_word::kWordCount; ++i) {
+    const auto word = static_cast<services::wake_word::Word>(i);
+    if (services::wake_word::has(word) && at < sizeof(s_voice_attrs)) {
+      at += snprintf(s_voice_attrs + at, sizeof(s_voice_attrs) - at,
+                     "<option value=\"%d\"%s>%s</option>", i + 1,
+                     voice == i + 1 ? " selected" : "",
+                     services::wake_word::phraseOf(word));
+    }
+  }
+  if (at < sizeof(s_voice_attrs)) {
+    snprintf(s_voice_attrs + at, sizeof(s_voice_attrs) - at, "</select");
+  }
+  const char value[2] = {static_cast<char>('0' + voice), '\0'};
+  s_param_voice.setValue(value, 2);
+}
+
 void buildKeyboardSelect() {
   const bool qwerty = services::display::keyboardLayout() ==
                       services::display::KeyboardLayout::kQwerty;
@@ -480,7 +517,7 @@ void appendHtmlEscaped(String& out, const char* text) {
  *  also means the stored value survives if the dropdown never fires. */
 void buildEntitySelect(EntitySelect& sel, const char* selected) {
   const bool have_list = services::players::ensureEntries();
-  const int count = services::players::entryCount();
+  const int count = services::players::entryCount(sel.role);
 
   // Nothing to offer yet -- no Wi-Fi or no HA settings at first boot. Leave
   // the parameter uncreated so the buffer is sized against a real list when
@@ -541,7 +578,8 @@ void buildEntitySelect(EntitySelect& sel, const char* selected) {
 
   bool selected_listed = selected[0] == '\0';
   for (int i = 0; i < count; ++i) {
-    const services::ha::PlayerEntry* entry = services::players::entryAt(i);
+    const services::ha::PlayerEntry* entry =
+        services::players::entryAt(sel.role, i);
     if (entry == nullptr) {
       continue;
     }
@@ -746,6 +784,86 @@ void buildInputSelect() {
   refreshWakeVolumeField();
 }
 
+/** Room: the Home Assistant area whose lights and fans a voice request
+ *  switches, in a build with voice. A dropdown of the areas, built with the
+ *  player lists since it needs Home Assistant too; the hidden input holds
+ *  the area id, and the name is looked up in the list it was built from.
+ *  Registered the first time it is built, so it sits under the inputs. */
+constexpr size_t kRoomAttrsBytes =
+    256 + config::kMaxAreas *
+              (config::kAreaIdMaxLen + config::kFriendlyNameMaxLen + 32);
+char* s_room_attrs = nullptr;  // PSRAM
+WiFiManagerParameter* s_param_room = nullptr;
+services::ha::AreaEntry* s_areas = nullptr;  // PSRAM
+int s_area_count = 0;
+
+void buildRoomSelect() {
+  if (!services::voice::built()) {
+    return;
+  }
+  if (s_room_attrs == nullptr) {
+    s_room_attrs = static_cast<char*>(heap_caps_calloc(
+        1, kRoomAttrsBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (s_areas == nullptr) {
+    s_areas = static_cast<services::ha::AreaEntry*>(heap_caps_calloc(
+        config::kMaxAreas, sizeof(services::ha::AreaEntry),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (s_room_attrs == nullptr || s_areas == nullptr) {
+    return;  // no dropdown; the volume device's area still applies
+  }
+  const int n = services::ha::fetchAreas(s_areas, config::kMaxAreas);
+  s_area_count = n > 0 ? n : 0;
+  const char* stored = services::ha::storedRoom();
+  String html;
+  html.reserve(kRoomAttrsBytes);
+  html += " type=\"hidden\"><select id=\"room_sel\" "
+          "onchange='document.getElementById(\"room\").value=this.value'>";
+  html += "<option value=\"\"";
+  html += stored[0] == '\0' ? " selected>" : ">";
+  html += "The volume device's area</option>";
+  bool stored_listed = stored[0] == '\0';
+  for (int i = 0; i < s_area_count; ++i) {
+    // Room for this option and the closing tags, or stop: the buffer the
+    // parameter points at never grows.
+    if (html.length() + config::kAreaIdMaxLen + config::kFriendlyNameMaxLen +
+            96 > kRoomAttrsBytes) {
+      break;
+    }
+    const bool selected = strcmp(s_areas[i].id, stored) == 0;
+    stored_listed = stored_listed || selected;
+    html += "<option value=\"";
+    html += s_areas[i].id;
+    html += selected ? "\" selected>" : "\">";
+    appendHtmlEscaped(html, s_areas[i].name);
+    html += "</option>";
+  }
+  if (!stored_listed) {
+    // Chosen before, and Home Assistant does not list it now: kept, and
+    // said so. A voice request falls back to the volume device's area.
+    html += "<option value=\"";
+    html += stored;
+    html += "\" selected>";
+    appendHtmlEscaped(html, services::ha::storedRoomName());
+    html += " (not listed now)</option>";
+  }
+  if (n < 0) {
+    html += "<option value=\"\" disabled>could not load the areas</option>";
+  }
+  html += "</select";
+  snprintf(s_room_attrs, kRoomAttrsBytes, "%s", html.c_str());
+  if (s_param_room != nullptr) {
+    s_param_room->setValue(stored,
+                           static_cast<int>(config::kAreaIdMaxLen) - 1);
+    return;
+  }
+  s_param_room = new WiFiManagerParameter(
+      "room", "Room: the area whose lights and fans a voice request switches",
+      stored, static_cast<int>(config::kAreaIdMaxLen) - 1, s_room_attrs);
+  s_wm.addParameter(s_param_room);
+}
+
 void buildPlayerSelects() {
   buildEntitySelect(s_player_select, services::ha::selectedEntity());
   // The *stored* value, not the resolved one: an empty string means "follow
@@ -755,6 +873,7 @@ void buildPlayerSelects() {
   if (s_control_select.param != nullptr) {
     buildInputSelect();
   }
+  buildRoomSelect();
 }
 
 void refreshPortalParamDefaults() {
@@ -788,6 +907,7 @@ void refreshPortalParamDefaults() {
   buildRotationSelect();
   buildKeyboardSelect();
   buildAutoOffSelect();
+  buildVoiceSelect();
   buildTxPowerSelect();
   snprintf(s_name_attrs, sizeof(s_name_attrs),
            " placeholder=\"%s\" autocapitalize=\"none\" spellcheck=\"false\"",
@@ -817,23 +937,33 @@ bool submitted(const char* id) {
  * parameters page -- it goes back to the form it came from after
  * config::kPortalSavedReturnMs, long enough for a device that restarts to
  * apply the save to be back, replacing the saved page in the browser's
- * history rather than adding to it. Every other page ignores it. /0wifi
- * rather than /wifi for the same reason as redirectToForm().
+ * history rather than adding to it. /0wifi rather than /wifi for the same
+ * reason as redirectToForm().
+ *
+ * On /info it adds the memory rows /mem gives after WiFiManager's "Free
+ * heap", whose list of rows is its own and fixed.
  */
-char s_portal_head[224] = {};
+char s_portal_head[768] = {};
 
 void buildPortalHeadScript() {
   const int written =
       snprintf(s_portal_head, sizeof(s_portal_head),
                "<script>(function(){var p=location.pathname;"
                "var to=p=='/wifisave'?'/0wifi':p=='/paramsave'?'/param':'';"
-               "if(to)setTimeout(function(){location.replace(to);},%lu);})();"
-               "</script>",
+               "if(to)setTimeout(function(){location.replace(to);},%lu);"
+               "if(p=='/info')addEventListener('DOMContentLoaded',function(){"
+               "fetch('/mem').then(function(r){return r.text();})"
+               ".then(function(h){var t=[].filter.call("
+               "document.querySelectorAll('dt'),function(e){"
+               "return /heap/i.test(e.textContent);})[0];"
+               "var a=t&&t.nextElementSibling||document.querySelector('dl');"
+               "if(a)a.insertAdjacentHTML(t?'afterend':'beforeend',h);});});"
+               "})();</script>",
                config::kPortalSavedReturnMs);
   if (written < 0 || static_cast<size_t>(written) >= sizeof(s_portal_head)) {
     s_portal_head[0] = '\0';
     LOG_WARN("Portal: head script does not fit s_portal_head; saved page will "
-             "not return on its own");
+             "not return on its own, nor Info show the memory");
   }
 }
 
@@ -1061,6 +1191,29 @@ void onPortalParamsSaved() {
   }
   buildAutoOffSelect();  // the choice just saved, marked
 
+  const char* voice = submitted("voice") ? s_param_voice.getValue() : nullptr;
+  if (voice != nullptr && voice[0] >= '0' && voice[0] <= '9' &&
+      voice[1] == '\0' && voice[0] - '0' != services::voice::setting()) {
+    services::voice::saveSetting(voice[0] - '0');  // refuses a word not here
+  }
+  buildVoiceSelect();  // the choice just saved, marked
+
+  // Room: an area from the list the dropdown was built from, whose name
+  // goes with it, or none for the volume device's area.
+  if (s_param_room != nullptr && submitted("room")) {
+    const char* room = s_param_room->getValue();
+    if (room != nullptr && strcmp(room, services::ha::storedRoom()) != 0) {
+      const char* name = "";
+      for (int i = 0; i < s_area_count; ++i) {
+        if (strcmp(s_areas[i].id, room) == 0) {
+          name = s_areas[i].name;
+        }
+      }
+      services::ha::selectRoom(room, name);
+      buildRoomSelect();  // the choice just saved, marked
+    }
+  }
+
   const char* txpow = submitted("txpow") ? s_param_txpow.getValue() : nullptr;
   if (txpow != nullptr && txpow[0] != '\0') {
     char* end = nullptr;
@@ -1139,6 +1292,9 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_rotation);
   wm.addParameter(&s_param_keyboard);
   wm.addParameter(&s_param_auto_off);
+  if (services::voice::built()) {
+    wm.addParameter(&s_param_voice);
+  }
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 
@@ -1254,6 +1410,47 @@ bool wifiLinkUp() {
  * The scan is on request only: it takes a few seconds, and the screen waits
  * for it.
  */
+/** One memory row for /mem: used, free and total of the heap with `caps`,
+ *  with its largest free block -- what one allocation, a TLS session's
+ *  buffers say, can have at once -- and, with `lowest`, the least it has had
+ *  free since boot. */
+void appendMemoryRow(String& page, const char* name, uint32_t caps,
+                     bool lowest) {
+  const size_t total = heap_caps_get_total_size(caps);
+  if (total == 0) {
+    return;
+  }
+  const size_t free_bytes = heap_caps_get_free_size(caps);
+  char row[256];
+  int n = snprintf(row, sizeof(row),
+                   "<dt>%s</dt><dd>%u KB used, %u KB free of %u KB; largest "
+                   "free block %u KB",
+                   name, static_cast<unsigned>((total - free_bytes) / 1024),
+                   static_cast<unsigned>(free_bytes / 1024),
+                   static_cast<unsigned>(total / 1024),
+                   static_cast<unsigned>(heap_caps_get_largest_free_block(caps) /
+                                         1024));
+  if (lowest && n > 0 && static_cast<size_t>(n) < sizeof(row)) {
+    n += snprintf(row + n, sizeof(row) - n, "; lowest free since boot %u KB",
+                  static_cast<unsigned>(
+                      heap_caps_get_minimum_free_size(caps) / 1024));
+  }
+  page += row;
+  page += "</dd>";
+}
+
+/** /mem: the memory rows the Info page adds to its own (see
+ *  buildPortalHeadScript()). Internal RAM, which TLS and the network stack
+ *  run short of, and PSRAM, which holds the frames, the covers and, on some
+ *  boards, the fonts. */
+void handleMemoryRows() {
+  String page;
+  page.reserve(512);
+  appendMemoryRow(page, "Memory - Internal RAM", MALLOC_CAP_INTERNAL, true);
+  appendMemoryRow(page, "Memory - PSRAM", MALLOC_CAP_SPIRAM, false);
+  s_wm.server->send(200, "text/html", page);
+}
+
 void handleLinkPage() {
   auto& server = *s_wm.server;
   const bool scan = server.hasArg("scan");
@@ -1342,6 +1539,7 @@ void ensureWifiManager() {
   s_wm.setWebServerCallback([] {
     claimSaveRoutes();
     s_wm.server->on("/link", handleLinkPage);
+    s_wm.server->on("/mem", handleMemoryRows);
     for (const WebPage& page : s_web_pages) {
       if (page.path != nullptr) {
         auto* handler = page.handler;
@@ -1349,6 +1547,15 @@ void ensureWifiManager() {
       }
     }
   });
+  // WiFiManager's own menu, with the firmware update from GitHub beside its
+  // Update, which takes a file, and the fonts from GitHub.
+  static std::vector<const char*> s_menu = {"wifi", "info", "custom",
+                                           "exit", "sep", "update"};
+  s_wm.setMenu(s_menu);
+  s_wm.setCustomMenuHTML(
+      "<form action='/firmware' method='get'><button>Firmware from GitHub"
+      "</button></form><br/><form action='/fonts' method='get'><button>"
+      "Download fonts</button></form><br/>");
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));

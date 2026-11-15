@@ -54,9 +54,10 @@ uint32_t canvasPanelWrites();
  *  canvasScrollPanel(). */
 bool canvasCanScroll();
 
-/** The panel itself, for the small direct repaints that skip compositing --
- *  a pressed transport button, the elapsed chip. Both draw over an opaque
- *  shape, so they need nothing from the frame underneath. */
+/** The panel itself, for a small repaint where there is no composed frame
+ *  to draw into. With one, a pressed transport button and the elapsed
+ *  chip go into the frame and are pushed, their shapes being
+ *  translucent. */
 lgfx::LovyanGFX& panel();
 
 /** Multiply a rectangle of the composed frame towards black. `alpha` is 0-255
@@ -103,5 +104,30 @@ lgfx::color_depth_t canvasColorDepth();
  *  laid over the frame at (x, y) in drawing coordinates. What a soft shadow
  *  under text is made of -- the text's own shape, blurred. */
 void dimMask(int x, int y, int w, int h, const uint8_t* mask);
+
+/** Copy a `w` x `h` rectangle of the composed frame, at (x, y), into
+ *  `out`, pixels as the frame stores them. False, copying nothing, with
+ *  no frame or a rectangle not wholly on it. */
+bool canvasCopyRect(int x, int y, int w, int h, uint16_t* out);
+
+/** Put a canvasCopyRect() back: `in`, `w` x `h`, into the frame at (x, y).
+ *  False, writing nothing, with no frame or a rectangle not wholly on it. */
+bool canvasPasteRect(int x, int y, int w, int h, const uint16_t* in);
+
+/** A rounded rectangle of `color` -- the shape fillRoundRect() draws,
+ *  corner radius `r` -- laid over the composed frame as it stands at
+ *  `alpha` of 255. False, drawing nothing, with no frame to blend into. */
+bool blendRoundRect(int x, int y, int w, int h, int r, uint16_t color,
+                    uint8_t alpha);
+
+/** A disc of `color` (RGB565), radius `r` about (cx, cy), laid over the
+ *  composed frame at `alpha` of 255. Over `under` when given -- a
+ *  canvasCopyRect() of the disc's square, 2r+1 a side -- so that a disc
+ *  drawn again over itself, pressed or repainted, does not darken with
+ *  each draw; over the frame as it stands otherwise. Only the disc's own
+ *  pixels are written, not its square's corners. False, drawing
+ *  nothing, with no frame to blend into: draw it opaque instead. */
+bool blendDisc(int cx, int cy, int r, uint16_t color, uint8_t alpha,
+               const uint16_t* under);
 
 }  // namespace ui

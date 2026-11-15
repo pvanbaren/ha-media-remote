@@ -12,6 +12,12 @@ struct PlayerEntry {
   char entity_id[config::kEntityIdMaxLen] = {};
   char name[config::kFriendlyNameMaxLen] = {};
   bool available = false;
+  /** Which lists offer it (see fetchPlayers()): 'p' the media player, 'c'
+   *  Volume & power, 'b' both. */
+  char role = 0;
+  /** It has inputs to switch between (kFeatureSelectSource): Volume &
+   *  power lists those first. */
+  bool inputs = false;
 };
 
 /** One Music Assistant library item, as shown in the swipe-up list. */
@@ -107,6 +113,10 @@ struct PlayerState {
    *  on or off less than config::kOffHereHoldMs ago, so "Off in this room" is
    *  not shown while the device and the player catch up with each other. */
   bool hold_off_here = false;
+  /** Set by the app, not the server: a power tap has gone to Home Assistant
+   *  and no state since has shown what it did, so the volume is drawn in the
+   *  pending grey -- an answer to the touch before Home Assistant's. */
+  bool power_pending = false;
   /** Set by the app, not the server: Home Assistant has not been heard from
    *  for config::kHaOfflineMarkMs, so this is the last state there was and
    *  now playing says so. */
@@ -130,6 +140,18 @@ constexpr uint32_t kFeatureTurnOn = 1u << 7;
 constexpr uint32_t kFeatureTurnOff = 1u << 8;
 constexpr uint32_t kFeatureSelectSource = 1u << 11;
 constexpr uint32_t kFeaturePlay = 1u << 14;
+
+/** True when the player exposes a volume a slider or a knob can drive.
+ *  Tested against the *control* entity: it is the one they drive, and where
+ *  the two differ it is entirely normal for the receiver to set VOLUME_SET
+ *  while the player streaming into it does not. */
+bool volumeAvailable(const PlayerState& state);
+
+/** Whether a volume gesture should switch the volume device on rather than
+ *  set its level: it is off, and it can be switched on -- a device reporting
+ *  no features at all counting as one that can, as everywhere else. One that
+ *  cannot gets the level as it is. */
+bool powerOnForVolume(const PlayerState& state);
 
 /** Load base URL / token / last selection from NVS. Call once in setup(). */
 void init();
@@ -201,6 +223,15 @@ void selectControlEntity(const char* entity_id);
  *  empty means the input named after the player, where there is one. */
 const char* storedControlInput();
 void selectControlInput(const char* input);
+/** The Room setting: the Home Assistant area this remote is in, whose
+ *  lights and fans a voice request switches (switchArea()). Empty, the
+ *  default, for the area of the volume device, or of the player where
+ *  there is none. storedRoomName() is the area's name as it was when
+ *  chosen; copyRoom() is for another task than the loop. */
+const char* storedRoom();
+const char* storedRoomName();
+void copyRoom(char* out, size_t out_len);
+void selectRoom(const char* area_id, const char* name);
 /** The player's own volume, 0..1, set when the remote switches a separate
  *  volume and power entity on; negative when that is off. What the portal
  *  stored, or config::kPlayerWakeVolume until it has stored one. The portal
@@ -221,10 +252,26 @@ void saveAutoOffControl(bool on);
 int fetchSources(const char* entity_id,
                  char (*out)[config::kSourceNameMaxLen], int capacity);
 
-/** Fetch every media_player entity, sorted by friendly name.
+/** Fetch the media_player entities, sorted by friendly name, each tagged
+ *  with the lists that offer it (PlayerEntry::role) and whether it has
+ *  inputs (PlayerEntry::inputs). The media player offers every one. Volume
+ *  & power offers those whose volume can be set -- kVolumeDeviceFeatures,
+ *  or no features reported at all -- and `control` itself whatever it
+ *  supports, so a device chosen before stays on offer.
  *  Writes at most config::kMaxPlayers entries; returns the count, or -1 on a
  *  transport/auth failure (leaving `out` untouched). */
-int fetchPlayers(PlayerEntry* out, size_t capacity);
+int fetchPlayers(PlayerEntry* out, size_t capacity, const char* control);
+
+/** What makes a media_player a volume device for Volume & power: a volume
+ *  the remote can set. One that reports no features at all is offered
+ *  too, as the remote takes such a device to be able to (volumeAvailable()).
+ *  Inputs are not asked for -- an amplifier with one input is still the
+ *  room's volume and power, and the remote leaves its input alone -- but
+ *  the devices with them, a zone amplifier's zone, a receiver, a TV, a
+ *  soundbar, are listed first. Power is left out: an amplifier driven by
+ *  IR may switch only one way, or not at all, and the power controls go by
+ *  the device's own features anyway. */
+constexpr uint32_t kVolumeDeviceFeatures = kFeatureVolumeSet;
 
 /** Fetch the selected player's now-playing snapshot. False on failure. */
 bool fetchState(const char* entity_id, PlayerState& out);
@@ -262,6 +309,30 @@ bool streamIsOpen();
  *  against have changed -- check streamIsOpen() after a false. */
 bool streamService(PlayerState& out, uint32_t wait_ms);
 void streamClose();
+
+// --- A conversation of its own on the stream, for services::voice ----------
+// Home Assistant's Assist pipeline runs over the same WebSocket as the state,
+// since a second TLS session beside the stream's leaves too little internal
+// RAM for the reply's download. The socket stays the owner's alone: the hook
+// runs on the owner, on every pass while the stream is open, and the two
+// sends below are for the hook and the listener only.
+
+/** Called on the stream's owner on every pass while the stream is open. */
+using StreamHook = void (*)();
+/** Called on the owner with each message whose id is the one
+ *  streamRequest() last returned; with nullptr when the stream closes. */
+using StreamListener = void (*)(const char* message);
+void setStreamHook(StreamHook hook);
+void setStreamListener(StreamListener listener);
+
+/** From the hook or the listener: `body` -- the members after the id -- as
+ *  a request, its messages from now on for the listener. Its id, or 0 if
+ *  the send failed, which closes the stream. */
+int streamRequest(const char* body);
+
+/** From the hook or the listener: one binary message. False if the send
+ *  failed, which closes the stream. */
+bool streamSendBinary(const uint8_t* data, size_t len);
 
 /** Fetch one slice of the Music Assistant library, via
  *  `music_assistant.get_library?return_response`.
@@ -314,6 +385,33 @@ bool callService(const char* service, const char* entity_id);
 /** media_player.media_seek: `entity_id` to `position_s` seconds into what it
  *  is playing. */
 bool seek(const char* entity_id, float position_s);
+
+/** One of Home Assistant's areas, for the Room setting. */
+struct AreaEntry {
+  char id[config::kAreaIdMaxLen] = {};
+  char name[config::kFriendlyNameMaxLen] = {};
+};
+
+/** Home Assistant's areas, sorted by name: the count, or -1 when they
+ *  could not be had. */
+int fetchAreas(AreaEntry* out, int capacity);
+
+/** What switchArea() did. */
+enum class AreaSwitch : uint8_t {
+  kDone,       // the call went through
+  kNoArea,     // no room chosen, and the entity is in no area
+  kNoneThere,  // the area has none of the domain's entities
+  kFailed,     // Home Assistant could not be asked, or refused
+};
+
+/** `domain`'s entities -- "light" or "fan" -- turned on or off in area
+ *  `room` (the Room setting), or where that is empty or no longer an
+ *  area, in the area `entity_id` is in, its own or its device's: one
+ *  call, with the area as its target. `area` gets the area's name,
+ *  "Kitchen". */
+AreaSwitch switchArea(const char* domain, bool on, const char* room,
+                      const char* entity_id, char* area,
+                      size_t area_len);
 
 /** media_player.select_source for one entity. */
 bool selectSource(const char* entity_id, const char* source);

@@ -45,6 +45,10 @@ void redrawResults();
  *  stops for that long reads as a device that missed the tap. */
 void showStarting(int index);
 
+/** The same acknowledgement for something asked for by voice: the words
+ *  heard, and "Starting..." under them, with the back button. */
+void showStartingWords(const char* words);
+
 /** Scroll the results by pixels; positive moves further down. Clamped, and
  *  false when the clamp meant nothing moved. No-op on the keyboard. */
 bool scrollByPx(int delta);

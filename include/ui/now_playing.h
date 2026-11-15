@@ -34,9 +34,6 @@ void refreshElapsed(const services::ha::PlayerState& state);
  *  cost. */
 void refreshVolume(const services::ha::PlayerState& state, float level);
 
-/** True when the player exposes a volume the slider can drive. */
-bool volumeAvailable(const services::ha::PlayerState& state);
-
 /** Whether a press starting at (x, y) may become a volume swipe, or a tap
  *  there toggle the volume device's power.
  *
@@ -80,5 +77,9 @@ Action hitTest(int x, int y);
 /** Repaint one transport button pressed or released, straight to the panel,
  *  so a press acknowledges before the HA round trip returns. */
 void showButtonPressed(Action action, bool pressed);
+
+/** Repaint the volume in the pending grey, or out of it, straight to the
+ *  panel: a power tap's answer to the touch, before Home Assistant's. */
+void showPowerPending(bool pending);
 
 }  // namespace ui::now_playing

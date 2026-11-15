@@ -395,14 +395,17 @@ Waveshare's examples do instead, with the 120 ms the controller needs to wake.
 
 The CST9217 touch controller is read by hand (`touch_raw.cpp`): LovyanGFX's
 `Touch_CST226` speaks the same protocol but accepts only the CST226's chip id.
-The AXP2101 power manager, QMI8658 IMU and audio are left alone.
+The AXP2101 power manager is read for the battery's charge
+(`hardware/battery.cpp`), its fuel gauge turned on if it is off; the QMI8658
+IMU is left alone; the audio codec and microphone are used for voice, in a
+build with it (`-DVOICE_ASSIST`).
 
 `amoled466-s3` is the 1.75 (Rev 1.1, with an SD card slot). The 1.75C has
 the same pins but for its resets -- the display's on GPIO 1 and the touch's
 on GPIO 2, which on the 1.75 are SD card lines, against 39 and 40 there --
 and is built as `amoled466c-s3`, which sets `BOARD_AMOLED466_175C` for
 `board/amoled466_s3.h` to pick those. It has 32 MB of flash; the build uses
-the first 16. It has not been tried on a 1.75C.
+the first 16.
 
 ## The Qualia
 
@@ -529,8 +532,8 @@ wrong; the P4 4B's is 32 MB, of which the table uses the first 16.
 **Settings** are in NVS, each group in its own namespace so a reset can clear
 one and keep another: `hamedia` (Home Assistant), `ma` (Music Assistant),
 `device` (the name), `display` (rotation, keyboard), `history`, `browse`
-(the Recent list setting) and `ha_link` (the id of a token forgotten from the
-portal, for the next link to delete). A BOOT reset clears `hamedia`, `ma` and
+(the Recent list setting), `voice` (whether it listens) and `ha_link` (the
+id of a token forgotten from the portal, for the next link to delete). A BOOT reset clears `hamedia`, `ma` and
 the Wi-Fi settings and keeps the rest. The Wi-Fi credentials are the Wi-Fi
 stack's own, beside a `wifi` namespace holding the transmit power and a flag
 to open the setup portal on the next boot.

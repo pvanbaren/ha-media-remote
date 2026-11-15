@@ -101,6 +101,12 @@ SemaphoreHandle_t s_handoff_done = nullptr;
 /** The owner's copy of a handed-over body, taken under the lock. */
 char s_handoff_sending[kHandoffMax] = {};
 
+/** services::voice's conversation: its hook, its listener, and the id of
+ *  the request whose messages the listener gets. */
+StreamHook s_hook = nullptr;
+StreamListener s_listener = nullptr;
+int s_listened_id = 0;
+
 using detail::eachMember;
 
 /** The "message" of an error object, for the log and lastError(). */
@@ -159,6 +165,10 @@ void closeStream(const char* why) {
   finishHandoff(false, "stream closed");
   s_own_call_done = true;
   s_own_call_ok = false;
+  s_listened_id = 0;
+  if (s_listener != nullptr) {
+    s_listener(nullptr);
+  }
 }
 
 void handleMessage(const String& text) {
@@ -183,6 +193,11 @@ void handleMessage(const String& text) {
       });
   if (!parsed) {
     LOG_WARN("HA: stream message not understood: %.80s", text.c_str());
+    return;
+  }
+
+  if (id != 0 && id == s_listened_id && s_listener != nullptr) {
+    s_listener(text.c_str());
     return;
   }
 
@@ -316,6 +331,12 @@ void pump(uint32_t wait_ms, Until until) {
       return;
     }
     takeHandoff();
+    if (s_hook != nullptr) {
+      s_hook();
+      if (!s_open) {
+        return;
+      }
+    }
 
     bool busy = false;
     String text;
@@ -580,6 +601,34 @@ bool streamOpen(const char* entity_id) {
 }
 
 bool streamIsOpen() { return s_open; }
+
+void setStreamHook(StreamHook hook) { s_hook = hook; }
+
+void setStreamListener(StreamListener listener) { s_listener = listener; }
+
+int streamRequest(const char* body) {
+  if (!s_open) {
+    return 0;
+  }
+  const int id = sendRequest(body);
+  if (id == 0) {
+    closeStream(s_ws.error());
+    return 0;
+  }
+  s_listened_id = id;
+  return id;
+}
+
+bool streamSendBinary(const uint8_t* data, size_t len) {
+  if (!s_open) {
+    return false;
+  }
+  if (!s_ws.sendBinary(data, len)) {
+    closeStream(s_ws.error());
+    return false;
+  }
+  return true;
+}
 
 void streamClose() { closeStream("asked to"); }
 

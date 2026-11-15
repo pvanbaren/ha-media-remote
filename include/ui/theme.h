@@ -58,6 +58,9 @@ constexpr uint16_t kTextMuted = 0x8410;        // mid grey
 constexpr uint16_t kArcTrack = 0x2945;         // unfilled arc, shared
 constexpr uint16_t kVolumeFill = 0xFFFF;
 constexpr uint16_t kVolumeMutedFill = 0x8410;  // level still shown, greyed
+/** A power tap waiting on Home Assistant: darker than either the on or the
+ *  off look, so the touch shows whichever way it goes. */
+constexpr uint16_t kVolumePendingFill = 0x4A69;
 constexpr uint16_t kWarning = 0xFD20;          // amber
 
 // --- Scrim over the cover art, so text stays legible on any image ---
@@ -100,6 +103,9 @@ constexpr int kClockTextPx = textPx(52);
 constexpr int kElapsedPillPadX = px(7);
 constexpr int kElapsedPillPadY = px(3);
 constexpr int kElapsedPillRadius = px(8);
+/** How much of what is under it the elapsed chip's pill hides: 80%, so a
+ *  little of the cover shows through. Its text is drawn solid. */
+constexpr uint8_t kElapsedPillAlpha = 204;
 
 // --- Track progress, under the elapsed chip ---
 // How far through the track it is. A sideways drag that starts on it seeks
@@ -150,6 +156,9 @@ constexpr int kTransportRowY = px(181 - board::kTransportRowLiftPx240);
 constexpr int kTransportSpacing = px(58);
 constexpr int kTransportRadius = px(25);
 constexpr int kTransportPlayRadius = px(30);
+/** How much of the cover a transport button's disc hides: 70%, so the art
+ *  shows through. Its ring and its glyph are drawn solid. */
+constexpr uint8_t kTransportFillAlpha = 179;
 /** Hit radius is generous relative to the drawn disc -- fingers are blunt --
  *  but stays under half the spacing so neighbouring targets cannot overlap. */
 constexpr int kTransportHitRadius = px(28);

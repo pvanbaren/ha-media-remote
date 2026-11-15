@@ -18,7 +18,7 @@ Nine boards are supported:
 | Waveshare ESP32-S3-Touch-LCD-1.28 | 1.28" round, 240×240 GC9A01 (SPI), CST816S touch | 16 MB / 2 MB | `waveshare-s3` (default) |
 | DFRobot DFR1221 | 1.85" round, 360×360 ST77916 (quad SPI), CST816S touch | 16 MB / 8 MB | `round360-s3` |
 | Waveshare ESP32-S3-Touch-AMOLED-1.75 | 1.75" round, 466×466 CO5300 AMOLED (quad SPI), CST9217 touch | 16 MB / 8 MB | `amoled466-s3` |
-| Waveshare ESP32-S3-Touch-AMOLED-1.75C (untried) | 1.75" round, 466×466 CO5300 AMOLED (quad SPI), CST9217 touch | 32 MB / 8 MB | `amoled466c-s3` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.75C | 1.75" round, 466×466 CO5300 AMOLED (quad SPI), CST9217 touch | 32 MB / 8 MB | `amoled466c-s3` |
 | Adafruit Qualia ESP32-S3 (5800) | 4" square (5794), 720×720 TL040HDS20 (RGB-666 parallel), FT6336 touch | 16 MB / 8 MB | `qualia-720` |
 | Waveshare ESP32-S3-Touch-LCD-2.8C | 2.8" round, 480×480 ST7701 (RGB parallel), GT911 touch | 16 MB / 8 MB | `lcd28c-s3` |
 | Makerfabs MaTouch ESP32-S3 Rotary 2.1" | 2.1" round, 480×480 ST7701 (RGB parallel), CST826 touch, rotary encoder | 16 MB / 8 MB | `matouch21-s3` |
@@ -26,7 +26,10 @@ Nine boards are supported:
 | Waveshare ESP32-P4-WIFI6-Touch-LCD-4B | 4" square, 720×720 ST7703 (MIPI-DSI), GT911 touch; Wi-Fi on an ESP32-C6 | 32 MB / 32 MB | `lcd4b-p4` |
 
 A tenth target, `headless`, runs the whole remote with no display and
-narrates to the serial console.
+narrates to the serial console. Voice -- a wake word, "Hey Jarvis", "Okay
+Nabu", "Hey Mycroft" or "Alexa", and Home Assistant's Assist -- is built
+into `amoled466-s3`, `amoled466c-s3` and `lcd4b-p4`; see
+[Building](docs/building.md).
 
 What you need:
 
@@ -134,7 +137,9 @@ Details worth knowing:
 - **Between tracks the title area goes blank, not "Nothing playing".** A
   track change often passes through a second or so with no title. The screen
   only says "Nothing playing", "Idle", "Paused" and so on once there has been
-  no title for three seconds (`kUntitledLabelDelayMs`).
+  no title for three seconds (`kUntitledLabelDelayMs`); a player that plays on
+  with no title at all -- Music Assistant after losing its place in a queue --
+  says "Playing".
 - **An app that does not say what it is playing is titled with its name.**
   A Roku reports the show only on its TV tuner; in Apple TV, Netflix and the
   rest Home Assistant has the app's name and nothing more, so the title reads
@@ -155,7 +160,9 @@ its artwork; **tap a row to play it**. An artist plays as **radio**, an
 endless queue seeded from them, as from the search; an album plays as itself.
 The row stays on screen with "Starting radio..." or "Starting..." under it
 while Music Assistant builds the queue -- four seconds and more for an
-artist.
+artist. **Swipe right**, or tap the back button, to stop waiting and go
+back to now playing; a pick Home Assistant already has still starts. A
+**swipe down** goes to the status page, as from now playing.
 
 | Section | Shows |
 |---|---|
@@ -200,8 +207,8 @@ the portal, switches it to **QWERTY** -- QWERTYUIOP, ASDFGHJKL, ZXCVBNM with bac
 a space bar on its own row -- with narrower keys, since ten have to fit across
 the top.
 
-**Swipe right**, or the back button at the top left, backs out one step at a
-time: results to the keyboard (with
+**Swipe right** -- or left, the way that opened it -- or the back button at
+the top left, backs out one step at a time: results to the keyboard (with
 the query kept, so a near miss can be edited), then the keyboard to the list,
 or to now playing if that is where the search was opened.
 A tap on the results that misses every result does the same.
@@ -216,8 +223,8 @@ on first, if it is off; the remote goes straight back to now playing, which foll
 ([When the volume device is on another input](docs/internals.md#when-the-volume-device-is-on-another-input)).
 Where the player's input on the device is chosen by name, it becomes the new
 one too; left to follow the input named after the player, it is left alone.
-**Swipe right**, or tap the back button, to leave without switching. A device
-that cannot switch inputs has no list.
+**Swipe right** or left, or tap the back button, to leave without switching.
+A device that cannot switch inputs has no list.
 
 ### The status page
 
@@ -240,11 +247,15 @@ input on that device is chosen, the input takes the player's line. Then come
 the address, the time since the remote started, the Wi-Fi network and its
 channel, the signal the remote hears (**Rx**) and the power it transmits with
 (**Tx**).
+On a board with a battery -- the AMOLED 1.75 and 1.75C -- its charge comes
+after the address, with *charging* while it charges.
 
 The page refreshes every second. The **gear** at the top right, across the
 title row from the back button, opens
-[the settings](#settings-on-the-device), and a **swipe left** goes on to
-[the Wi-Fi networks](#choosing-wi-fi-on-the-device); any other tap or swipe
+[the settings](#settings-on-the-device), and so does a **swipe down** -- two
+swipes down from now playing reach them. A **swipe left** goes on to
+[the Wi-Fi networks](#choosing-wi-fi-on-the-device), a **swipe up** goes
+back to the screen the page was opened from, and any other tap or swipe
 goes back to now playing, and it goes back by itself after a minute untouched
 (`kListIdleReturnMs`), as the list does.
 
@@ -280,14 +291,17 @@ row a setting's name over its value:
 |---|---|
 | Wi-Fi network | [The network list](#choosing-wi-fi-on-the-device); backing out of it comes back here |
 | Media player | Home Assistant's media players, unavailable ones greyed |
-| Volume & power | The media player itself, or another of them |
+| Volume & power | The media player itself, or a device whose volume the remote can set: a zone amplifier's zone, a receiver, a TV or a soundbar -- the devices with inputs, listed first -- or an amplifier with one. One chosen before stays on offer |
 | Player's input | The volume device's inputs, or the one named after the player |
 | Player volume at switch-on | Off, or 10% to 100% |
 | Auto-off | Enabled or disabled: whether the volume device is switched off when the screen blanks |
 | Recent list | Room only, or Music Assistant: whether the list's top section is the artists played in this room, or on any player |
+| Voice | Disabled, or the wake word to listen for: Hey Jarvis, Okay Nabu, Hey Mycroft or Alexa. Only in a build with voice |
+| Room | The volume device's area, or one of Home Assistant's areas: where lights and fans by voice switch. Only in a build with voice |
 | Wi-Fi transmit power | The portal's steps, 8.5 to 19.5 dBm |
 | Search keyboard | Alphabetical or QWERTY |
 | Screen rotation | Upright, +90, 180 or -90; the remote restarts to apply it |
+| Firmware | The version running. A tap asks GitHub for the latest release: install it when it is newer, with the download's progress on screen, and the remote restarts into it |
 | Restart | Restart now, or cancel |
 | More at | The portal's address, `<name>.local`; not a choice |
 
@@ -296,7 +310,7 @@ choose it: it is stored at once, as a portal save would store it, and the page
 comes back showing it. The tapped row lights the moment the tap registers,
 since loading a list of players or inputs, or storing a choice, can take a
 second or two. **Swipe right**, or tap the **back button** at the top
-left, to back out without choosing, and again to go back to the status page.
+left, to back out without choosing, and again to go back to now playing.
 The status page and the Wi-Fi pages have the button too. Media player,
 Volume & power, Auto-off and Recent list are there once the remote is linked
 to Home Assistant, since the first two are chosen from its lists. Player's input and
@@ -380,14 +394,14 @@ wakes the screen leave it alone. Details in
 | Now playing | Swipe left, lower half, or flick left, top half | Search |
 | Now playing | Swipe right, lower half, or flick right, top half | The volume device's inputs |
 | Sources | Tap an input | Switch to it, and back to now playing |
-| Sources | Swipe right, or the back button | Back to now playing |
-| Status page | Tap the gear | Open the settings |
+| Sources | Swipe right or left, or the back button | Back to now playing |
+| Status page | Tap the gear, or swipe down | Open the settings |
 | Status page | Swipe left | Choose a Wi-Fi network |
-| Status page | Swipe up | Back to the screen it was opened from: now playing, a card, the settings or the network list |
+| Status page | Swipe up | Back to the screen it was opened from: now playing, a card or the network list |
 | Status page | Any other tap or swipe | Back to now playing |
 | Settings | Drag up / down, then tap a row | Its choices; the row lights at once |
 | Settings choices | Tap one | Choose it, and back to the settings |
-| Settings | Swipe right | Back one step |
+| Settings | Swipe right | From a setting's choices, back to the page; from the page, back to now playing |
 | Status, settings, Wi-Fi, search | Tap the back button, top left | As a swipe right: back one step |
 | Setup or No Wi-Fi card | Tap | Choose a Wi-Fi network |
 | Not reachable, Token rejected, No Wi-Fi or Link to HA card | Swipe down | The status page; back returns to the card |
@@ -401,10 +415,12 @@ wakes the screen leave it alone. Details in
 | List | Tap a row | Play it: an artist as radio, an album as itself |
 | List | Tap the title strip, or swipe right | Back to now playing |
 | List | Swipe left | Search |
+| Starting... (after a pick) | Swipe right, or the back button | Stop waiting: back to now playing |
+| Starting... (after a pick) | Swipe down | Open the status page |
 | Search | Tap keys, then SEARCH | Search |
 | Search keyboard | Tap the pill above the keys | Search for the next kind: artist, album, track, playlist, radio |
 | Search results | Tap a result | Play it: an artist as radio, anything else as itself |
-| Search | Swipe right | Back one step |
+| Search | Swipe right or left | Back one step |
 | Blank screen | Any touch | Wake it; the volume device is left as it is |
 | Knob (MaTouch 2.1") | Turn, on now playing | Volume, 2% a click; with the volume device off, the first turn switches it on, as play does, where it can be |
 | Knob (MaTouch 2.1") | Turn, on a list | Scroll a row a click |
@@ -446,10 +462,12 @@ when Home Assistant has the Music Assistant integration, so the swipe-up list
 and the search work straight away.
 
 The rest of what needs no typing is in [the settings](#settings-on-the-device),
-behind the gear on the status page (swipe down on now playing): a separate
+behind the gear on the status page (swipe down on now playing, then the
+gear or another swipe down): a separate
 **Volume & power** device -- an amplifier or receiver -- and the player's input
-on it, the player volume at switch-on, Auto-off, the Recent list, Wi-Fi
-transmit power, the search keyboard and the screen rotation.
+on it, the player volume at switch-on, Auto-off, the Recent list, Voice
+(in a build with it), Wi-Fi transmit power, the search keyboard and the
+screen rotation.
 
 The few settings that are typed are in [the portal](#the-portal):
 
@@ -525,7 +543,10 @@ it -- or at the device's IP address, which the status page shows. The last
 row of the device's settings page gives the name too. **Configure WiFi**
 holds the settings below, under the network name and password (leave those
 blank to keep the current network; `/param` shows the settings alone).
-**Update** installs firmware and **Info** shows the device's details.
+**Firmware from GitHub** shows the version running, checks for a newer
+release and installs it, as the Firmware row of the device's settings does;
+**Update** installs a firmware file you upload, and **Info** shows the
+device's details, its memory among them.
 
 **Before Wi-Fi.** With no Wi-Fi saved, or when the saved network does not
 answer at boot, the remote also raises an access point,
@@ -558,7 +579,7 @@ A few rules hold for every field:
 
 In the order the page shows them. Wi-Fi transmit power, the screen rotation,
 the search keyboard, the media player, Volume & power, the player's input,
-the player volume at switch-on, Auto-off and the Recent list are on [the device's
+the player volume at switch-on, Auto-off, the Recent list and Voice are on [the device's
 settings](#settings-on-the-device) as well. After a save the confirmation page goes
 back to the form by itself after 15 seconds (`config::kPortalSavedReturnMs`),
 long enough for a setting that restarts the device to have taken effect. A
@@ -659,6 +680,58 @@ screen blanks after five minutes with the player paused, idle or off;
 ([Blanking, and the amplifier](#blanking-and-the-amplifier)). The default for a
 remote that has never stored one is `config::kTurnOffControlOnBlank`.
 
+**Voice** *(only in a build with voice)* -- *Disabled*, the default, takes
+no voice requests and listens for nothing; choosing a wake word -- *Hey
+Jarvis*, *Okay Nabu*, *Hey Mycroft* or *Alexa*, microWakeWord's four, each
+with the threshold its model's manifest gives -- listens for that one and
+answers voice requests through Home Assistant's Assist. A remote never
+listens until someone has picked a wake word on it. A request that fails says
+so: "Sorry, I didn't catch that" when nothing was heard, "Sorry, Home
+Assistant couldn't answer that" when anything else went wrong -- the
+conversation agent erred, say -- and two low falling notes when Home
+Assistant could not be reached to speak either.
+
+Where two remotes hear the same wake word, one answers: Home Assistant
+gives a wake word to the first request to reach it and turns the other away,
+and the remote that heard it louder -- the nearer one -- asks sooner
+(`config::kVoiceWakeHoldMsPerDb`). A request ends when Home Assistant hears
+the speech stop, or when the remote does (`config::kVoiceEndQuietMs` quiet
+after speech well above the room's level), whichever is first -- a word as
+short as "stop" can be too short for Home Assistant's detector. The wake word lights a dark screen, as a
+tap does, so what a request does can be seen, and the words it heard show over now playing for a
+few seconds, in the middle of the screen on up to two lines (`config::kVoiceToastMs`). A few requests are this remote's own, for its player, when they name no
+player: "play", "pause", "skip" (or "next"), "previous", "volume up" and
+"volume down" (or "louder", "quieter", "turn it up"...) do what the buttons
+and the volume arc do -- play and pause whatever the player is doing, the
+volume `config::kVoiceVolumeStep` at a time -- "stop" or "turn off" switches
+the volume device off, as the power chip does (the player, where there is no
+volume device), and "play" with an artist, album,
+track or playlist -- "Hey Jarvis, play Khatia Buniatishvili" -- plays it, with the
+volume device switched on and to the player's input first, as a pick from
+the search would. The remote says "Playing Khatia Buniatishvili" at once and shows
+the words on the Starting... card, as Music Assistant can take ten seconds
+to start; an artist is matched by name, allowing for speech to text's
+spelling, and played as radio (`config::kArtistsPlayRadio`), and anything
+else is whatever Music Assistant finds by that name. A request that names
+its player -- "play Khatia Buniatishvili on the stereo" -- goes to Assist like any
+other.
+"Turn on the lights", "turn off the lights", "turn on the fan" and "turn
+off the fan" (or "lights on", "switch the fan off"...) are the remote's
+own too: they switch every light, or every fan, in the remote's room --
+the **Room** setting's area, or by default the area the volume device is
+in, or the player where there is no volume device -- with one call, and
+the remote says what it did ("Kitchen lights on."), or that the room has
+none or no area.
+The microphone and the speaker stay set up either way, so turning it back
+on, or changing the wake word, needs no restart.
+
+**Room** *(only in a build with voice)* -- the Home Assistant area whose
+lights and fans a voice request switches. *The volume device's area*, the
+default, is right where the volume device -- or the player, with no
+separate volume device -- is in the remote's own room. Choose an area
+where it is not: a player shared between rooms, or a receiver in another
+room feeding this one. An area since deleted falls back to the default.
+
 **Media player** -- the player this remote controls. Listed once the device
 can reach Home Assistant: on a first run, save the URL and token, let the
 device connect, and reload the page. Until a player is chosen the screen
@@ -701,11 +774,11 @@ GPIO 0 is a panel data line -- clears the device back to setup. The portal's
 | Setting | BOOT held | Erase WiFi config |
 |---|---|---|
 | Wi-Fi network | cleared | cleared |
-| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Auto-off, Music Assistant entry id | cleared | kept |
+| Home Assistant URL, token, player, volume device, input, player volume at switch-on, Auto-off, Room, Music Assistant entry id | cleared | kept |
 | Music Assistant URL and token | cleared | kept |
 | Wi-Fi transmit power | cleared | kept |
 | Device name, screen rotation, search keyboard | kept | kept |
-| Recent list, the room's history | kept | kept |
+| Recent list, Voice, the room's history | kept | kept |
 
 Either way the device reboots into the setup access point.
 

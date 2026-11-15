@@ -8,7 +8,7 @@
 #include <new>
 
 #include "hardware/display.h"
-#include "hardware/korean_font.h"
+#include "hardware/outline_fonts.h"
 #include "log.h"
 
 // One embedded VLW per on-screen height. The symbol names come from the paths
@@ -29,9 +29,9 @@ struct FontEntry {
    *  pointer to. Drawn from the loop only -- `source` has one read position. */
   lgfx::PointerWrapper source;
   lgfx::VLWfont font;
-  /** `font` with Korean behind it, and what is selected: see
-   *  hardware/korean_font.h. */
-  KoreanFont korean;
+  /** `font` with the outline fonts behind it, and what is selected: see
+   *  hardware/outline_fonts.h. */
+  OutlineFallback outlines;
   bool loaded = false;
   /** fontHeight() at size 1.0, measured in displayFontInit() rather than
    *  trusted from the filename -- the font is the authority on its own
@@ -73,7 +73,7 @@ bool loadFace(FontEntry& face) {
   face.font.maxDescent = static_cast<uint16_t>(face.font.descent);
   face.font.yAdvance =
       static_cast<uint16_t>(face.font.ascent + face.font.descent);
-  face.korean.attach(&face.font, face.data);
+  face.outlines.attach(&face.font, face.data);
   return true;
 }
 
@@ -83,7 +83,7 @@ bool useFont(lgfx::LGFXBase& gfx, size_t index) {
   if (index >= s_font_count || !s_fonts[index].loaded) {
     return false;
   }
-  gfx.setFont(&s_fonts[index].korean);
+  gfx.setFont(&s_fonts[index].outlines);
   return true;
 }
 
@@ -145,9 +145,11 @@ bool displayFontInit() {
                            i ? ", " : "", s_fonts[i].native_h);
     used += n > 0 ? static_cast<size_t>(n) : 0;
   }
-  LOG_INFO("Fonts: %u native sizes (%s px)%s",
+  char outlines[192];
+  outlineFontsDescribe(outlines, sizeof(outlines));
+  LOG_INFO("Fonts: %u native sizes (%s px)%s%s",
            static_cast<unsigned>(s_font_count), sizes,
-           koreanFontEmbedded() ? ", Korean from an outline font" : "");
+           outlines[0] != '\0' ? "; outline fonts: " : "", outlines);
 
   useFont(tft, kDefaultFont);
   return true;

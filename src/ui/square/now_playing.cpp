@@ -35,6 +35,7 @@
 #include "ui/canvas.h"
 #include "ui/peers_chip.h"
 #include "ui/text.h"
+#include "ui/toast.h"
 #include "ui/text_glow.h"
 #include "ui/theme.h"
 
@@ -78,6 +79,11 @@ bool isPlaying(const PlayerState& state) {
 /** Live state text for a player that has nothing to show. */
 const char* idleLabel(const PlayerState& state) {
   switch (state.playback) {
+    // Playing, with nothing to say what: Music Assistant, for one, plays
+    // on after losing its place in a queue, and "Nothing playing" over
+    // music that goes on is wrong.
+    case PlaybackState::kPlaying:
+      return "Playing";
     case PlaybackState::kPaused:
       return "Paused";
     case PlaybackState::kIdle:
@@ -171,13 +177,58 @@ void drawSkipGlyph(lgfx::LGFXBase& gfx, int cx, int cy, bool forward,
   gfx.fillTriangle(base, cy - gh, base, cy + gh, apex, cy, color);
 }
 
+/** The frame under each transport button as a compose left it just before
+ *  drawing them: what a disc is laid over every time it is drawn, so one
+ *  pressed or repainted does not darken over itself. PSRAM, a square per
+ *  button, claimed on first use; good once a compose has saved them. */
+uint16_t* s_under[3] = {};
+bool s_under_valid = false;
+
+int buttonIndex(Action action) {
+  return action == Action::kPrevious ? 0
+         : action == Action::kPlayPause ? 1
+                                        : 2;
+}
+
+void saveUnderButtons(lgfx::LovyanGFX& gfx) {
+  s_under_valid = false;
+  if (&gfx != &ui::canvas()) {
+    return;
+  }
+  for (const Action action :
+       {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
+    const Button button = buttonFor(action);
+    const int side = 2 * button.radius + 1;
+    uint16_t*& under = s_under[buttonIndex(action)];
+    if (under == nullptr) {
+      under = static_cast<uint16_t*>(heap_caps_malloc(
+          static_cast<size_t>(side) * side * sizeof(uint16_t),
+          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    if (under == nullptr ||
+        !ui::canvasCopyRect(button.cx - button.radius,
+                            button.cy - button.radius, side, side, under)) {
+      return;
+    }
+  }
+  s_under_valid = true;
+}
+
 void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
                          const PlayerState& state, bool pressed, bool enabled) {
   const uint16_t fill = pressed ? theme::kSurfaceRaised : theme::kSurface;
   const uint16_t glyph = enabled ? theme::kTextPrimary : theme::kTextMuted;
   const int cy = button.cy;
 
-  gfx.fillCircle(button.cx, cy, button.radius, fill);
+  // The disc at kTransportFillAlpha over the frame under it, into the
+  // composed frame; solid where there is none to blend into.
+  const uint16_t* under =
+      s_under_valid ? s_under[buttonIndex(button.action)] : nullptr;
+  if (&gfx != &ui::canvas() ||
+      !ui::blendDisc(button.cx, cy, button.radius, fill,
+                     theme::kTransportFillAlpha, under)) {
+    gfx.fillCircle(button.cx, cy, button.radius, fill);
+  }
   gfx.drawCircle(button.cx, cy, button.radius,
                  pressed ? ui::cover::highlight(theme::kAccent)
                          : theme::kTextMuted);
@@ -199,6 +250,55 @@ void drawTransportButton(lgfx::LovyanGFX& gfx, const Button& button,
     default:
       break;
   }
+}
+
+/** The frame under the elapsed chip as a compose left it before the
+ *  progress and the chip went on: what refreshElapsed() puts back each
+ *  second before laying them on again, so the translucent pill does not
+ *  darken over itself. Wide enough for the widest label, and as tall as
+ *  the pill. PSRAM, claimed on first use. */
+constexpr int kChipUnderW =
+    theme::px(170) < theme::kSize ? theme::px(170) : theme::kSize;
+constexpr int kChipUnderH = theme::px(28);
+constexpr int kChipUnderX = theme::kCenterX - kChipUnderW / 2;
+constexpr int kChipUnderY = theme::kElapsedY - kChipUnderH / 2;
+uint16_t* s_chip_under = nullptr;
+bool s_chip_under_valid = false;
+
+void saveUnderChip(lgfx::LovyanGFX& gfx) {
+  s_chip_under_valid = false;
+  if (&gfx != &ui::canvas()) {
+    return;
+  }
+  if (s_chip_under == nullptr) {
+    s_chip_under = static_cast<uint16_t*>(heap_caps_malloc(
+        static_cast<size_t>(kChipUnderW) * kChipUnderH * sizeof(uint16_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  s_chip_under_valid =
+      s_chip_under != nullptr &&
+      ui::canvasCopyRect(kChipUnderX, kChipUnderY, kChipUnderW, kChipUnderH,
+                         s_chip_under);
+}
+
+/** Lay on again any transport button the chip's rectangle reached -- the
+ *  play button's foot does -- over its own saved backdrop. The topmost
+ *  row redrawn, or `top` when none was. */
+int redrawButtonsUnderChip(lgfx::LovyanGFX& gfx, int top) {
+  for (const Action action :
+       {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
+    const Button button = buttonFor(action);
+    if (button.cy + button.radius < kChipUnderY ||
+        button.cy - button.radius >= kChipUnderY + kChipUnderH ||
+        button.cx + button.radius < kChipUnderX ||
+        button.cx - button.radius >= kChipUnderX + kChipUnderW) {
+      continue;
+    }
+    drawTransportButton(gfx, button, s_last_drawn, false,
+                        enabledFor(action, s_last_drawn));
+    top = std::min(top, button.cy - button.radius);
+  }
+  return top;
 }
 
 // --- Volume slider ----------------------------------------------------------
@@ -287,15 +387,22 @@ void drawVolumeBar(lgfx::LovyanGFX& gfx, const PlayerState& state,
                     theme::kArcTrack);
 
   // Grey when nothing will be heard at that level: muted, or the volume
-  // device switched off.
-  const uint16_t fill =
-      state.muted || state.control_off ? theme::kVolumeMutedFill : kBarFill;
+  // device switched off. Darker grey while a power tap waits on Home
+  // Assistant.
+  const uint16_t fill = state.power_pending ? theme::kVolumePendingFill
+                        : state.muted || state.control_off
+                            ? theme::kVolumeMutedFill
+                            : kBarFill;
   const int filled = static_cast<int>(kBarWidth * level + 0.5f);
   if (filled > 0) {
     gfx.fillRoundRect(kBarLeft, kBarY, filled, kBarHeight, kBarRadius, fill);
   }
 
   // The knob is what makes it read as draggable rather than as a readout.
+  // Not while a power tap is pending: just the grey fill, then.
+  if (state.power_pending) {
+    return;
+  }
   const int knob_x = kBarLeft + filled;
   const int knob_y = kBarY + kBarHeight / 2;
   gfx.fillCircle(knob_x, knob_y, kKnobRadius, fill);
@@ -397,8 +504,15 @@ int drawElapsedChip(lgfx::LovyanGFX& gfx, const PlayerState& state) {
                      w, h};
   }
 
-  gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
-                    h, theme::kElapsedPillRadius, theme::kSurface);
+  // The pill at kElapsedPillAlpha over the frame, into the composed frame;
+  // solid where there is none to blend into.
+  if (&gfx != &ui::canvas() ||
+      !ui::blendRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2,
+                          w, h, theme::kElapsedPillRadius, theme::kSurface,
+                          theme::kElapsedPillAlpha)) {
+    gfx.fillRoundRect(theme::kCenterX - w / 2, theme::kElapsedY - h / 2, w,
+                      h, theme::kElapsedPillRadius, theme::kSurface);
+  }
   gfx.setTextColor(state.offline ? theme::kWarning : theme::kTextSecondary);
   gfx.drawString(label, theme::kCenterX, theme::kElapsedY);
   return w;
@@ -560,21 +674,24 @@ void compose(lgfx::LovyanGFX& gfx, const PlayerState& state) {
       ui::canvasSaveBackdrop(ui::Backdrop::kArtAndText, with_text);
     }
   }
+  saveUnderChip(gfx);
   drawProgressBar(gfx, state);
   drawElapsedChip(gfx, state);
   // Whether or not the bar is shown now: volume can become available without
   // anything else changing, and the first drag must still find the backdrop.
   saveBandBackdrop(gfx);
-  if (volumeAvailable(state)) {
+  if (services::ha::volumeAvailable(state)) {
     drawVolumeBar(gfx, state, state.volume);
   }
 
+  saveUnderButtons(gfx);
   for (const Action action :
        {Action::kPrevious, Action::kPlayPause, Action::kNext}) {
     drawTransportButton(gfx, buttonFor(action), state, false,
                         enabledFor(action, state));
   }
   ui::peers_chip::draw(gfx, state);
+  ui::toast::draw(gfx);
 }
 
 }  // namespace
@@ -590,39 +707,39 @@ void draw(const PlayerState& state) {
 }
 
 void refreshElapsed(const PlayerState& state) {
-  // The chip carries its own opaque pill, so repainting it needs nothing from
-  // the cover art beneath -- which is the whole reason it is a chip and not
-  // bare text on the scrim. ui::panel() is the composed frame here, so the
-  // draw is followed by a present of just the chip's band.
-  //
-  // Only the chip's own columns, not the full width. Both ends of this copy
-  // live in PSRAM, on the same bus already carrying 24 MB/s of scan-out that
-  // the panel cannot be starved of, so the narrower the rectangle the less
-  // time it spends competing for that bus.
-  //
-  // Presented as the union with the previous width, which is not a detail:
-  // the pill is centred and changes width with the label -- "9:59" to "10:00"
-  // and back again -- so presenting only the narrower of the two would leave
-  // the wider one's ends on the glass.
-  // The progress bar first, under the chip: it is opaque and keeps its
-  // shape, so it too is painted over itself. Its thin band goes to the glass
-  // only once the chip is back over its middle, or the bar would show through
-  // the chip for the moment between.
-  const bool bar = drawProgressBar(ui::panel(), state);
-  static int s_last_w = 0;
-  const int w = drawElapsedChip(ui::panel(), state);
+  if (!ui::canvasReady()) {
+    // No frame: straight to the panel, the pill solid.
+    drawProgressBar(ui::panel(), state);
+    drawElapsedChip(ui::panel(), state);
+    return;
+  }
+  // In the composed frame: what was under the chip put back, the progress
+  // bar -- opaque, and always the same shape -- and the pill laid over
+  // them, then a button the rectangle reached. Then only what changed is
+  // pushed -- the bar's thin band and the chip's rectangle, which is as
+  // wide as the widest pill, so a label narrowing leaves nothing behind --
+  // as both ends of the copy are on the PSRAM bus the scan-out needs.
+  lgfx::LovyanGFX& gfx = ui::canvas();
+  if (s_chip_under_valid) {
+    ui::canvasPasteRect(kChipUnderX, kChipUnderY, kChipUnderW, kChipUnderH,
+                        s_chip_under);
+  }
+  const bool bar = drawProgressBar(gfx, state);
+  drawElapsedChip(gfx, state);
   if (bar) {
     ui::canvasPresentRegion(kBarLeft, kProgressY, kBarWidth, kBarHeight);
   }
-  const int previous = s_last_w;
-  s_last_w = w;
-  if (w <= 0 && previous <= 0) {
-    return;  // nothing drawn now, and nothing left over to cover
+  int top = kChipUnderY;
+  if (s_chip_under_valid) {
+    top = redrawButtonsUnderChip(gfx, top);
   }
-  const int widest = std::max(w, previous) + 2 * theme::px(2);
-  ui::canvasPresentRegion(theme::kCenterX - widest / 2,
-                          theme::kElapsedY - theme::px(14), widest,
-                          theme::px(28));
+  if (top < kChipUnderY) {
+    ui::canvasPresentRegion(kChipUnderX, top, kChipUnderW,
+                            kChipUnderY + kChipUnderH - top);
+  } else {
+    ui::canvasPresentRegion(kChipUnderX, kChipUnderY, kChipUnderW,
+                            kChipUnderH);
+  }
 }
 
 void refreshVolume(const PlayerState& state, float level) {
@@ -632,21 +749,6 @@ void refreshVolume(const PlayerState& state, float level) {
   // Only the band the bar and its knob occupy: about 100 of 720 rows, so a
   // drag costs a tenth of what presenting the frame would.
   ui::canvasPresentRegion(0, kBarBandTop, theme::kSize, kBarBandHeight);
-}
-
-bool volumeAvailable(const PlayerState& state) {
-  if (state.volume < 0.0f) {
-    return false;
-  }
-  if (state.playback == PlaybackState::kUnavailable ||
-      state.playback == PlaybackState::kOff) {
-    return false;
-  }
-  // Tested against the *control* entity: it is the one the slider drives, and
-  // where the two differ it is entirely normal for the receiver to set
-  // VOLUME_SET while the player streaming into it does not.
-  return state.control_features == 0 ||
-         (state.control_features & services::ha::kFeatureVolumeSet) != 0;
 }
 
 float volumeLevelPerPx() {
@@ -714,18 +816,29 @@ void showButtonPressed(Action action, bool pressed) {
   if (action == Action::kNone) {
     return;
   }
-  // The discs are opaque, so redrawing one over the composed frame needs
-  // nothing from the backdrop underneath it.
+  // Into the composed frame, where the disc is laid over the cover saved
+  // under it, then pushed: the panel itself has nothing to blend with.
+  // Straight to the panel only where there is no frame.
   const Button button = buttonFor(action);
-  drawTransportButton(ui::panel(), button, s_last_drawn, pressed,
+  const bool framed = ui::canvasReady();
+  drawTransportButton(framed ? ui::canvas() : ui::panel(), button,
+                      s_last_drawn, pressed,
                       enabledFor(action, s_last_drawn));
+  if (framed) {
+    const int edge = button.radius * 2 + 1;
+    ui::canvasPresentRegion(button.cx - button.radius,
+                            button.cy - button.radius, edge, edge);
+  }
+}
 
-  // ui::panel() is the composed frame here, so the disc is not on the glass
-  // until its square is pushed -- and a repaint the frame keeps to itself also
-  // leaves the two scan-out buffers disagreeing about it.
-  const int edge = button.radius * 2 + 1;
-  ui::canvasPresentRegion(button.cx - button.radius,
-                          button.cy - button.radius, edge, edge);
+void showPowerPending(bool pending) {
+  if (s_last_drawn.power_pending == pending) {
+    return;
+  }
+  s_last_drawn.power_pending = pending;
+  if (volumeAvailable(s_last_drawn)) {
+    refreshVolume(s_last_drawn, s_last_drawn.volume);
+  }
 }
 
 }  // namespace ui::now_playing

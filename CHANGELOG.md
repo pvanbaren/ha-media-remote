@@ -14,8 +14,56 @@ GitHub release from that version's section, with
 
 ### Added
 
+- **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
+- **"Turn on the lights", "turn off the fan":** said to a remote, they switch the lights or the fans in its room -- the Home Assistant area its volume device is in -- with one call, and the remote says what it did: "Kitchen lights on." A room with no lights, or no fan, is said so, as is a volume device in no area.
+- **Room, a setting:** on the device and in the portal, in a build with voice: the Home Assistant area whose lights and fans "turn on the lights" and "turn off the fan" switch. *The volume device's*, the default, is its area, or the player's where there is no volume device; choosing an area fixes it, for a remote whose player is shared between rooms or whose volume device is in another room.
 - **A dimmed clock face**: after 15 seconds untouched (`kDimAfterMs`), now playing rests as the time, large and dim, with the title and artist under it, on black -- mostly unlit pixels on an AMOLED. A touch only brings now playing back. The time comes from SNTP (`pool.ntp.org`) once Wi-Fi is up, in the zone `kTimeZone` names; until it answers, nothing dims. The face wanders a few pixels a minute so the same pixels are not lit all day. On the AMOLED boards it has digits of its own, `clock_font_101.vlw`, and the loop task a 16 KB stack to draw them; elsewhere the largest face is scaled. Blanking after `kIdleTimeoutMs` is unchanged.
 - **`build_ui_font.py --chars` and `--prefix`**: a face of only the characters given, under its own file name, as the clock's digits are.
+
+### Changed
+
+- **Volume & power offers the devices whose volume can be set,** on the device and in the portal, rather than every media player: the devices with inputs -- a zone amplifier's zone, a receiver, a TV, a soundbar -- first, then the rest that have a volume, such as an amplifier with one input. A device that reports no features at all is offered, as the remote takes it to have a volume, and one chosen before stays on offer whatever it supports.
+- **The words a voice request heard sit in the middle of a square screen too,** on up to two lines, as on a round one, where they were one line across the top.
+- **The previous, play and next buttons let the cover show through,** their discs 70% opaque where they were solid; their rings and symbols stay solid.
+- **Built-in faces nothing used are gone:** the Guition's 15 px, 34 KB of its image; the Qualia's 23 px, 71 KB of its image; and the P4 4B's 23 px, 71 KB of PSRAM unpacked (18 KB compressed in its image). No size those boards draw is near enough to pick them.
+- **The downloaded fonts carry ASCII too:** the font pack is now `fonts-2`, its Latin font with the letters, digits and punctuation the built-in faces have, so that text can be drawn from it at a size no face is. On a remote with `fonts-1`, Settings > Fonts says *Newer fonts are out*, and downloads the new pack from there or from the portal; until then the old pack goes on working.
+- **A swipe down on the status page opens the settings,** as its gear does, where it went back to now playing: two swipes down from now playing reach the settings.
+- **Back from the settings goes to now playing,** a swipe right or the back button, where it went to the status page first. From a setting's choices it still goes back to the page.
+- **The elapsed time's pill lets a little of the cover show through,** 80% opaque where it was solid; its text stays solid.
+
+### Fixed
+
+- **A player that plays with no title says "Playing",** not "Nothing playing": Music Assistant can lose its place in a queue -- after a restart, say -- and play on with no track to report, and the screen said nothing was playing over the music.
+
+## [1.6.0] - 2026-11-10
+
+This release adds voice to the boards with a microphone, the AMOLED 1.75 and the P4 4B: a wake word, then Home Assistant's Assist, with play, pause, skip, volume and "play Khatia Buniatishvili" done on the remote's own player. A remote can now install a new release from GitHub itself, from its settings or its portal, and can download fonts from GitHub for Chinese, Japanese, Korean, Thai, Cyrillic, Greek, Vietnamese and symbols. Korean, and the other languages' Latin letters and the symbols 1.5.0 added, are now among those downloaded fonts rather than in the firmware, so a remote updated from 1.5.0 shows them as blanks until it has downloaded them. A power tap shows at once, short lists sit in the middle of a round panel, and the images are smaller -- about 400 KB on the boards without voice, and 0.9 MB on the P4 4B, voice and all. Fixed: a MaTouch loading pictures over HTTPS no longer runs out of internal RAM as it starts, and Korean scrolls as fast as Latin text.
+
+### Added
+
+- **Voice, on the AMOLED 1.75 and 1.75C and the P4 4B:** a new **Voice** setting, on the device and in the portal, picks a wake word -- *Hey Jarvis*, *Okay Nabu*, *Hey Mycroft* or *Alexa*, microWakeWord's four -- and the remote listens for it and hands the request after it to Home Assistant's Assist, speaking the answer through its own speaker. The music is turned down while a request is heard and put back after it, and the request starts at the pause after the wake word, so none of the word reaches speech to text. *Disabled* is the default: a remote never listens until a wake word has been picked on it. The 1.75C's voice, like the rest of its build, is not yet tried on a board.
+- **"Hey Jarvis, play Khatia Buniatishvili"** plays on this remote's player, switching the volume device on and to the player's input first, as a pick from the search would, says "Playing Khatia Buniatishvili" at once and shows the words on the Starting... card: an artist near enough the words heard plays as radio, and anything else is whatever Music Assistant finds by that name. **"Play", "pause", "skip", "previous", "volume up" and "volume down"** work the remote's own player and volume device the same way, play and pause sent as the buttons send them whatever the player is doing, and **"stop" or "turn off"** switches the volume device off, as the power chip does -- the player, where there is no volume device. A request that names its player ("... on the stereo") goes to Assist.
+- **The words a voice request heard** show over now playing for a few seconds, in quotes -- in the middle of a round screen, on up to two lines, and at the top of a square one -- so what it understood can be read. **The wake word lights a dark screen,** as a tap does, so what the request does -- the Starting... card, the music paused, the volume moved -- can be seen.
+- **One "Hey Jarvis", one remote:** where two remotes hear the same wake word, Home Assistant gives the request to the first to ask and the other stands down without a word -- and the one that heard it louder, the nearer one, asks first.
+- **A short request ends when it is said:** the remote ends the listening itself after 0.8 s quiet following speech well above the room's level, as well as when Home Assistant's detector does -- which wants 0.3 s of speech, and can miss a word as short as "stop".
+- **A voice request that fails says so:** "Sorry, I didn't catch that" when Home Assistant heard nothing, "Sorry, Home Assistant couldn't answer that" for any other failure -- an error from the conversation agent, say -- in the pipeline's voice, and two low falling notes when Home Assistant cannot be reached to speak either.
+- **Firmware from GitHub:** the settings page has a Firmware row showing the version running, and a tap on it asks GitHub for the latest release -- when it is newer, install it there and then, its download's progress on screen, and the remote restarts into it with its settings kept. The portal has the same, as **Firmware from GitHub** on its menu. Only that board's image is fetched, and GitHub's certificate is checked.
+- **Chinese, Japanese, Thai, Cyrillic, Greek, Vietnamese and symbols:** track titles and artist names in Chinese (GB2312's 6,763 characters, and the common Traditional ones), Japanese (kana and JIS X 0208's 6,355 kanji), Thai, Cyrillic, Greek and Vietnamese show in those scripts, where they were blanks, once the remote has downloaded its fonts: **Fonts** on the settings page, or **Download fonts** on the portal's menu. So do the rest of Latin's letters, letters spelt with combining accents -- an e followed by a combining acute -- and the symbols titles use: ♪ ♥ ★ ™ → ✓ ☀ ① ¼ † and the like. The fonts -- Noto Sans SC, JP, TC, KR, Thai, Math, Symbols, Symbols 2 and Noto Sans, 5.1 MB -- come from GitHub into flash that was going unused, take no room in the firmware or RAM, and are drawn from as soon as they are down, without a restart. A Han character Chinese and Japanese share is drawn in its Chinese form. Thai's tone marks are lifted clear of the vowel marks under them; other stacked marks are drawn as the font places them.
+- **Memory on the portal's Info page:** internal RAM and PSRAM, used, free and total, with the largest free block -- the most one allocation can have -- and for internal RAM the least that has been free since boot.
+
+### Changed
+
+- **A power tap shows at once:** tapping now playing to switch the room's volume device on or off turns the volume ring or bar a darker grey, without its knob, straight away, until Home Assistant's state shows what the tap did -- before, nothing changed on screen for the second or so that takes, and a tap could be taken for missed.
+- **Short lists sit in the middle of a round panel:** a setting's choices and Restart? started up under the title, where the circle narrows the rows; a list short enough now sits in the middle, where they are widest.
+- **The P4 4B's image is 0.9 MB smaller,** voice and all: 2.5 MB of its 4 MB app slot, where 1.5.0's was 3.4. Its fonts are stored compressed and unpacked into PSRAM as it starts, and the Korean font is no longer in it.
+- **Korean comes with the downloaded fonts,** as Chinese and Japanese do, rather than in the firmware: every board's image is 420 KB smaller for it. Until a remote has downloaded its fonts -- **Fonts** on the settings page, or **Download fonts** on the portal's menu -- Hangul shows as blanks.
+- **Other languages' Latin letters and symbols come with the downloaded fonts** too, where 1.5.0 put them in the firmware: Azerbaijani's ə, Welsh's ẁ ẃ ẅ ỳ, the Sami letters, the ʻokina, Navajo's ǫ, Guarani's ẽ ỹ, Yoruba's and Igbo's dotted letters, Hausa's hooked letters and Akan's ɛ ɔ, and € £ ¥ © ® µ × ½ • ‚ ‹ ›. The firmware keeps the letters of western and central Europe, Romanian, Turkish and the Baltic languages; until a remote has downloaded its fonts, the rest show as blanks.
+
+### Fixed
+
+- **A second Home Assistant connection no longer outlives the stream's:** a request begun just as the state stream opened kept its own TLS connection for good, about 40 KB of internal RAM beside the stream's. On a MaTouch whose list loads its pictures over HTTPS, that left a picture's connection so little that internal RAM ran down to a few hundred bytes as it started, and Wi-Fi dropped packets. A connection kept that way is now closed once its request is done.
+- **One TLS handshake at a time:** the Home Assistant connections and the list's pictures could each start one at once as the remote came up, and together they took nearly all the internal RAM a handshake has to have. Each now waits for the one before, and for room to start in.
+- **Korean scrolls as fast as Latin text:** the Korean glyphs a face keeps were placed by code point, and Hangul's layout put most syllables in a quarter of the places, so a list of Korean names drew most of its letters again on every frame -- on the round 360, a page took twice as long as the same page in Latin. They are now spread over the whole cache, a few to a place, and a page shown once draws again at about the speed of Latin text.
 
 ## [1.5.0] - 2026-11-03
 
@@ -177,7 +225,8 @@ The first release: a touch remote for one Home Assistant `media_player`, running
 - **Web portal setup:** Wi-Fi, Home Assistant URL and token, player, volume device, rotation, transmit power and more.
 - **Network updates:** two app slots, and settings are kept across updates.
 
-[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.2.0...v1.3.0

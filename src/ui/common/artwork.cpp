@@ -13,6 +13,7 @@
 #include "config.h"
 #include "log.h"
 #include "services/ha_client.h"
+#include "services/voice.h"
 #include "ui/cover_art.h"
 #include "ui/theme.h"
 
@@ -205,15 +206,31 @@ void serviceCover() {
  * core with the loop would take time from it instead of stalling it, which
  * is better but not the point.
  */
+/** While a voice request runs, nothing is fetched and no connection is
+ *  kept: the request's reply comes down a TLS session of its own, beside the
+ *  stream's, and needs every KB of internal RAM a third would hold. */
+void holdForVoice(char* last_host) {
+  if (!services::voice::busy()) {
+    return;
+  }
+  cover::releaseThumbConnection();
+  last_host[0] = '\0';
+  while (services::voice::busy()) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
 void workerTask(void*) {
   char last_host[96] = {};
   for (;;) {
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
 
+    holdForVoice(last_host);
     serviceCover();
     bool fetched = false;
     Job job;
     while (takeJob(job, last_host)) {
+      holdForVoice(last_host);
       // A cover asked for mid-batch goes before the next thumbnail: it is
       // what is on screen, and at most one thumbnail's fetch is in its way.
       serviceCover();

@@ -26,7 +26,9 @@ constexpr int kListTop = theme::kSearchQueryY + theme::px(18);
 constexpr int kPitch = theme::kListRowHeight + theme::kListRowGap;
 
 /** The players, then one more row to fetch the list again. */
-int rowCount() { return services::players::entryCount() + 1; }
+int rowCount() {
+  return services::players::entryCount(services::players::Role::kPlayer) + 1;
+}
 
 int rowTop(int row) { return kListTop + row * kPitch - s_scroll_px; }
 
@@ -66,7 +68,8 @@ void drawRow(lgfx::LovyanGFX& gfx, int row, int top, bool pressed = false) {
 
   displayFontApplyHeight(gfx, theme::kListRowTextPx);
   gfx.setTextDatum(textdatum_t::middle_center);
-  const services::ha::PlayerEntry* entry = services::players::entryAt(row);
+  const services::ha::PlayerEntry* entry =
+      services::players::entryAt(services::players::Role::kPlayer, row);
   if (entry == nullptr) {
     gfx.setTextColor(pressed ? theme::kBackground : theme::kAccent);
     gfx.drawString("Refresh", theme::kCenterX, cy);
@@ -174,7 +177,8 @@ Result handleTap(int x, int y) {
     // follows, or fetching the list again, takes a moment, and the screen
     // that comes next replaces the lit row.
     showPressed(row);
-    const services::ha::PlayerEntry* entry = services::players::entryAt(row);
+    const services::ha::PlayerEntry* entry =
+        services::players::entryAt(services::players::Role::kPlayer, row);
     if (entry == nullptr) {
       return Result::kRefresh;
     }
