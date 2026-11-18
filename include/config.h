@@ -478,6 +478,12 @@ constexpr unsigned long kIdleTimeoutMs = 300000;
  *  leaving this false would mean a pause never leads to the amplifier
  *  switching off, which is the case that most wants it to. */
 constexpr bool kBlankWhenPaused = true;
+/** How long the screen waits instead once the volume device is off and the
+ *  player is not playing: the room is off, so there is no amplifier to give
+ *  a long claim and nothing to hear -- only a moment to read the screen.
+ *  Counted from when both became so; the panel wakes again if either stops
+ *  being so before kIdleTimeoutMs has run. 0 leaves it to kIdleTimeoutMs. */
+constexpr unsigned long kIdleWhenOffTimeoutMs = 30000;
 
 /** Switch the volume/power entity off when the panel blanks -- the default
  *  for the Auto-off setting, which the portal and the settings page change

@@ -352,6 +352,11 @@ After **five minutes** with the player paused, idle, off or unavailable
 panel asleep -- and the **volume device is switched off** with it. Any touch
 wakes it, and so does playback starting from anywhere else.
 
+With the **volume device already off** and the player not playing, the room
+is off, and the screen blanks after **30 seconds** instead
+(`kIdleWhenOffTimeoutMs`). It lights again if the volume device comes back
+on before the five minutes are up.
+
 A source with a **power switch of its own** -- a Control4 room, a TV being
 cast to -- is the exception, when the volume device is on its input: idle or
 paused, it is still on, so the screen stays lit and the volume device stays

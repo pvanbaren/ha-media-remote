@@ -165,6 +165,9 @@ bool g_wifi_lost = false;
 
 /** millis() when the player last went idle, or 0 while it is doing something. */
 unsigned long g_idle_since = 0;
+/** millis() when the volume device went off with the player not playing,
+ *  or 0 while either is not so. */
+unsigned long g_room_off_since = 0;
 /** Whether this stretch of darkness has already asked for the power-off. */
 bool g_control_off_sent = false;
 
@@ -478,6 +481,7 @@ void wakeDisplay() {
  *  task has not yet sent is called off, since someone is here after all. */
 void noteTouchWake() {
   g_idle_since = 0;
+  g_room_off_since = 0;
   g_control_off_sent = false;
   g_turn_off_control = false;
   g_state_dirty = true;
@@ -989,41 +993,67 @@ void startCommands() {
 
 
 /** Stand down once the player has been idle for kIdleTimeoutMs -- blank the
- *  panel and let the amplifier go with it -- and wake again the moment it is
- *  not. Polling continues while blanked, which is what notices playback
- *  resuming. */
+ *  panel and let the amplifier go with it -- or, with the volume device off
+ *  and the player not playing, after kIdleWhenOffTimeoutMs; and wake again
+ *  the moment neither holds. Polling continues while blanked, which is what
+ *  notices playback resuming. */
 [[gnu::noinline]] void handleIdleBlanking() {
-  if (config::kIdleTimeoutMs == 0) {
+  if (config::kIdleTimeoutMs == 0 && config::kIdleWhenOffTimeoutMs == 0) {
     return;
   }
 
   PlayerState snapshot;
   const bool have_state = snapshotState(snapshot);
+  const bool idle = have_state && playerIsIdle(snapshot);
+  // The room is off: the volume device off, and the player playing nothing
+  // -- whatever a source with a power switch of its own says, since it is
+  // heard through the volume device.
+  const bool room_off = have_state && config::kIdleWhenOffTimeoutMs != 0 &&
+                        snapshot.control_off &&
+                        snapshot.playback != PlaybackState::kPlaying;
 
   // Only the now-playing screen blanks. The browse list and the status cards
   // are there to be read, and are only ever up because someone is looking.
-  if (!have_state || g_screen != Screen::kNowPlaying ||
-      !playerIsIdle(snapshot)) {
+  if (g_screen != Screen::kNowPlaying || !(idle || room_off)) {
     g_idle_since = 0;
+    g_room_off_since = 0;
     wakeDisplay();
     return;
   }
 
-  if (g_idle_since == 0) {
-    g_idle_since = millis();
+  const unsigned long now = millis();
+  if (!idle) {
+    g_idle_since = 0;
+  } else if (g_idle_since == 0) {
+    g_idle_since = now;
+  }
+  if (!room_off) {
+    g_room_off_since = 0;
+  } else if (g_room_off_since == 0) {
+    g_room_off_since = now;
+  }
+  const bool idle_long = g_idle_since != 0 && config::kIdleTimeoutMs != 0 &&
+                         now - g_idle_since >= config::kIdleTimeoutMs;
+  const bool off_long = g_room_off_since != 0 &&
+                        now - g_room_off_since >= config::kIdleWhenOffTimeoutMs;
+  if (!idle_long && !off_long) {
+    // Blanked for a room that has come back on, with the player not idle
+    // for long yet: show it again.
+    wakeDisplay();
     return;
   }
-  if (ui::isBlanked() ||
-      millis() - g_idle_since < config::kIdleTimeoutMs) {
+  if (ui::isBlanked()) {
     return;
   }
 
   ui::blank();
 
-  // The amplifier goes with the screen. Getting here at all means the player
-  // has been paused, idle, off or unavailable for the whole timeout, since
-  // anything else would have woken the panel several branches ago.
-  if (services::ha::autoOffControl() && !g_control_off_sent) {
+  // The amplifier goes with the screen -- when it is on still. Getting here
+  // means the player has been paused, idle, off or unavailable for the
+  // whole timeout, or the room off for the shorter one, since anything else
+  // would have woken the panel several branches ago.
+  if (services::ha::autoOffControl() && !g_control_off_sent &&
+      !snapshot.control_off) {
     g_control_off_sent = true;
     g_turn_off_control = true;
     g_poll_now = true;
