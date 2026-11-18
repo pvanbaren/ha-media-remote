@@ -180,9 +180,9 @@ there are recommendations, Recommended is random library artists, as it is
 without a token. An artist already under the recent ones is not listed again
 under Recommended.
 
-The list follows your finger and glides on release. **Tap the title strip** or
-**swipe right** to go back; it also goes back by itself after a minute
-untouched (`kListIdleReturnMs`).
+The list follows your finger and glides on release. **Tap the title strip**,
+**swipe right**, or **swipe down** with the list at its top to go back; it
+also goes back by itself after a minute untouched (`kListIdleReturnMs`).
 
 ### Search
 
@@ -411,7 +411,7 @@ wakes the screen leave it alone. Details in
 | Player list | Tap the gear, top right | Open the settings |
 | List | Drag up / down | Scroll; it glides on release |
 | List | Tap a row | Play it: an artist as radio, an album as itself |
-| List | Tap the title strip, or swipe right | Back to now playing |
+| List | Tap the title strip, swipe right, or swipe down at the top of the list | Back to now playing |
 | List | Swipe left | Search |
 | Starting... (after a pick) | Swipe right, or the back button | Stop waiting: back to now playing |
 | Starting... (after a pick) | Swipe down | Open the status page |

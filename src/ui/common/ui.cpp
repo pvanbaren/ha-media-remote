@@ -74,6 +74,9 @@ constexpr float kVolumeRedrawEpsilon = 0.004f;
 /** One set of state: the browse list and the search results are never on
  *  screen at the same time. */
 bool s_list_dragging = false;
+/** This press set off down with the list at its top, on a list whose
+ *  pull_down_swipes is set: it stays a swipe until the finger lifts. */
+bool s_list_pull_down = false;
 int s_list_last_y = 0;
 /** Display px per millisecond, signed with the finger. */
 float s_list_velocity = 0.0f;
@@ -114,13 +117,17 @@ struct ScrollableList {
   bool (*scrollByPx)(int delta);
   bool (*atScrollLimit)(int direction);
   void (*redraw)();
+  /** A press that sets off down with the list at its top is left to
+   *  resolve as the swipe down it is, for the screen to act on, rather
+   *  than taken as a scroll that has nowhere to go. */
+  bool pull_down_swipes = false;
 };
 
 // redrawRows() rather than draw(): a drag only moves the rows and the
 // indicator, and repainting the rest costs more than the scroll can afford.
 constexpr ScrollableList kBrowseList{browse_list::scrollByPx,
                                      browse_list::atScrollLimit,
-                                     browse_list::redrawRows};
+                                     browse_list::redrawRows, true};
 constexpr ScrollableList kSearchResults{search::scrollByPx,
                                         search::atScrollLimit,
                                         search::redrawResults};
@@ -361,6 +368,7 @@ void driveList(const ScrollableList& list, bool active) {
 
   if (!active) {
     s_list_dragging = false;
+    s_list_pull_down = false;
     s_list_velocity = 0.0f;
     return;
   }
@@ -370,6 +378,9 @@ void driveList(const ScrollableList& list, bool active) {
     int y = 0;
     hw::touchPosition(x, y);
 
+    if (s_list_pull_down) {
+      return;
+    }
     if (!s_list_dragging) {
       // A finger on a gliding list catches it. Only stops it: the press that
       // did so is refused as a tap (see listTapAllowed()), and leaving the
@@ -382,6 +393,12 @@ void driveList(const ScrollableList& list, bool active) {
       const int travel_y = hw::touchDragDy();
       if (abs(travel_y) < kDragSlopPx || abs(travel_y) <= abs(travel_x)) {
         return;  // not committed vertically yet, or it is a sideways swipe
+      }
+      // Down, with the list already at its top: the swipe down the screen
+      // has a use for, whatever the finger does before it lifts.
+      if (list.pull_down_swipes && travel_y > 0 && list.atScrollLimit(-1)) {
+        s_list_pull_down = true;
+        return;
       }
       hw::touchCancel();
       s_list_dragging = true;
@@ -424,6 +441,7 @@ void driveList(const ScrollableList& list, bool active) {
     return;
   }
 
+  s_list_pull_down = false;
   if (s_list_dragging) {
     s_list_dragging = false;
     s_list_glide_ms = millis();
@@ -662,9 +680,11 @@ Input browseTouch(const hw::TouchReport& report) {
     case hw::TouchEvent::kSwipeLeft:
       out.intent = Intent::kOpenSearch;
       break;
-    // Vertical swipes never arrive here: driveList() claims the press as soon
-    // as it commits to an axis and cancels the gesture, so the list has
-    // already moved with the finger.
+    // A vertical swipe is otherwise the list's: driveList() claims the press
+    // as soon as it commits to an axis and cancels the gesture, so the list
+    // has already moved with the finger. Only one set off down with the
+    // list at its top arrives, and goes back as a swipe right does.
+    case hw::TouchEvent::kSwipeDown:
     case hw::TouchEvent::kSwipeRight:
       out.intent = Intent::kBackToNowPlaying;
       break;
