@@ -158,6 +158,23 @@ bool atRim(int x, int y) {
   return dx * dx + dy * dy >= inner * inner;
 }
 
+/** Whether a press that landed at (x0, y0) and has gone (tx, ty) since has
+ *  gone plainly along the rim: twice the slop, and twice as far around the
+ *  circle as in towards its centre or out. Measured against the rim where
+ *  it landed rather than against the screen's axes, so it holds where the
+ *  rim runs at a slant -- the ends of the progress arc -- as at its foot. */
+bool plainlyAlongRim(int x0, int y0, int tx, int ty) {
+  const float rx = static_cast<float>(x0 - theme::kCenterX);
+  const float ry = static_cast<float>(y0 - theme::kCenterY);
+  const float r = sqrtf(rx * rx + ry * ry);
+  if (r < 1.0f) {
+    return true;
+  }
+  const float across = fabsf(tx * rx + ty * ry) / r;
+  const float along = fabsf(ty * rx - tx * ry) / r;
+  return along >= 2.0f * kDragSlopPx && along >= 2.0f * across;
+}
+
 /** A sideways swipe in the volume's half that lifts this soon after it was
  *  claimed, having gone at least kFlickMinPx, is a flick: the swipe to the
  *  search or the inputs, as lower down, not a volume change. A drag meant
@@ -335,6 +352,14 @@ bool driveSeek(Screen screen, const PlayerState* state, Input& out) {
     }
     if (state == nullptr ||
         !now_playing::seekRegion(x - travel_x, y - travel_y, *state)) {
+      return false;
+    }
+    // On a round panel the progress arc lies at the rim, where a finger
+    // coming on from the bezel -- a swipe up begun at the very bottom --
+    // is read sliding along the edge before it heads in: it has to go
+    // plainly around the arc before the seek takes it.
+    if (board::kDisplayIsRound && atRim(x - travel_x, y - travel_y) &&
+        !plainlyAlongRim(x - travel_x, y - travel_y, travel_x, travel_y)) {
       return false;
     }
     s_drag_state = *state;

@@ -33,6 +33,7 @@ GitHub release from that version's section, with
 
 ### Fixed
 
+- **A swipe up from the bottom edge of a round panel no longer seeks:** the progress arc lies at the rim, where a finger coming on from the bezel is read sliding along the edge before it heads in. A press that lands at the rim now has to go twice the slop around the arc, and twice as far around it as in, before the seek takes it.
 - **A player that plays with no title says "Playing",** not "Nothing playing": Music Assistant can lose its place in a queue -- after a restart, say -- and play on with no track to report, and the screen said nothing was playing over the music.
 
 ## [1.6.0] - 2026-11-10
