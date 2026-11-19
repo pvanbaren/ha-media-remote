@@ -12,24 +12,28 @@ GitHub release from that version's section, with
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-18
+
+This release turns the room's lights and fans on and off by voice -- "turn on the lights" switches them in the room the remote's volume device is in, or in the area a new Room setting names -- and shows the battery on the AMOLED boards' status page. A swipe down on the status page opens the settings, back from the settings goes straight to now playing, and a swipe down from the top of the list goes back to now playing. The cover shows through the transport buttons and the time pill, a voice request's words sit in the middle of a square screen too, the screen blanks after 30 seconds once the volume device is off, and Volume & power offers only the devices whose volume can be set. The font pack is now `fonts-2`, with ASCII in it; a remote with `fonts-1` offers the new one. Fixed: a swipe up from the bottom edge of a round panel no longer seeks, and a player that plays with no title says "Playing".
+
 ### Added
 
-- **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
 - **"Turn on the lights", "turn off the fan":** said to a remote, they switch the lights or the fans in its room -- the Home Assistant area its volume device is in -- with one call, and the remote says what it did: "Kitchen lights on." A room with no lights, or no fan, is said so, as is a volume device in no area.
 - **Room, a setting:** on the device and in the portal, in a build with voice: the Home Assistant area whose lights and fans "turn on the lights" and "turn off the fan" switch. *The volume device's*, the default, is its area, or the player's where there is no volume device; choosing an area fixes it, for a remote whose player is shared between rooms or whose volume device is in another room.
+- **Battery on the status page**, on the AMOLED 1.75 and 1.75C: the charge in percent from the AXP2101's fuel gauge, with *charging* while it charges, between the address and the uptime. The gauge is turned on at boot if it is off; the first reading is logged. Boards without a power manager show no line.
 
 ### Changed
 
-- **A swipe down on the swipe-up list goes back to now playing** when the list is at its top as the swipe sets off, the way a swipe up opened it; further down the list it scrolls, as before.
-- **With the volume device off, the screen blanks after 30 seconds** while the player is not playing, where it waited five minutes; it lights again if the volume device comes back on.
 - **Volume & power offers the devices whose volume can be set,** on the device and in the portal, rather than every media player: the devices with inputs -- a zone amplifier's zone, a receiver, a TV, a soundbar -- first, then the rest that have a volume, such as an amplifier with one input. A device that reports no features at all is offered, as the remote takes it to have a volume, and one chosen before stays on offer whatever it supports.
-- **The words a voice request heard sit in the middle of a square screen too,** on up to two lines, as on a round one, where they were one line across the top.
-- **The previous, play and next buttons let the cover show through,** their discs 70% opaque where they were solid; their rings and symbols stay solid.
-- **Built-in faces nothing used are gone:** the Guition's 15 px, 34 KB of its image; the Qualia's 23 px, 71 KB of its image; and the P4 4B's 23 px, 71 KB of PSRAM unpacked (18 KB compressed in its image). No size those boards draw is near enough to pick them.
-- **The downloaded fonts carry ASCII too:** the font pack is now `fonts-2`, its Latin font with the letters, digits and punctuation the built-in faces have, so that text can be drawn from it at a size no face is. On a remote with `fonts-1`, Settings > Fonts says *Newer fonts are out*, and downloads the new pack from there or from the portal; until then the old pack goes on working.
+- **With the volume device off, the screen blanks after 30 seconds** while the player is not playing, where it waited five minutes; it lights again if the volume device comes back on.
 - **A swipe down on the status page opens the settings,** as its gear does, where it went back to now playing: two swipes down from now playing reach the settings.
 - **Back from the settings goes to now playing,** a swipe right or the back button, where it went to the status page first. From a setting's choices it still goes back to the page.
+- **A swipe down on the swipe-up list goes back to now playing** when the list is at its top as the swipe sets off, the way a swipe up opened it; further down the list it scrolls, as before.
+- **The words a voice request heard sit in the middle of a square screen too,** on up to two lines, as on a round one, where they were one line across the top.
+- **The previous, play and next buttons let the cover show through,** their discs 70% opaque where they were solid; their rings and symbols stay solid.
 - **The elapsed time's pill lets a little of the cover show through,** 80% opaque where it was solid; its text stays solid.
+- **The downloaded fonts carry ASCII too:** the font pack is now `fonts-2`, its Latin font with the letters, digits and punctuation the built-in faces have, so that text can be drawn from it at a size no face is. On a remote with `fonts-1`, Settings > Fonts says *Newer fonts are out*, and downloads the new pack from there or from the portal; until then the old pack goes on working.
+- **Built-in faces nothing used are gone:** the Guition's 15 px, 34 KB of its image; the Qualia's 23 px, 71 KB of its image; and the P4 4B's 23 px, 71 KB of PSRAM unpacked (18 KB compressed in its image). No size those boards draw is near enough to pick them.
 
 ### Fixed
 
@@ -226,7 +230,8 @@ The first release: a touch remote for one Home Assistant `media_player`, running
 - **Web portal setup:** Wi-Fi, Home Assistant URL and token, player, volume device, rotation, transmit power and more.
 - **Network updates:** two app slots, and settings are kept across updates.
 
-[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/pvanbaren/ha-media-remote/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/pvanbaren/ha-media-remote/compare/v1.3.0...v1.4.0
